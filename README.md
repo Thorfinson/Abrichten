@@ -6,6 +6,7 @@ Desktop application for planning furniture, shelving, and kitchen projects in wo
 
 ### Canvas & Modelling
 - **Single unified canvas** — one React Three Fiber scene, four camera modes (front, side, top, 3D)
+- **Quad layout** — all four views side by side, toggled with the `⊞` button in the view tabs
 - **Boards** — parametric rectangles with width × height × depth, material, grain direction, edge banding
 - **TransformControls gizmo** — translate / rotate in 3D view; pointer-drag in orthographic views
 - **Zoom & pan** — scroll-wheel zoom around cursor, right-click drag to pan; state persisted per view
@@ -84,6 +85,18 @@ npm run build
 
 `npm run dev` starts a Vite dev server on `localhost:5173` and opens the Electron window.
 
+## Testing
+
+End-to-end tests (Playwright) drive the built renderer in headless Chromium — no Electron needed:
+
+```bash
+npm run build            # tests run against the build output in out/renderer
+npm test                 # run all E2E specs
+npm run test:e2e:headed  # watch the browser while tests run
+```
+
+The suite in `tests/e2e/` covers boot, selection, keyboard shortcuts, undo/redo, gizmo drags (translate / resize / rotate), camera pan & zoom, and view switching.
+
 ## Project Structure
 
 ```
@@ -95,16 +108,22 @@ src/
 └── renderer/
     └── src/
         ├── components/
-        │   ├── layout/     # Toolbar, StatusBar, AssemblyDrawer, CommandPalette, ViewTabs
-        │   ├── overlays/   # FloatingPropertiesCard, ContextHUD, ShortcutsOverlay, …
-        │   ├── canvas/     # UnifiedCanvas, Board3D, CameraController, OrthoGrid
-        │   ├── panels/     # CostPanel, HardwarePanel, NestingPanel, ParametersPanel, …
-        │   ├── ai/         # ChatPanel, SketchUpload
-        │   └── ui/         # SettingsDialog, JointDialog, WelcomeDialog, …
-        ├── data/           # Materials, hardware catalogue, fasteners, joint rules
-        ├── hooks/          # useKeyboard, useAutoSave
+        │   ├── UnifiedCanvas.tsx     # Single R3F canvas hosting all views
+        │   ├── CameraController.tsx  # Ortho + perspective cameras, zoom/pan
+        │   ├── OrthoGrid.tsx         # Grid that follows the active view
+        │   ├── layout/     # Toolbar, StatusBar, AssemblyDrawer, CommandPalette, ViewTabs, QuadLayout, PanelHub, SettingsDialog
+        │   ├── overlays/   # FloatingPropertiesCard, ContextHUD, gizmo handles, dimension/static/collision overlays
+        │   ├── panels/     # CuttingList, NestingPanel, CostPanel, HardwarePanel, KorpusPanel, …
+        │   ├── views3d/    # Board3D mesh with drag & transform logic
+        │   ├── tools/      # MarqueeSelect, MeasureTools3D
+        │   ├── ai/         # ChatPanel
+        │   ├── onboarding/ # WelcomeDialog with sample project
+        │   └── ui/         # ContextMenu
+        ├── config/         # Env-based configuration (.env)
+        ├── data/           # Materials, hardware catalogue, board presets
+        ├── hooks/          # useKeyboard, useAutoSave, measurement hooks
         ├── i18n/           # de.json, en.json
-        ├── services/       # Static calc, joint advisor, OpenRouter client
+        ├── services/       # Static calc, boring calc, OpenRouter client, IndexedDB storage
         ├── store/          # useProjectStore, useUIStore (Zustand)
         ├── types/          # TypeScript interfaces (Board, Assembly, Joint, …)
         └── utils/          # Units, collision, snap, DXF, nesting, projection
@@ -154,4 +173,4 @@ Alternatively, configure the AI assistant via a `.env` file in the project root 
 
 ## License
 
-ISC
+MIT — see [LICENSE](LICENSE)

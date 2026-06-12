@@ -117,7 +117,7 @@ export function CommandPalette() {
     uiState.selectBoard(aId, newId)
   }
 
-  // Presets surfaced in the palette (others remain in the Sidebar preset menu)
+  // Subset of board presets surfaced as palette commands
   const PALETTE_PRESET_IDS = ['brett', 'regal-seite', 'regal-boden', 'rueckwand', 'multiplex-platte']
   const presetCommands: Command[] = PALETTE_PRESET_IDS
     .map((id) => boardPresets.find((p) => p.id === id))

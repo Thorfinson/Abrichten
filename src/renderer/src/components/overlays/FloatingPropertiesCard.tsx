@@ -13,8 +13,8 @@ const OPTGROUP_DARK = 'bg-gray-800 text-white/50'
 
 /**
  * Floating glass card anchored to bottom-right of the canvas.
- * Appears only when one or more boards are selected.
- * Replaces the right-side PropertiesPanel for the most common editing actions.
+ * Appears only when one or more boards are selected; hosts the most
+ * common editing actions (name, dimensions, material, duplicate, delete).
  */
 export function FloatingPropertiesCard() {
   const { i18n } = useTranslation()

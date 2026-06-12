@@ -5,8 +5,7 @@ import type { Board, Unit } from '../../types/furniture'
 
 /**
  * Small reusable dimension/transform inputs shared by the property surfaces
- * (currently the FloatingPropertiesCard overlay). Extracted from the former
- * right-side PropertiesPanel so they can live without the dead panel.
+ * (currently the FloatingPropertiesCard overlay).
  */
 
 function Vec3AxisInput({

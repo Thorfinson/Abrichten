@@ -113,7 +113,7 @@ interface UIState {
   setShowMeasurementPanel: (show: boolean) => void
   toggleBoringOverlay: () => void
   setShowMaterialsPanel: (show: boolean) => void
-  setViewLayout: (layout: 'single' | 'split') => void
+  setViewLayout: (layout: 'single' | 'quad') => void
   setCollisionGraceMm: (mm: number) => void
   setStaticWarningCount: (n: number) => void
   setHasSeenWelcome: () => void

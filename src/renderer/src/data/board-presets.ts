@@ -144,7 +144,7 @@ export function getPresetById(id: string): BoardPreset | undefined {
 /** Convert a preset to a Board shape (without id, that's assigned by the store) */
 export function presetToBoard(preset: BoardPreset): Omit<Board, 'id'> {
   return {
-    name: preset.id, // will be overwritten with translated name in Sidebar
+    name: preset.id, // overwritten with the translated name by the caller
     width: preset.width,
     height: preset.height,
     depth: preset.depth,

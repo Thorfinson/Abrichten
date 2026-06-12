@@ -35,7 +35,6 @@ interface ProjectState {
 
   // Board (batch)
   removeBoards: (assemblyId: string, boardIds: string[]) => void
-  updateBoards: (assemblyId: string, boardIds: string[], updates: Partial<Board>) => void
   duplicateBoards: (assemblyId: string, boardIds: string[]) => string[]
   nudgeBoards: (assemblyId: string, boardIds: string[], delta: Vec3) => void
 
@@ -45,8 +44,6 @@ interface ProjectState {
 
   // Joint
   addJoint: (assemblyId: string, joint: Omit<Joint, 'id'>) => string
-  updateJoint: (assemblyId: string, jointId: string, updates: Partial<Omit<Joint, 'id'>>) => void
-  removeJoint: (assemblyId: string, jointId: string) => void
 
   // Board batch (atomic)
   addBoardsBatch: (assemblyId: string, boards: Omit<Board, 'id'>[]) => string[]
@@ -73,8 +70,6 @@ interface ProjectState {
 
   // Hardware on boards
   addHardwareToBoard: (assemblyId: string, boardId: string, hardwareId: string, quantity: number) => void
-  removeHardwareFromBoard: (assemblyId: string, boardId: string, hardwareId: string) => void
-  setHardwareQuantity: (assemblyId: string, boardId: string, hardwareId: string, quantity: number) => void
 }
 
 function createEmptyProject(): Project {
@@ -260,26 +255,6 @@ export const useProjectStore = create<ProjectState>()(
         }))
       },
 
-      updateBoards: (assemblyId, boardIds, updates) => {
-        const idSet = new Set(boardIds)
-        set((s) => ({
-          project: {
-            ...s.project,
-            updatedAt: now(),
-            assemblies: s.project.assemblies.map((a) =>
-              a.id === assemblyId
-                ? {
-                    ...a,
-                    boards: a.boards.map((b) =>
-                      idSet.has(b.id) ? { ...b, ...updates } : b
-                    )
-                  }
-                : a
-            )
-          }
-        }))
-      },
-
       duplicateBoards: (assemblyId, boardIds) => {
         const assembly = get().project.assemblies.find((a) => a.id === assemblyId)
         if (!assembly) return []
@@ -403,32 +378,6 @@ export const useProjectStore = create<ProjectState>()(
         }))
         return id
       },
-
-      updateJoint: (assemblyId, jointId, updates) =>
-        set((s) => ({
-          project: {
-            ...s.project,
-            updatedAt: now(),
-            assemblies: s.project.assemblies.map((a) =>
-              a.id === assemblyId
-                ? { ...a, joints: a.joints.map((j) => j.id === jointId ? { ...j, ...updates } : j) }
-                : a
-            )
-          }
-        })),
-
-      removeJoint: (assemblyId, jointId) =>
-        set((s) => ({
-          project: {
-            ...s.project,
-            updatedAt: now(),
-            assemblies: s.project.assemblies.map((a) =>
-              a.id === assemblyId
-                ? { ...a, joints: a.joints.filter((j) => j.id !== jointId) }
-                : a
-            )
-          }
-        })),
 
       addBoardsBatch: (assemblyId, boards) => {
         const ids = boards.map(() => uid())
@@ -577,40 +526,6 @@ export const useProjectStore = create<ProjectState>()(
           }
         })),
 
-      removeHardwareFromBoard: (assemblyId, boardId, hardwareId) =>
-        set((s) => ({
-          project: {
-            ...s.project, updatedAt: now(),
-            assemblies: s.project.assemblies.map((a) =>
-              a.id !== assemblyId ? a : {
-                ...a, boards: a.boards.map((b) =>
-                  b.id !== boardId ? b : {
-                    ...b, hardware: (b.hardware ?? []).filter((h) => h.hardwareId !== hardwareId)
-                  }
-                )
-              }
-            )
-          }
-        })),
-
-      setHardwareQuantity: (assemblyId, boardId, hardwareId, quantity) =>
-        set((s) => ({
-          project: {
-            ...s.project, updatedAt: now(),
-            assemblies: s.project.assemblies.map((a) =>
-              a.id !== assemblyId ? a : {
-                ...a, boards: a.boards.map((b) =>
-                  b.id !== boardId ? b : {
-                    ...b,
-                    hardware: (b.hardware ?? []).map((h) =>
-                      h.hardwareId === hardwareId ? { ...h, quantity } : h
-                    )
-                  }
-                )
-              }
-            )
-          }
-        }))
     }),
     {
       partialize: (state) => {

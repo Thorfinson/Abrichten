@@ -1,6 +1,5 @@
 import { useEffect } from 'react'
 import { Toolbar } from './components/layout/Toolbar'
-import { ContextBar } from './components/layout/ContextBar'
 import { StatusBar, SaveToast } from './components/layout/StatusBar'
 import { CommandPalette } from './components/layout/CommandPalette'
 import { ViewTabs } from './components/layout/ViewTabs'
@@ -57,9 +56,6 @@ export default function App() {
     <div className="flex flex-col h-screen w-screen bg-gray-100 text-gray-900 select-none">
       {/* Top toolbar */}
       <Toolbar />
-
-      {/* Context bar stub — kept for import compatibility */}
-      <ContextBar />
 
       <div className="flex-1 flex flex-col overflow-hidden">
         {/* View tabs */}
