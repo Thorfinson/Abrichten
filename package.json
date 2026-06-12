@@ -8,6 +8,7 @@
     "build": "electron-vite build",
     "preview": "electron-vite preview",
     "typecheck": "tsc -p tsconfig.web.json --noEmit && tsc -p tsconfig.node.json --noEmit",
+    "screenshot": "node scripts/screenshot.mjs",
     "test": "playwright test",
     "test:e2e": "playwright test",
     "test:e2e:headed": "playwright test --headed"
