@@ -45,8 +45,9 @@ try {
     return proj?.assemblies?.length > 0 && !!window.__r3f
   })
 
-  // 3D view first — OrbitControls must be mounted before fit-view works
-  await page.evaluate(() => window.__uiStore.getState().setActiveView('3d'))
+  // Quad layout (front / side / top / 3D side by side), then fit all views.
+  // Layout must be mounted first — fit-view needs the cameras/controls live.
+  await page.evaluate(() => window.__uiStore.getState().setViewLayout('quad'))
   await page.waitForTimeout(500)
   await page.evaluate(() => window.__uiStore.getState().triggerFitView())
   await page.waitForTimeout(600)

@@ -2,7 +2,7 @@
 
 Desktop application for planning furniture, shelving, and kitchen projects in wood and stone. Combines a full-screen 3D canvas with glass-card overlays, context-aware shortcuts, and AI-assisted sketch analysis.
 
-![Abrichten — 3D view with the sample wall cabinet](docs/screenshot.png)
+![Abrichten — quad view (front, side, top, 3D) with the sample wall cabinet](docs/screenshot.png)
 
 *(regenerate with `npm run build && npm run screenshot`)*
 
