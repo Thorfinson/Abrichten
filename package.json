@@ -1,0 +1,50 @@
+{
+  "name": "abrichten",
+  "version": "1.0.0",
+  "description": "Holz- und Schrankplanungsprogramm fuer Kuechen und Schraenke",
+  "main": "./out/main/index.js",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "preview": "electron-vite preview",
+    "test": "playwright test",
+    "test:e2e": "playwright test",
+    "test:e2e:headed": "playwright test --headed"
+  },
+  "keywords": [
+    "woodworking",
+    "cabinet",
+    "planning",
+    "cad"
+  ],
+  "author": "Thomas Gründer",
+  "license": "ISC",
+  "devDependencies": {
+    "@playwright/test": "^1.60.0",
+    "@tailwindcss/vite": "^4.1.18",
+    "@types/node": "^25.2.2",
+    "@types/react": "^19.2.13",
+    "@types/react-dom": "^19.2.3",
+    "@types/three": "^0.182.0",
+    "@vitejs/plugin-react": "^5.1.3",
+    "autoprefixer": "^10.4.24",
+    "electron": "^40.2.1",
+    "electron-vite": "^5.0.0",
+    "postcss": "^8.5.6",
+    "tailwindcss": "^4.1.18",
+    "typescript": "^5.9.3",
+    "vite": "^7.3.1"
+  },
+  "dependencies": {
+    "@react-three/drei": "^10.7.7",
+    "@react-three/fiber": "^9.5.0",
+    "dexie": "^4.3.0",
+    "i18next": "^25.8.4",
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4",
+    "react-i18next": "^16.5.4",
+    "three": "^0.182.0",
+    "zundo": "^2.3.0",
+    "zustand": "^5.0.11"
+  }
+}

@@ -1,0 +1,63 @@
+@import "tailwindcss";
+
+html, body, #root {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+}
+
+/* Ensure all interactive elements are not treated as drag areas */
+button, input, select, textarea, a, [role="button"] {
+  -webkit-app-region: no-drag;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   Design tokens — "Warm Zinc" palette
+   Zinc (slightly warm neutral) for chrome. Amber accent for craft/woodworking.
+   Blue for primary actions. Semantic colours for status overlays.
+   ───────────────────────────────────────────────────────────────────────────── */
+@theme {
+  /* Chrome backgrounds — dark hierarchy */
+  --color-chrome-bg:       #27272a;   /* zinc-800  toolbar top bar          */
+  --color-chrome-deep:     #18181b;   /* zinc-900  context bar, status bar  */
+  --color-chrome-surface:  #3f3f46;   /* zinc-700  buttons, cards           */
+  --color-chrome-hover:    #52525b;   /* zinc-600  hover states             */
+  --color-chrome-border:   #3f3f46;   /* zinc-700  borders                  */
+  --color-chrome-divider:  #52525b;   /* zinc-600  separators               */
+
+  /* Chrome text — readable on dark backgrounds */
+  --color-chrome-text:      #f4f4f5;  /* zinc-100  primary                  */
+  --color-chrome-secondary: #d4d4d8;  /* zinc-300  secondary labels         */
+  --color-chrome-muted:     #a1a1aa;  /* zinc-400  metadata, numbers        */
+  --color-chrome-hint:      #71717a;  /* zinc-500  hints, Esc, placeholders */
+
+  /* Accent — amber (snap enabled, warm highlights, craft feel) */
+  --color-accent:           #f59e0b;  /* amber-500 */
+  --color-accent-dim:       #78350f;  /* amber-900 background tint */
+  --color-accent-text:      #fef3c7;  /* amber-100 text on accent bg */
+
+  /* Action — blue (save, primary CTAs, selection) */
+  --color-action:           #2563eb;  /* blue-600  */
+  --color-action-hover:     #3b82f6;  /* blue-500  */
+  --color-action-text:      #ffffff;
+
+  /* Info — soft blue (assembly names, info chips) */
+  --color-info:             #60a5fa;  /* blue-400  */
+  --color-info-text:        #dbeafe;  /* blue-100  */
+
+  /* Success — emerald (overlay indicators ON) */
+  --color-success:          #10b981;  /* emerald-500 */
+  --color-success-dim:      #064e3b;  /* emerald-900 background tint */
+  --color-success-text:     #d1fae5;  /* emerald-100 text on success bg */
+
+  /* Danger — red (collision overlay, delete actions) */
+  --color-danger:           #ef4444;  /* red-500  */
+  --color-danger-dim:       #7f1d1d;  /* red-900  background tint */
+  --color-danger-text:      #fecaca;  /* red-200  text on danger bg */
+
+  /* AI — purple */
+  --color-ai:               #a855f7;  /* purple-500 */
+  --color-ai-dim:           #3b0764;  /* purple-950 background tint */
+  --color-ai-text:          #e9d5ff;  /* purple-200 text on AI bg */
+}

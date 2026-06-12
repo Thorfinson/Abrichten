@@ -1,0 +1,133 @@
+{
+  "id": "sample-wall-cabinet",
+  "name": "Wandschrank / Wall Cabinet",
+  "displayUnit": "mm",
+  "language": "de",
+  "createdAt": "2024-01-01T00:00:00.000Z",
+  "updatedAt": "2024-01-01T00:00:00.000Z",
+  "parameters": {
+    "H": 720,
+    "B": 600,
+    "T": 300
+  },
+  "assemblies": [
+    {
+      "id": "asm-1",
+      "name": "Wandschrank",
+      "visible": true,
+      "joints": [
+        {
+          "id": "j1",
+          "type": "butt",
+          "boardA": "b-boden",
+          "boardB": "b-links",
+          "position": { "x": 0, "y": 0, "z": 0 },
+          "fasteners": []
+        },
+        {
+          "id": "j2",
+          "type": "butt",
+          "boardA": "b-boden",
+          "boardB": "b-rechts",
+          "position": { "x": 600, "y": 0, "z": 0 },
+          "fasteners": []
+        },
+        {
+          "id": "j3",
+          "type": "butt",
+          "boardA": "b-deckel",
+          "boardB": "b-links",
+          "position": { "x": 0, "y": 720, "z": 0 },
+          "fasteners": []
+        },
+        {
+          "id": "j4",
+          "type": "butt",
+          "boardA": "b-deckel",
+          "boardB": "b-rechts",
+          "position": { "x": 600, "y": 720, "z": 0 },
+          "fasteners": []
+        }
+      ],
+      "boards": [
+        {
+          "id": "b-links",
+          "name": "Seitenwand Links",
+          "width": 18,
+          "height": 720,
+          "depth": 300,
+          "position": { "x": 0, "y": 0, "z": 0 },
+          "rotation": { "x": 0, "y": 0, "z": 0 },
+          "materialId": "birke_mdf",
+          "color": "#E8D5B0",
+          "grainDirection": "height",
+          "edgeBanding": { "e1": true, "e3": false, "e4": false }
+        },
+        {
+          "id": "b-rechts",
+          "name": "Seitenwand Rechts",
+          "width": 18,
+          "height": 720,
+          "depth": 300,
+          "position": { "x": 582, "y": 0, "z": 0 },
+          "rotation": { "x": 0, "y": 0, "z": 0 },
+          "materialId": "birke_mdf",
+          "color": "#E8D5B0",
+          "grainDirection": "height",
+          "edgeBanding": { "e1": true, "e3": false, "e4": false }
+        },
+        {
+          "id": "b-boden",
+          "name": "Boden",
+          "width": 564,
+          "height": 18,
+          "depth": 300,
+          "position": { "x": 18, "y": 0, "z": 0 },
+          "rotation": { "x": 0, "y": 0, "z": 0 },
+          "materialId": "birke_mdf",
+          "color": "#E8D5B0",
+          "grainDirection": "width",
+          "edgeBanding": { "e1": true }
+        },
+        {
+          "id": "b-deckel",
+          "name": "Deckel",
+          "width": 564,
+          "height": 18,
+          "depth": 300,
+          "position": { "x": 18, "y": 702, "z": 0 },
+          "rotation": { "x": 0, "y": 0, "z": 0 },
+          "materialId": "birke_mdf",
+          "color": "#E8D5B0",
+          "grainDirection": "width",
+          "edgeBanding": { "e1": true }
+        },
+        {
+          "id": "b-einlegeboden",
+          "name": "Einlegeboden",
+          "width": 564,
+          "height": 18,
+          "depth": 295,
+          "position": { "x": 18, "y": 340, "z": 2 },
+          "rotation": { "x": 0, "y": 0, "z": 0 },
+          "materialId": "birke_mdf",
+          "color": "#E8D5B0",
+          "grainDirection": "width",
+          "edgeBanding": { "e1": true }
+        },
+        {
+          "id": "b-rueckwand",
+          "name": "Rückwand",
+          "width": 564,
+          "height": 702,
+          "depth": 8,
+          "position": { "x": 18, "y": 18, "z": 293 },
+          "rotation": { "x": 0, "y": 0, "z": 0 },
+          "materialId": "hdf",
+          "color": "#D4C49A",
+          "grainDirection": "height"
+        }
+      ]
+    }
+  ]
+}
