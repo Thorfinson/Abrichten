@@ -1,3 +1,4 @@
+import type { JSX } from 'react'
 import { useProjectStore } from '../../store/useProjectStore'
 import { useUIStore } from '../../store/useUIStore'
 

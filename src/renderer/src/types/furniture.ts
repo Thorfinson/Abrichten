@@ -1,7 +1,7 @@
 export type Unit = 'mm' | 'cm' | 'm'
 export type MaterialCategory = 'solid_wood' | 'panel' | 'stone' | 'glass' | 'metal'
 export type GrainDirection = 'width' | 'height' | 'depth'
-export type JointType = 'butt' | 'miter' | 'dado' | 'rabbet' | 'dowel' | 'biscuit' | 'screw' | 'pocket_screw'
+export type JointType = 'butt' | 'miter' | 'dado' | 'rabbet' | 'dowel' | 'biscuit' | 'screw' | 'pocket_screw' | 'dovetail'
 export type FastenerType = 'wood_screw' | 'confirmat' | 'dowel_pin' | 'biscuit' | 'pocket_screw'
 export type HeadType = 'countersunk' | 'pan' | 'hex'
 export type FastenerMaterial = 'steel' | 'stainless' | 'brass'

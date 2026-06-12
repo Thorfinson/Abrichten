@@ -55,6 +55,7 @@ export function JointDialog() {
       biscuit:      { de: 'Lamello',          en: 'Biscuit' },
       screw:        { de: 'Verschraubt',      en: 'Screw' },
       pocket_screw: { de: 'Taschenschraube',  en: 'Pocket Screw' },
+      dovetail:     { de: 'Schwalbenschwanz', en: 'Dovetail' },
     }
     return labels[type][lang]
   }

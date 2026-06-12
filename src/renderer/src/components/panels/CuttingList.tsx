@@ -226,7 +226,7 @@ export function CuttingList() {
       ? (lang === 'de' ? ['#', 'Name', 'Baugruppe', 'Material', 'B (mm)', 'H (mm)', 'T (mm)', 'Anz.'] : ['#', 'Name', 'Assembly', 'Material', 'W (mm)', 'H (mm)', 'D (mm)', 'Qty'])
       : (lang === 'de' ? ['#', 'Name', 'Baugruppe', 'Material', 'B (mm)', 'H (mm)', 'T (mm)'] : ['#', 'Name', 'Assembly', 'Material', 'W (mm)', 'H (mm)', 'D (mm)'])
     const rows = sorted.map((r, i) => {
-      const cols = [i + 1, r.name, r.assemblyName, r.materialName, r.width, r.height, r.depth]
+      const cols = [i + 1, r.name, r.assemblyName, r.material, r.width, r.height, r.depth]
       if (groupIdentical) cols.push((r as any).qty ?? 1)
       return `<tr>${cols.map((c) => `<td>${c}</td>`).join('')}</tr>`
     })
