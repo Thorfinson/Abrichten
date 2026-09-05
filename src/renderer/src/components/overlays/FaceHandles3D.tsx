@@ -220,6 +220,7 @@ function FaceHandle({ board, assemblyId, face }: FaceHandleProps): JSX.Element {
         onPointerDown={(e) => {
           if (e.nativeEvent.button !== 0) return
           e.stopPropagation()
+          e.nativeEvent.stopPropagation() // keep MarqueeSelect from starting
           startDrag(e.nativeEvent.clientX, e.nativeEvent.clientY, e.nativeEvent.pointerId)
         }}
       >
@@ -237,6 +238,7 @@ function FaceHandle({ board, assemblyId, face }: FaceHandleProps): JSX.Element {
         onPointerDown={(e) => {
           if (e.nativeEvent.button !== 0) return
           e.stopPropagation()
+          e.nativeEvent.stopPropagation() // keep MarqueeSelect from starting
           startDrag(e.nativeEvent.clientX, e.nativeEvent.clientY, e.nativeEvent.pointerId)
         }}
         onPointerEnter={() => {

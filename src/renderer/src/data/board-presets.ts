@@ -134,6 +134,47 @@ export const boardPresets: BoardPreset[] = [
     materialId: 'marmor',
     color: '#F5F5F5',
     icon: 'Fb'
+  },
+  // --- Geräte (Platzhalter-Körper für Küchenplanung) ---
+  {
+    id: 'herd',
+    labelKey: 'presets.herd',
+    width: 600,
+    height: 850,
+    depth: 600,
+    materialId: 'stahl',
+    color: '#4A4A4A',
+    icon: 'He'
+  },
+  {
+    id: 'kochfeld',
+    labelKey: 'presets.kochfeld',
+    width: 590,
+    height: 45,
+    depth: 520,
+    materialId: 'floatglas',
+    color: '#1A1A1A',
+    icon: 'Kf'
+  },
+  {
+    id: 'spuele',
+    labelKey: 'presets.spuele',
+    width: 780,
+    height: 190,
+    depth: 480,
+    materialId: 'stahl',
+    color: '#C0C0C0',
+    icon: 'Sp'
+  },
+  {
+    id: 'geschirrspueler',
+    labelKey: 'presets.geschirrspueler',
+    width: 598,
+    height: 815,
+    depth: 550,
+    materialId: 'stahl',
+    color: '#5A5A5A',
+    icon: 'Gs'
   }
 ]
 

@@ -47,7 +47,8 @@ const tools: { key: ToolMode; labelKey: string }[] = [
 const presetGroups = [
   { labelKey: 'materials.solid_wood', ids: ['brett', 'dachlatte', 'kantholz', 'leiste', 'bohle'] },
   { labelKey: 'materials.panel', ids: ['regal-seite', 'regal-boden', 'rueckwand', 'multiplex-platte'] },
-  { labelKey: 'materials.stone', ids: ['arbeitsplatte-granit', 'arbeitsplatte-keramik', 'fensterbank'] }
+  { labelKey: 'materials.stone', ids: ['arbeitsplatte-granit', 'arbeitsplatte-keramik', 'fensterbank'] },
+  { labelKey: 'presets.appliances', ids: ['herd', 'kochfeld', 'spuele', 'geschirrspueler'] }
 ]
 
 export function AssemblyDrawer() {
@@ -63,7 +64,9 @@ export function AssemblyDrawer() {
   const removeAssembly = useProjectStore((s) => s.removeAssembly)
   const renameAssembly = useProjectStore((s) => s.renameAssembly)
   const reorderAssemblies = useProjectStore((s) => s.reorderAssemblies)
+  const moveBoardsToAssembly = useProjectStore((s) => s.moveBoardsToAssembly)
   const toggleAssemblyVisibility = useProjectStore((s) => s.toggleAssemblyVisibility)
+  const toggleAssemblyHighlight = useProjectStore((s) => s.toggleAssemblyHighlight)
   const addJoint = useProjectStore((s) => s.addJoint)
   const activeTool = useUIStore((s) => s.activeTool)
   const setActiveTool = useUIStore((s) => s.setActiveTool)
@@ -92,6 +95,7 @@ export function AssemblyDrawer() {
   }, [selectedBoardIds])
 
   const dragSrcIdx = useRef<number | null>(null)
+  const boardDrag = useRef<{ fromAssemblyId: string; boardIds: string[] } | null>(null)
   const [dragOverIdx, setDragOverIdx] = useState<number | null>(null)
   const [collapsedIds, setCollapsedIds] = useState<Set<string>>(new Set())
 
@@ -203,14 +207,21 @@ export function AssemblyDrawer() {
     e.preventDefault()
     setDragOverIdx(idx)
   }
-  const handleDrop = (idx: number) => {
-    if (dragSrcIdx.current !== null && dragSrcIdx.current !== idx) {
+  const handleDrop = (idx: number, assemblyId: string) => {
+    if (boardDrag.current) {
+      const { fromAssemblyId, boardIds } = boardDrag.current
+      if (fromAssemblyId !== assemblyId) {
+        moveBoardsToAssembly(fromAssemblyId, boardIds, assemblyId)
+      }
+    } else if (dragSrcIdx.current !== null && dragSrcIdx.current !== idx) {
       reorderAssemblies(dragSrcIdx.current, idx)
     }
+    boardDrag.current = null
     dragSrcIdx.current = null
     setDragOverIdx(null)
   }
   const handleDragEnd = () => {
+    boardDrag.current = null
     dragSrcIdx.current = null
     setDragOverIdx(null)
   }
@@ -299,7 +310,7 @@ export function AssemblyDrawer() {
               draggable
               onDragStart={() => handleDragStart(idx)}
               onDragOver={(e) => handleDragOver(e, idx)}
-              onDrop={() => handleDrop(idx)}
+              onDrop={() => handleDrop(idx, assembly.id)}
               onDragEnd={handleDragEnd}
             >
               <div
@@ -352,6 +363,22 @@ export function AssemblyDrawer() {
                     </svg>
                   )}
                 </button>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    toggleAssemblyHighlight(assembly.id)
+                  }}
+                  className={`shrink-0 w-5 h-5 flex items-center justify-center rounded hover:bg-gray-200 ${
+                    assembly.highlight ? 'text-amber-500' : 'text-gray-300'
+                  }`}
+                  title={t('sidebar.highlightAssembly')}
+                >
+                  {/* X-ray cube icon */}
+                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.6}>
+                    <path strokeLinecap="round" strokeLinejoin="round"
+                      d="M8 6h13v13H8zM3 3h13v13H3zM3 3l5 3M16 3l5 3M3 16l5 3M16 16l5 3" />
+                  </svg>
+                </button>
                 {renamingAssemblyId === assembly.id ? (
                   <input
                     autoFocus
@@ -393,6 +420,14 @@ export function AssemblyDrawer() {
                         else boardItemRefs.current.delete(board.id)
                       }}
                       title={`${board.name} · ${board.width}×${board.height}×${board.depth}mm`}
+                      draggable
+                      onDragStart={(e) => {
+                        e.stopPropagation()
+                        const ids = selectedBoardIds.includes(board.id)
+                          ? assembly.boards.filter((b) => selectedBoardIds.includes(b.id)).map((b) => b.id)
+                          : [board.id]
+                        boardDrag.current = { fromAssemblyId: assembly.id, boardIds: ids }
+                      }}
                       className={`text-xs px-2 py-1 rounded cursor-pointer flex items-center gap-1.5 ${
                         selectedBoardIds.includes(board.id)
                           ? 'bg-blue-100 text-blue-800'

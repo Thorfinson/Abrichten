@@ -168,6 +168,7 @@ function RotationRing({ axis, centre, board, assemblyId }: RingProps): JSX.Eleme
         onPointerDown={(e) => {
           if (e.nativeEvent.button !== 0) return
           e.stopPropagation()
+          e.nativeEvent.stopPropagation() // keep MarqueeSelect from starting
           drag.current.plane = new THREE.Plane(
             ROTATION_PLANE_NORMAL[axis].clone(),
             -ROTATION_PLANE_NORMAL[axis].dot(new THREE.Vector3(...centre))

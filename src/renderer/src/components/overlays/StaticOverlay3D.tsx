@@ -116,6 +116,10 @@ function StaticBox({ board, allBoards, userLoadKg }: { board: Board; allBoards: 
     const isStone = material.category === 'stone'
 
     if (isStone) {
+      // Standing stone (tiles, sink walls: thickness axis horizontal) is glued, not a slab
+      if (Math.min(board.width, board.depth) < board.height) {
+        return { rating: 'ok' as StaticRating, annotation: null, weight: boardWeightKg(board) }
+      }
       // Stone: check if supported, calculate weight for display
       const supports = findSupportBoards(board, allBoards)
       const weight = boardWeightKg(board)
@@ -136,8 +140,27 @@ function StaticBox({ board, allBoards, userLoadKg }: { board: Board; allBoards: 
     const stoneLoad = stoneLoadOnSupport(board, allBoards)
     const totalLoadKg = stoneLoad + userLoadKg
 
-    const thickness = Math.min(board.height, board.depth)
-    const result = calculateStatic(board.width, board.depth, thickness, totalLoadKg, material)
+    // Beam model applies to horizontal members only: span is the longer horizontal
+    // axis, the section is breadth (shorter horizontal axis) × height. Posts and
+    // standing panels (height is the largest dimension) carry load in-plane and are
+    // not rated as beams.
+    if (board.height >= Math.max(board.width, board.depth)) {
+      return { rating: 'ok' as StaticRating, annotation: null, weight: 0 }
+    }
+    // Members lying on the floor or resting on another member along (almost) their
+    // whole length are continuously supported: nothing to rate as a beam.
+    if (board.position.y <= 0.01) return { rating: 'ok' as StaticRating, annotation: null, weight: 0 }
+    const spanAxis: 'x' | 'z' = board.width >= board.depth ? 'x' : 'z'
+    const spanLen = Math.max(board.width, board.depth)
+    const continuous = findSupportBoards(board, allBoards).some((s) => {
+      const lo = Math.max(s.position[spanAxis], board.position[spanAxis])
+      const hi = Math.min(s.position[spanAxis] + (spanAxis === 'x' ? s.width : s.depth), board.position[spanAxis] + spanLen)
+      return hi - lo >= 0.9 * spanLen
+    })
+    if (continuous) return { rating: 'ok' as StaticRating, annotation: null, weight: 0 }
+    const span = Math.max(board.width, board.depth)
+    const breadth = Math.min(board.width, board.depth)
+    const result = calculateStatic(span, breadth, board.height, totalLoadKg, material)
 
     if (result.rating === 'ok') {
       return { rating: 'ok' as StaticRating, annotation: null, weight: 0 }

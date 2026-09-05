@@ -73,19 +73,26 @@ export function UnifiedCanvas({ forceView }: { forceView?: 'front' | 'side' | 't
         {/* Grid + colored origin axes + mm labels */}
         <OrthoGrid forceView={forceView} />
 
-        {/* Boards (skip hidden assemblies) */}
-        {project.assemblies
-          .filter((assembly) => assembly.visible !== false)
-          .flatMap((assembly) =>
-            assembly.boards.map((board) => (
-              <Board3D
-                key={board.id}
-                board={board}
-                assemblyId={assembly.id}
-                orbitRef={orbitRef}
-              />
-            ))
-          )}
+        {/* Boards (skip hidden assemblies). While any assembly is highlighted,
+            all other assemblies are ghosted so the highlighted one reads
+            clearly through the rest of the model. */}
+        {(() => {
+          const anyHighlight = project.assemblies.some((a) => a.highlight && a.visible !== false)
+          return project.assemblies
+            .filter((assembly) => assembly.visible !== false)
+            .flatMap((assembly) =>
+              assembly.boards.map((board) => (
+                <Board3D
+                  key={board.id}
+                  board={board}
+                  assemblyId={assembly.id}
+                  orbitRef={orbitRef}
+                  highlight={assembly.highlight === true}
+                  dimmed={anyHighlight && assembly.highlight !== true}
+                />
+              ))
+            )
+        })()}
 
         {/* Overlays */}
         <StaticOverlay3D />

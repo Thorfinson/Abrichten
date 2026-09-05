@@ -82,7 +82,7 @@ export function evalFormula(
     if (/[A-Za-z_]/.test(peek())) {
       let name = ''
       while (/[A-Za-z0-9_]/.test(peek())) name += consume()
-      return name in params ? params[name] : null
+      return Object.hasOwn(params, name) ? params[name] : null
     }
     return null
   }

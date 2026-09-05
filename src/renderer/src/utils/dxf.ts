@@ -1,10 +1,12 @@
 import type { Board } from '../types/furniture'
+import { clampCutouts } from './geometry'
 
 /**
  * Generates a DXF file (R12/AC1009) with proper machining layers.
  *
  * Layers:
  *   OUTLINE   – board outer profile (router/saw cut line)
+ *   CUTOUT    – through-thickness openings, e.g. cooktop/sink (cut line)
  *   EDGEBAND  – edges with edge banding (cyan, informational)
  *   GRAIN     – grain direction indicator (not cut)
  *   TEXT      – part labels (not cut)
@@ -25,7 +27,7 @@ export function exportDxf(boards: Board[]): string {
 
   // ── TABLES (layer definitions) ──────────────────────────────────────────
   lines.push('0', 'SECTION', '2', 'TABLES')
-  lines.push('0', 'TABLE', '2', 'LAYER', '70', '4')
+  lines.push('0', 'TABLE', '2', 'LAYER', '70', '5')
 
   const layerDef = (name: string, color: number) => [
     '0', 'LAYER',
@@ -34,8 +36,9 @@ export function exportDxf(boards: Board[]): string {
     '62', String(color),
     '6', 'CONTINUOUS'
   ]
-  // ACI colors: 7=white/black, 4=cyan, 2=yellow, 1=red
+  // ACI colors: 7=white/black, 4=cyan, 2=yellow, 1=red, 3=green
   lines.push(...layerDef('OUTLINE',  7))
+  lines.push(...layerDef('CUTOUT',   3))
   lines.push(...layerDef('EDGEBAND', 4))
   lines.push(...layerDef('GRAIN',    2))
   lines.push(...layerDef('TEXT',     1))
@@ -67,6 +70,22 @@ export function exportDxf(boards: Board[]): string {
       lines.push('10', cx.toFixed(3), '20', cy.toFixed(3), '30', '0.0')
     }
     lines.push('0', 'SEQEND')
+
+    // ── Cutouts (CUTOUT layer) — through-thickness openings ──────────────
+    for (const c of clampCutouts(board)) {
+      lines.push('0', 'POLYLINE', '8', 'CUTOUT', '66', '1', '70', '1')
+      const cc: [number, number][] = [
+        [x0 + c.x,           y0 + c.z],
+        [x0 + c.x + c.width, y0 + c.z],
+        [x0 + c.x + c.width, y0 + c.z + c.depth],
+        [x0 + c.x,           y0 + c.z + c.depth]
+      ]
+      for (const [cx, cy] of cc) {
+        lines.push('0', 'VERTEX', '8', 'CUTOUT')
+        lines.push('10', cx.toFixed(3), '20', cy.toFixed(3), '30', '0.0')
+      }
+      lines.push('0', 'SEQEND')
+    }
 
     // ── Edge banding marks (EDGEBAND layer) ───────────────────────────────
     const eb = board.edgeBanding ?? {}

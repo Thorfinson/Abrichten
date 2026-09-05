@@ -5,7 +5,7 @@ import { useUIStore } from '../../store/useUIStore'
 import { computeJointPosition } from '../../utils/geometry'
 import type { JointType } from '../../types/furniture'
 
-const JOINT_TYPES: JointType[] = ['butt', 'miter', 'dado', 'rabbet', 'dowel', 'biscuit', 'screw', 'pocket_screw']
+const JOINT_TYPES: JointType[] = ['butt', 'miter', 'dado', 'rabbet', 'dowel', 'biscuit', 'screw', 'pocket_screw', 'lap', 'glued']
 
 /**
  * Modal dialog for creating a joint between two boards.
@@ -56,6 +56,8 @@ export function JointDialog() {
       screw:        { de: 'Verschraubt',      en: 'Screw' },
       pocket_screw: { de: 'Taschenschraube',  en: 'Pocket Screw' },
       dovetail:     { de: 'Schwalbenschwanz', en: 'Dovetail' },
+      lap:          { de: 'Überblattung',     en: 'Lap joint' },
+      glued:        { de: 'Verleimt',         en: 'Glued' },
     }
     return labels[type][lang]
   }

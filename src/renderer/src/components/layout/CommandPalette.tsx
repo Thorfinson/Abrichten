@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
+import { openProjectFile } from '../../services/projectFile'
 import { useUIStore } from '../../store/useUIStore'
 import { useProjectStore } from '../../store/useProjectStore'
 import { boardPresets, presetToBoard, type BoardPreset } from '../../data/board-presets'
@@ -79,10 +80,7 @@ export function CommandPalette() {
   const ui = useUIStore.getState()
   const handleOpen = async () => {
     setShow(false)
-    const result = await (window as any).electronAPI?.fileOpen()
-    if (result) {
-      try { useProjectStore.getState().loadProject(JSON.parse(result.content)) } catch {}
-    }
+    await openProjectFile()
   }
   const handleSave = async () => {
     setShow(false)
@@ -117,8 +115,8 @@ export function CommandPalette() {
     uiState.selectBoard(aId, newId)
   }
 
-  // Subset of board presets surfaced as palette commands
-  const PALETTE_PRESET_IDS = ['brett', 'regal-seite', 'regal-boden', 'rueckwand', 'multiplex-platte']
+  // Every board preset is surfaced as a palette command
+  const PALETTE_PRESET_IDS = boardPresets.map((p) => p.id)
   const presetCommands: Command[] = PALETTE_PRESET_IDS
     .map((id) => boardPresets.find((p) => p.id === id))
     .filter((p): p is BoardPreset => !!p)

@@ -1,8 +1,8 @@
 export type Unit = 'mm' | 'cm' | 'm'
 export type MaterialCategory = 'solid_wood' | 'panel' | 'stone' | 'glass' | 'metal'
 export type GrainDirection = 'width' | 'height' | 'depth'
-export type JointType = 'butt' | 'miter' | 'dado' | 'rabbet' | 'dowel' | 'biscuit' | 'screw' | 'pocket_screw' | 'dovetail'
-export type FastenerType = 'wood_screw' | 'confirmat' | 'dowel_pin' | 'biscuit' | 'pocket_screw'
+export type JointType = 'butt' | 'miter' | 'dado' | 'rabbet' | 'dowel' | 'biscuit' | 'screw' | 'pocket_screw' | 'dovetail' | 'lap' | 'glued'
+export type FastenerType = 'wood_screw' | 'confirmat' | 'dowel_pin' | 'biscuit' | 'pocket_screw' | 'angle_bracket' | 'joist_hanger' | 'nail'
 export type HeadType = 'countersunk' | 'pan' | 'hex'
 export type FastenerMaterial = 'steel' | 'stainless' | 'brass'
 
@@ -24,6 +24,19 @@ export interface AttachedHardware {
   quantity: number
 }
 
+/** Rectangular cutout through the full board thickness (height axis),
+ *  e.g. for a cooktop or sink in a worktop. x/z are measured from the
+ *  board's min-corner in the width/depth plane.
+ *  ponytail: rectangles only, always through-thickness — polygonal or
+ *  partial-depth cutouts would need a CSG library. */
+export interface BoardCutout {
+  id: string
+  x: number      // mm from board left edge (width axis)
+  z: number      // mm from board front edge (depth axis)
+  width: number  // mm along width axis
+  depth: number  // mm along depth axis
+}
+
 export interface Board {
   id: string
   name: string
@@ -36,6 +49,7 @@ export interface Board {
   color: string
   grainDirection?: GrainDirection
   edgeBanding?: EdgeBanding
+  cutouts?: BoardCutout[]
   hardware?: AttachedHardware[]
   // Formula strings for parametric dimensions (raw expression, e.g. "H - 40")
   widthFormula?: string
@@ -47,6 +61,8 @@ export interface Assembly {
   id: string
   name: string
   visible: boolean
+  /** X-ray highlight: group edges drawn through all other geometry */
+  highlight?: boolean
   boards: Board[]
   joints: Joint[]
 }
@@ -58,6 +74,8 @@ export interface Joint {
   boardB: string
   position: Vec3
   fasteners: Fastener[]
+  /** Workshop note, e.g. "schräg, vorgebohrt". Joints may reference boards in other assemblies. */
+  note?: string
 }
 
 export interface Fastener {

@@ -20,11 +20,13 @@ function makeRotator(rx: number, ry: number, rz: number) {
   const cosX = Math.cos(ax), sinX = Math.sin(ax)
   const cosY = Math.cos(ay), sinY = Math.sin(ay)
   const cosZ = Math.cos(az), sinZ = Math.sin(az)
-  // Combined XYZ rotation matrix
+  // Three.js Euler order 'XYZ' (R = Rx * Ry * Rz), identical to <mesh rotation={[x,y,z]}>
+  // in Board3D. The previous Rz*Ry*Rx composition disagreed for multi-axis rotations,
+  // so collision / dimension overlays drifted from what was rendered.
   return (x: number, y: number, z: number) => ({
-    x: (cosY * cosZ) * x + (sinX * sinY * cosZ - cosX * sinZ) * y + (cosX * sinY * cosZ + sinX * sinZ) * z,
-    y: (cosY * sinZ) * x + (sinX * sinY * sinZ + cosX * cosZ) * y + (cosX * sinY * sinZ - sinX * cosZ) * z,
-    z: (-sinY) * x + (sinX * cosY) * y + (cosX * cosY) * z
+    x: (cosY * cosZ) * x - (cosY * sinZ) * y + sinY * z,
+    y: (cosX * sinZ + sinX * cosZ * sinY) * x + (cosX * cosZ - sinX * sinZ * sinY) * y - (sinX * cosY) * z,
+    z: (sinX * sinZ - cosX * cosZ * sinY) * x + (sinX * cosZ + cosX * sinZ * sinY) * y + (cosX * cosY) * z
   })
 }
 

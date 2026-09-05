@@ -1,5 +1,5 @@
 import type { MeasurementPoint } from '../types/measurement'
-import type { Board, Vec3 } from '../types/furniture'
+import type { Board, BoardCutout, Vec3 } from '../types/furniture'
 
 // ── Joint geometry ────────────────────────────────────────────────────────────
 
@@ -102,4 +102,18 @@ export function polygonArea(points: MeasurementPoint[]): number {
     area -= points[j].x * points[i].y
   }
   return Math.abs(area) / 2
+}
+
+/** Cutouts clipped to the board's width/depth plane; slivers under 1 mm are dropped.
+ *  Single source of truth for mesh, DXF and any other consumer. */
+export function clampCutouts(board: Board): BoardCutout[] {
+  return (board.cutouts ?? []).flatMap((c) => {
+    const x0 = Math.max(0, c.x)
+    const z0 = Math.max(0, c.z)
+    const x1 = Math.min(board.width, c.x + c.width)
+    const z1 = Math.min(board.depth, c.z + c.depth)
+    return x1 - x0 >= 1 && z1 - z0 >= 1
+      ? [{ ...c, x: x0, z: z0, width: x1 - x0, depth: z1 - z0 }]
+      : []
+  })
 }

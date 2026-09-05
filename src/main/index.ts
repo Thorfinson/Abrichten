@@ -14,8 +14,7 @@ function createWindow(): void {
     title: 'Abrichten',
     backgroundColor: '#27272a',
     webPreferences: {
-      preload: join(__dirname, '../preload/index.js'),
-      sandbox: false
+      preload: join(__dirname, '../preload/index.js')
     }
   })
 

@@ -22,6 +22,7 @@
     "addJoint": "Add Joint\u2026",
     "createJoint": "Create Joint",
     "jointType": "Joint Type",
+    "highlightAssembly": "Highlight – edges visible through everything",
     "dragToReorder": "Drag to reorder"
   },
   "tools": {
@@ -50,6 +51,9 @@
     "edgeE1": "Front Edge (Width)",
     "edgeE2": "Back Edge (Width)",
     "edgeE3": "Left Edge (Depth)",
+    "cutouts": "Cutouts",
+    "addCutout": "Add cutout (e.g. cooktop, sink)",
+    "removeCutout": "Remove cutout",
     "edgeE4": "Right Edge (Depth)"
   },
   "materials": {
@@ -101,6 +105,18 @@
     "screw": "Screw",
     "pocket_screw": "Pocket Screw",
     "noJoints": "No joints.",
+    "lap": "Lap joint",
+    "glued": "Glued",
+    "note": "Note",
+    "f_wood_screw": "Wood screw",
+    "f_confirmat": "Confirmat",
+    "f_dowel_pin": "Dowel",
+    "f_biscuit": "Biscuit",
+    "f_pocket_screw": "Pocket screw",
+    "f_angle_bracket": "Angle bracket",
+    "f_joist_hanger": "Joist hanger",
+    "f_nail": "Staple/nail",
+    "list": "Joints",
     "delete": "Remove joint"
   },
   "collision": {
@@ -123,6 +139,9 @@
     "grain": "Grain",
     "edgeBanding": "Edge Banding",
     "edgeBandingTotal": "Total edge banding",
+    "fasteners": "Fasteners",
+    "fastenerSize": "Size (mm)",
+    "qty": "Qty",
     "edgeBandingM": "m edge banding"
   },
   "measurements": {
@@ -258,6 +277,7 @@
     "fitView": "Fit View",
     "saved": "Saved",
     "confirmNew": "Unsaved changes will be lost. Create new project?",
+    "invalidProjectFile": "Invalid project file: {{reason}}",
     "confirmOpen": "Unsaved changes will be lost. Open file?"
   },
   "presets": {
@@ -272,7 +292,12 @@
     "multiplexPlatte": "Multiplex Panel",
     "arbeitsplatteGranit": "Granite Countertop",
     "arbeitsplatteKeramik": "Ceramic Countertop",
-    "fensterbank": "Window Sill"
+    "fensterbank": "Window Sill",
+    "appliances": "Appliances",
+    "herd": "Stove",
+    "kochfeld": "Cooktop",
+    "spuele": "Sink",
+    "geschirrspueler": "Dishwasher"
   },
   "units": {
     "mm": "mm",

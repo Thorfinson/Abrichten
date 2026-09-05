@@ -1,3 +1,4 @@
+import { escapeHtml } from './textSafety'
 import type { Board } from '../types/furniture'
 import { getMaterialById } from '../data/materials'
 
@@ -191,7 +192,7 @@ export function nestingToSvg(sheet: NestingSheet, scale = 0.15): string {
   const rects = sheet.placed.map((p) => {
     const x = p.x * scale, y = p.y * scale
     const w = p.w * scale, h = p.h * scale
-    const label = p.name.slice(0, 18)
+    const label = escapeHtml(p.name.slice(0, 18)) // rendered via innerHTML in NestingPanel
     const rotMark = p.rotated ? ' ↺' : ''
     return `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${w.toFixed(1)}" height="${h.toFixed(1)}" fill="#dbeafe" stroke="#2563eb" stroke-width="0.5"/>
 <text x="${(x + w / 2).toFixed(1)}" y="${(y + h / 2).toFixed(1)}" font-size="6" text-anchor="middle" dominant-baseline="middle" fill="#1e40af">${label}${rotMark}</text>`

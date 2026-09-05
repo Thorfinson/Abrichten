@@ -170,6 +170,7 @@ function TranslateArrow({ arrow, centre, board, assemblyId }: ArrowProps): JSX.E
         onPointerDown={(e) => {
           if (e.nativeEvent.button !== 0) return
           e.stopPropagation()
+          e.nativeEvent.stopPropagation() // keep MarqueeSelect from starting
           startDrag(e.nativeEvent.clientX, e.nativeEvent.clientY, e.nativeEvent.pointerId)
         }}
         onPointerEnter={() => { setHover(true); gl.domElement.style.cursor = 'grab' }}
@@ -196,6 +197,7 @@ function TranslateArrow({ arrow, centre, board, assemblyId }: ArrowProps): JSX.E
         onPointerDown={(e) => {
           if (e.nativeEvent.button !== 0) return
           e.stopPropagation()
+          e.nativeEvent.stopPropagation() // keep MarqueeSelect from starting
           startDrag(e.nativeEvent.clientX, e.nativeEvent.clientY, e.nativeEvent.pointerId)
         }}
         onPointerEnter={() => { setHover(true); gl.domElement.style.cursor = 'grab' }}

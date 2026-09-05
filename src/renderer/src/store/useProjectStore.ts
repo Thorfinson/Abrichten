@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { temporal } from 'zundo'
 import type { Project, Assembly, Board, Joint, Unit, Vec3, Material, CustomHardwareItem } from '../types/furniture'
+import { validateProject } from '../utils/validateProject'
 
 function uid(): string {
   return Math.random().toString(36).slice(2, 10)
@@ -10,6 +11,18 @@ function now(): string {
   return new Date().toISOString()
 }
 
+/** Drop joints referencing any of the given boards (joints may span assemblies). */
+function pruneJoints(a: Assembly, ids: Set<string>): Assembly {
+  return a.joints.some((j) => ids.has(j.boardA) || ids.has(j.boardB))
+    ? { ...a, joints: a.joints.filter((j) => !ids.has(j.boardA) && !ids.has(j.boardB)) }
+    : a
+}
+
+/** Remove boards from an assembly together with any joint that referenced them. */
+function withoutBoards(a: Assembly, ids: Set<string>): Assembly {
+  return pruneJoints({ ...a, boards: a.boards.filter((b) => !ids.has(b.id)) }, ids)
+}
+
 interface ProjectState {
   project: Project
 
@@ -17,7 +30,7 @@ interface ProjectState {
   setProjectName: (name: string) => void
   setDisplayUnit: (unit: Unit) => void
   setLanguage: (lang: 'de' | 'en') => void
-  loadProject: (project: Project) => void
+  loadProject: (project: unknown) => void
   resetProject: () => void
 
   // Assembly
@@ -26,6 +39,7 @@ interface ProjectState {
   renameAssembly: (id: string, name: string) => void
   reorderAssemblies: (fromIdx: number, toIdx: number) => void
   toggleAssemblyVisibility: (id: string) => void
+  toggleAssemblyHighlight: (id: string) => void
 
   // Board (single)
   addBoard: (assemblyId: string, board: Omit<Board, 'id'>) => string
@@ -44,6 +58,7 @@ interface ProjectState {
 
   // Joint
   addJoint: (assemblyId: string, joint: Omit<Joint, 'id'>) => string
+  removeJoint: (assemblyId: string, jointId: string) => void
 
   // Board batch (atomic)
   addBoardsBatch: (assemblyId: string, boards: Omit<Board, 'id'>[]) => string[]
@@ -105,7 +120,7 @@ export const useProjectStore = create<ProjectState>()(
         set((s) => ({ project: { ...s.project, language: lang, updatedAt: now() } })),
 
       loadProject: (project) =>
-        set({ project }),
+        set({ project: validateProject(project) }),
 
       resetProject: () =>
         set({ project: createEmptyProject() }),
@@ -160,6 +175,17 @@ export const useProjectStore = create<ProjectState>()(
           }
         })),
 
+      toggleAssemblyHighlight: (id) =>
+        set((s) => ({
+          project: {
+            ...s.project,
+            updatedAt: now(),
+            assemblies: s.project.assemblies.map((a) =>
+              a.id === id ? { ...a, highlight: !a.highlight } : a
+            )
+          }
+        })),
+
       addBoard: (assemblyId, board) => {
         const id = uid()
         set((s) => ({
@@ -201,8 +227,8 @@ export const useProjectStore = create<ProjectState>()(
             updatedAt: now(),
             assemblies: s.project.assemblies.map((a) =>
               a.id === assemblyId
-                ? { ...a, boards: a.boards.filter((b) => b.id !== boardId) }
-                : a
+                ? withoutBoards(a, new Set([boardId]))
+                : pruneJoints(a, new Set([boardId]))
             )
           }
         })),
@@ -248,8 +274,8 @@ export const useProjectStore = create<ProjectState>()(
             updatedAt: now(),
             assemblies: s.project.assemblies.map((a) =>
               a.id === assemblyId
-                ? { ...a, boards: a.boards.filter((b) => !idSet.has(b.id)) }
-                : a
+                ? withoutBoards(a, idSet)
+                : pruneJoints(a, idSet)
             )
           }
         }))
@@ -378,6 +404,19 @@ export const useProjectStore = create<ProjectState>()(
         }))
         return id
       },
+
+      removeJoint: (assemblyId, jointId) =>
+        set((s) => ({
+          project: {
+            ...s.project,
+            updatedAt: now(),
+            assemblies: s.project.assemblies.map((a) =>
+              a.id === assemblyId
+                ? { ...a, joints: a.joints.filter((j) => j.id !== jointId) }
+                : a
+            )
+          }
+        })),
 
       addBoardsBatch: (assemblyId, boards) => {
         const ids = boards.map(() => uid())

@@ -2,6 +2,8 @@ import { useEffect } from 'react'
 import { useUIStore } from '../store/useUIStore'
 import { useProjectStore } from '../store/useProjectStore'
 import type { ToolMode } from '../types/measurement'
+import { openProjectFile } from '../services/projectFile'
+import i18n from '../i18n'
 
 export function useKeyboard() {
   useEffect(() => {
@@ -176,25 +178,8 @@ export function useKeyboard() {
       if (e.ctrlKey && e.key === 'o') {
         e.preventDefault()
         const hasBoards = proj.project.assemblies.some((a) => a.boards.length > 0)
-        if (hasBoards) {
-          // Use a simple confirm — i18n not available in keyboard handler, use hardcoded fallback
-          const msg = proj.project.language === 'en'
-            ? 'Unsaved changes will be lost. Open file?'
-            : 'Ungespeicherte Änderungen gehen verloren. Datei öffnen?'
-          if (!window.confirm(msg)) return
-        }
-        window.electronAPI?.fileOpen()
-          .then((result: any) => {
-            if (result) {
-              try {
-                const project = JSON.parse(result.content)
-                proj.loadProject(project)
-              } catch (err) {
-                console.error('Failed to parse project file:', err)
-              }
-            }
-          })
-          .catch((err) => console.error('Failed to open file:', err))
+        if (hasBoards && !window.confirm(i18n.t('actions.confirmOpen'))) return
+        void openProjectFile()
         return
       }
 

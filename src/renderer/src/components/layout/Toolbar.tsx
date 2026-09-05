@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { openProjectFile } from '../../services/projectFile'
 import { useStore } from 'zustand'
 import { useProjectStore } from '../../store/useProjectStore'
 import { useUIStore } from '../../store/useUIStore'
@@ -59,10 +60,7 @@ export function Toolbar() {
   const handleOpen = async () => {
     const hasBoards = project.assemblies.some((a) => a.boards.length > 0)
     if (hasBoards && !window.confirm(t('actions.confirmOpen'))) return
-    try {
-      const result = await (window as any).electronAPI?.fileOpen()
-      if (result) useProjectStore.getState().loadProject(JSON.parse(result.content))
-    } catch (err) { console.error('Failed to open project:', err) }
+    await openProjectFile()
   }
 
   const handleSave = async () => {

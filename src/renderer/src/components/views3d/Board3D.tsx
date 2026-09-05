@@ -3,7 +3,7 @@ import { useThree, useFrame } from '@react-three/fiber'
 import { useUIStore } from '../../store/useUIStore'
 import { useProjectStore } from '../../store/useProjectStore'
 import { TransformControls, Line, Html } from '@react-three/drei'
-import { snapToGrid } from '../../utils/geometry'
+import { snapToGrid, clampCutouts } from '../../utils/geometry'
 import { getMaterialById } from '../../data/materials'
 import { beginTransform, endTransform } from '../../utils/transformLock'
 import { setHoveringGizmo, isHoveringGizmo } from '../../utils/gizmoHover'
@@ -16,6 +16,10 @@ interface Board3DProps {
   board: Board
   assemblyId: string
   orbitRef?: React.RefObject<any>
+  /** X-ray group highlight: edges drawn on top of all other geometry */
+  highlight?: boolean
+  /** Another assembly is highlighted — ghost this board so it reads through */
+  dimmed?: boolean
 }
 
 /** Axis constraints for dragging in each ortho view */
@@ -32,7 +36,7 @@ const DRAG_PLANE_NORMALS: Record<Exclude<ViewMode, '3d'>, THREE.Vector3> = {
   top:   new THREE.Vector3(0, 1, 0)
 }
 
-export function Board3D({ board, assemblyId, orbitRef }: Board3DProps) {
+export function Board3D({ board, assemblyId, orbitRef, highlight = false, dimmed = false }: Board3DProps) {
   const meshRef = useRef<THREE.Mesh>(null)
   const transformRef = useRef<any>(null)
   const dragStartPosRef = useRef<THREE.Vector3>(new THREE.Vector3())
@@ -68,11 +72,9 @@ export function Board3D({ board, assemblyId, orbitRef }: Board3DProps) {
   const isOrtho = activeView !== '3d'
 
   // Count joints for this board in the active assembly
-  const jointCount = useProjectStore((s) => {
-    const asm = s.project.assemblies.find((a) => a.id === assemblyId)
-    if (!asm) return 0
-    return asm.joints.filter((j) => j.boardA === board.id || j.boardB === board.id).length
-  })
+  const jointCount = useProjectStore((s) =>
+    s.project.assemblies.reduce((n, a) => n + a.joints.filter((j) => j.boardA === board.id || j.boardB === board.id).length, 0)
+  )
 
   const { camera, gl, raycaster } = useThree()
 
@@ -314,6 +316,10 @@ export function Board3D({ board, assemblyId, orbitRef }: Board3DProps) {
     // Only left-click drag
     if (e.nativeEvent.button !== 0) return
     e.stopPropagation()
+    // Also stop the NATIVE event: MarqueeSelect listens on the canvas
+    // container, and boards live in the same <canvas> element — without this
+    // a board drag silently runs the marquee and re-selects on pointerup.
+    e.nativeEvent.stopPropagation()
 
     // Select first
     if (e.nativeEvent.ctrlKey || e.nativeEvent.metaKey) {
@@ -337,6 +343,39 @@ export function Board3D({ board, assemblyId, orbitRef }: Board3DProps) {
       gl.domElement.setPointerCapture(e.nativeEvent.pointerId)
     }
   }
+
+  // Board geometry: plain box, or an extruded profile with rectangular holes
+  // when cutouts are defined (cooktop / sink openings in a worktop).
+  const boardGeometry = useMemo(() => {
+    const cuts = clampCutouts(board)
+    if (cuts.length === 0) {
+      return new THREE.BoxGeometry(board.width, board.height, board.depth)
+    }
+    const shape = new THREE.Shape()
+    shape.moveTo(0, 0)
+    shape.lineTo(board.width, 0)
+    shape.lineTo(board.width, board.depth)
+    shape.lineTo(0, board.depth)
+    shape.closePath()
+    for (const c of cuts) {
+      const x0 = c.x, z0 = c.z, x1 = c.x + c.width, z1 = c.z + c.depth
+      const hole = new THREE.Path()
+      hole.moveTo(x0, z0)
+      hole.lineTo(x0, z1)
+      hole.lineTo(x1, z1)
+      hole.lineTo(x1, z0)
+      hole.closePath()
+      shape.holes.push(hole)
+    }
+    const geo = new THREE.ExtrudeGeometry(shape, { depth: board.height, bevelEnabled: false })
+    // Shape lives in the (width, depth) plane, extruded along +z by height.
+    // Rotate so the extrusion becomes the y-axis, then center like BoxGeometry.
+    geo.rotateX(-Math.PI / 2)
+    geo.translate(-board.width / 2, -board.height / 2, board.depth / 2)
+    return geo
+  }, [board.width, board.height, board.depth, board.cutouts])
+
+  useEffect(() => () => boardGeometry.dispose(), [boardGeometry])
 
   // Grain direction arrow: half-length arrow along the grain axis
   const grainArrow = useMemo(() => {
@@ -405,18 +444,25 @@ export function Board3D({ board, assemblyId, orbitRef }: Board3DProps) {
           assemblyId
         })
       }}
+      geometry={boardGeometry}
     >
-      <boxGeometry args={[board.width, board.height, board.depth]} />
       <meshStandardMaterial
         color={board.color}
-        transparent={!isSelected}
-        opacity={isSelected ? 1 : 0.85}
-        emissive={isSelected ? '#2563eb' : '#000000'}
-        emissiveIntensity={isSelected ? 0.15 : 0}
+        transparent={!isSelected || dimmed}
+        opacity={isSelected && !dimmed ? 1 : dimmed ? 0.45 : 0.85}
+        depthWrite={!dimmed}
+        emissive={isSelected ? '#2563eb' : highlight ? '#f59e0b' : '#000000'}
+        emissiveIntensity={isSelected ? 0.15 : highlight ? 0.25 : 0}
       />
+      {highlight && (
+        <lineSegments renderOrder={998}>
+          <edgesGeometry args={[boardGeometry]} />
+          <lineBasicMaterial color="#f59e0b" depthTest={false} depthWrite={false} />
+        </lineSegments>
+      )}
       {isSelected && (
         <lineSegments renderOrder={isOrtho ? 2 : 0}>
-          <edgesGeometry args={[new THREE.BoxGeometry(board.width, board.height, board.depth)]} />
+          <edgesGeometry args={[boardGeometry]} />
           <lineBasicMaterial color="#2563eb" depthTest={!isOrtho} />
         </lineSegments>
       )}

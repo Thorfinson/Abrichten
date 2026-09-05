@@ -3,7 +3,7 @@ import { useProjectStore } from '../../store/useProjectStore'
 import { useUIStore } from '../../store/useUIStore'
 import { materials, getMaterialById } from '../../data/materials'
 import { DimInput, Vec3Input } from '../layout/DimensionInputs'
-import type { Board, MaterialCategory, Vec3 } from '../../types/furniture'
+import type { Board, BoardCutout, Fastener, MaterialCategory, Vec3 } from '../../types/furniture'
 
 /** Dark <option>/<optgroup> styling so native dropdowns are readable on the
  *  glass card (Chromium renders option lists with the OS-default white bg,
@@ -17,7 +17,7 @@ const OPTGROUP_DARK = 'bg-gray-800 text-white/50'
  * common editing actions (name, dimensions, material, duplicate, delete).
  */
 export function FloatingPropertiesCard() {
-  const { i18n } = useTranslation()
+  const { t, i18n } = useTranslation()
   const lang = i18n.language as 'de' | 'en'
 
   const project              = useProjectStore((s) => s.project)
@@ -27,6 +27,7 @@ export function FloatingPropertiesCard() {
   const removeBoard          = useProjectStore((s) => s.removeBoard)
   const removeBoards         = useProjectStore((s) => s.removeBoards)
   const moveBoardsToAssembly = useProjectStore((s) => s.moveBoardsToAssembly)
+  const removeJoint          = useProjectStore((s) => s.removeJoint)
 
   const selectedBoardIds    = useUIStore((s) => s.selectedBoardIds)
   const selectedAssemblyId  = useUIStore((s) => s.selectedAssemblyId)
@@ -172,6 +173,41 @@ export function FloatingPropertiesCard() {
     handleUpdate({ rotation: rot })
   }
 
+  // ── Cutouts (through-thickness openings, e.g. cooktop / sink) ────────────
+  const cutouts = board.cutouts ?? []
+
+  const handleAddCutout = () => {
+    // Default: cooktop-sized opening centered in the board's width/depth plane
+    const w = Math.min(560, Math.max(50, board.width - 80))
+    const d = Math.min(490, Math.max(50, board.depth - 80))
+    const cut: BoardCutout = {
+      id: crypto.randomUUID(),
+      x: Math.round((board.width - w) / 2),
+      z: Math.round((board.depth - d) / 2),
+      width: w,
+      depth: d
+    }
+    handleUpdate({ cutouts: [...cutouts, cut] })
+  }
+
+  const handleCutoutChange = (id: string, field: keyof Omit<BoardCutout, 'id'>, value: number) => {
+    if (isNaN(value)) return
+    handleUpdate({
+      cutouts: cutouts.map((c) => (c.id === id ? { ...c, [field]: value } : c))
+    })
+  }
+
+  const handleRemoveCutout = (id: string) => {
+    handleUpdate({ cutouts: cutouts.filter((c) => c.id !== id) })
+  }
+
+  // Joints may span assemblies: collect from all of them, remember the owner for removal
+  const boardJoints = assemblies.flatMap((a) =>
+    a.joints.filter((j) => j.boardA === board.id || j.boardB === board.id).map((j) => ({ j, ownerId: a.id }))
+  )
+  const allBoards = assemblies.flatMap((a) => a.boards)
+  const fastenerLabel = (f: Fastener) => `${f.quantity}× ${t(`joints.f_${f.type}`)} ${f.diameter}×${f.length}`
+
   return (
     <div
       className="absolute bottom-4 right-4 z-30 w-60 max-h-[72vh] overflow-y-auto rounded-xl border border-white/10 shadow-2xl bg-gray-900/92 backdrop-blur-md text-white flex flex-col"
@@ -293,6 +329,77 @@ export function FloatingPropertiesCard() {
           </select>
         </div>
       </div>
+
+      {/* Cutouts */}
+      <div className="px-3 py-1">
+        <div className="flex items-center justify-between mb-1.5">
+          <div className="text-[9px] font-bold text-white/30 uppercase tracking-widest">
+            {t('board.cutouts')}
+          </div>
+          <button
+            onClick={handleAddCutout}
+            className="text-[10px] text-blue-400 hover:text-blue-300 leading-none"
+            title={t('board.addCutout')}
+          >
+            + {t('actions.new')}
+          </button>
+        </div>
+        {cutouts.map((c, idx) => (
+          <div key={c.id} className="flex items-center gap-1 mb-1">
+            <span className="text-[9px] text-white/40 w-3 shrink-0">{idx + 1}</span>
+            {([
+              ['x', c.x, 'X', board.width],
+              ['z', c.z, 'Y', board.depth],
+              ['width', c.width, t('board.width')[0], board.width - c.x],
+              ['depth', c.depth, t('board.depth')[0], board.depth - c.z]
+            ] as const).map(([field, value, label, max]) => (
+              <label key={field} className="flex items-center gap-0.5 flex-1 min-w-0" title={`${label} (mm)`}>
+                <span className="text-[9px] text-white/40">{label}</span>
+                <input
+                  type="number"
+                  min={0}
+                  max={Math.max(0, max)}
+                  value={value}
+                  onChange={(e) => handleCutoutChange(c.id, field, parseFloat(e.target.value))}
+                  className="w-full min-w-0 text-[10px] bg-white/8 border border-white/15 text-white rounded px-1 py-0.5 outline-none"
+                />
+              </label>
+            ))}
+            <button
+              onClick={() => handleRemoveCutout(c.id)}
+              className="text-white/40 hover:text-red-400 text-[11px] leading-none shrink-0"
+              title={t('board.removeCutout')}
+            >✕</button>
+          </div>
+        ))}
+      </div>
+
+      {/* Joints touching this board — the only place a joint can be removed */}
+      {boardJoints.length > 0 && (
+        <div className="px-3 py-1">
+          <div className="text-[9px] font-bold text-white/30 uppercase tracking-widest mb-1.5">
+            {t('joints.list')}
+          </div>
+          {boardJoints.map(({ j, ownerId }) => {
+            const partnerId = j.boardA === board.id ? j.boardB : j.boardA
+            const partner = allBoards.find((b) => b.id === partnerId)
+            const detail = [...j.fasteners.map(fastenerLabel), j.note].filter(Boolean).join(', ')
+            return (
+              <div key={j.id} className="flex items-start gap-1 mb-1 text-[10px]">
+                <span className="flex-1 min-w-0 text-white/70">
+                  <span className="block truncate">{t(`joints.${j.type}`)} · {partner?.name ?? '?'}</span>
+                  {detail && <span className="block truncate text-white/40" title={detail}>{detail}</span>}
+                </span>
+                <button
+                  onClick={() => removeJoint(ownerId, j.id)}
+                  className="text-white/40 hover:text-red-400 text-[11px] leading-none shrink-0"
+                  title={t('joints.delete')}
+                >✕</button>
+              </div>
+            )
+          })}
+        </div>
+      )}
 
       {/* Building group */}
       {assemblyPicker}

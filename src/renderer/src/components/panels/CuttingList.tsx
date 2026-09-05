@@ -1,3 +1,4 @@
+import { csvCell, escapeHtml } from '../../utils/textSafety'
 import { useState, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useProjectStore } from '../../store/useProjectStore'
@@ -83,8 +84,6 @@ export function CuttingList() {
   const [filterMaterial, setFilterMaterial] = useState('')
   const [groupIdentical, setGroupIdentical] = useState(false)
   const [exportToast, setExportToast] = useState<string | null>(null)
-
-  if (!showCuttingList) return null
 
   const showToast = (msg: string) => {
     setExportToast(msg)
@@ -190,6 +189,21 @@ export function CuttingList() {
     return result
   }, [rawRows])
 
+  // Fastener summary over all joints (joints may span assemblies)
+  const fastenerRows = useMemo(() => {
+    const map = new Map<string, { type: string; size: string; qty: number }>()
+    for (const a of project.assemblies) for (const j of a.joints) for (const f of j.fasteners) {
+      const key = `${f.type}|${f.diameter}|${f.length}`
+      const prev = map.get(key)
+      map.set(key, { type: f.type, size: `${f.diameter} × ${f.length}`, qty: (prev?.qty ?? 0) + f.quantity })
+    }
+    return [...map.values()].sort((p, q) => p.type.localeCompare(q.type) || p.size.localeCompare(q.size))
+  }, [project.assemblies])
+
+  // Early return only AFTER every hook: a conditional return above the useMemos
+  // changes the hook count between renders and crashes React (#310).
+  if (!showCuttingList) return null
+
   const buildCsvRows = (rows: Row[]) => {
     const headers = [
       t('cutting.nr'),
@@ -203,7 +217,7 @@ export function CuttingList() {
       t('cutting.edgeBanding'),
       ...(groupIdentical ? ['Qty'] : [])
     ]
-    const csvRows = [headers.join(';')]
+    const csvRows = [headers.map(csvCell).join(';')]
     let rowNr = 0
     for (const r of rows) {
       rowNr++
@@ -211,12 +225,17 @@ export function CuttingList() {
         rowNr, r.assemblyName, r.name, r.material,
         r.width, r.height, r.depth, r.grain, r.ebLabel,
         ...(groupIdentical ? [r.qty ?? 1] : [])
-      ].join(';'))
+      ].map(csvCell).join(';'))
     }
     if (totalEdgeBandingMm > 0) {
       csvRows.push('')
       csvRows.push([t('cutting.edgeBandingTotal'), '', '', '', '', '', '',
-        `${(totalEdgeBandingMm / 1000).toFixed(2)} m`].join(';'))
+        `${(totalEdgeBandingMm / 1000).toFixed(2)} m`].map(csvCell).join(';'))
+    }
+    if (fastenerRows.length > 0) {
+      csvRows.push('')
+      csvRows.push([t('cutting.fasteners'), t('cutting.fastenerSize'), t('cutting.qty')].map(csvCell).join(';'))
+      for (const f of fastenerRows) csvRows.push([t(`joints.f_${f.type}`), f.size, f.qty].map(csvCell).join(';'))
     }
     return csvRows.join('\n')
   }
@@ -228,14 +247,14 @@ export function CuttingList() {
     const rows = sorted.map((r, i) => {
       const cols = [i + 1, r.name, r.assemblyName, r.material, r.width, r.height, r.depth]
       if (groupIdentical) cols.push((r as any).qty ?? 1)
-      return `<tr>${cols.map((c) => `<td>${c}</td>`).join('')}</tr>`
+      return `<tr>${cols.map((c) => `<td>${escapeHtml(String(c))}</td>`).join('')}</tr>`
     })
     const html = `<!DOCTYPE html><html><head><meta charset="utf-8">
-<title>${project.name} - ${lang === 'de' ? 'Zuschnittliste' : 'Cutting List'}</title>
+<title>${escapeHtml(project.name)} - ${lang === 'de' ? 'Zuschnittliste' : 'Cutting List'}</title>
 <style>body{font:12px sans-serif;margin:20px}h1{font-size:14px;margin-bottom:8px}
 table{border-collapse:collapse;width:100%}th,td{border:1px solid #ccc;padding:4px 6px;text-align:left}
 th{background:#f0f0f0}@media print{@page{size:A4;margin:15mm}}</style></head>
-<body><h1>${project.name} — ${lang === 'de' ? 'Zuschnittliste' : 'Cutting List'}</h1>
+<body><h1>${escapeHtml(project.name)} — ${lang === 'de' ? 'Zuschnittliste' : 'Cutting List'}</h1>
 <table><thead><tr>${colHeaders.map((h) => `<th>${h}</th>`).join('')}</tr></thead>
 <tbody>${rows.join('')}</tbody></table>
 <script>window.onload=function(){window.print()}</script></body></html>`
@@ -399,6 +418,29 @@ th{background:#f0f0f0}@media print{@page{size:A4;margin:15mm}}</style></head>
                 </tr>
               </tfoot>
             </table>
+          )}
+          {fastenerRows.length > 0 && (
+            <div className="mt-4">
+              <h3 className="text-xs font-bold text-gray-600 mb-1">{t('cutting.fasteners')}</h3>
+              <table className="text-xs border-collapse">
+                <thead className="bg-gray-100">
+                  <tr>
+                    <th className="border border-gray-300 px-2 py-1 text-left">{t('joints.fastener')}</th>
+                    <th className="border border-gray-300 px-2 py-1 text-left">{t('cutting.fastenerSize')}</th>
+                    <th className="border border-gray-300 px-2 py-1 text-right">{t('cutting.qty')}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {fastenerRows.map((f) => (
+                    <tr key={`${f.type}-${f.size}`}>
+                      <td className="border border-gray-300 px-2 py-1">{t(`joints.f_${f.type}`)}</td>
+                      <td className="border border-gray-300 px-2 py-1 font-mono">{f.size}</td>
+                      <td className="border border-gray-300 px-2 py-1 text-right font-mono font-bold">{f.qty}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           )}
         </div>
 

@@ -22,6 +22,7 @@
     "addJoint": "Verbindung erstellen\u2026",
     "createJoint": "Verbindung erstellen",
     "jointType": "Verbindungsart",
+    "highlightAssembly": "Hervorheben – Kanten durch alles sichtbar",
     "dragToReorder": "Ziehen zum Sortieren"
   },
   "tools": {
@@ -50,6 +51,9 @@
     "edgeE1": "Vorderkante (Breite)",
     "edgeE2": "Hinterkante (Breite)",
     "edgeE3": "Linkskante (Tiefe)",
+    "cutouts": "Ausschnitte",
+    "addCutout": "Ausschnitt hinzufügen (z. B. Kochfeld, Spüle)",
+    "removeCutout": "Ausschnitt entfernen",
     "edgeE4": "Rechtskante (Tiefe)"
   },
   "materials": {
@@ -101,6 +105,18 @@
     "screw": "Schraubenverbindung",
     "pocket_screw": "Taschenschraube",
     "noJoints": "Keine Verbindungen.",
+    "lap": "Überblattung",
+    "glued": "Verleimt",
+    "note": "Hinweis",
+    "f_wood_screw": "Holzschraube",
+    "f_confirmat": "Confirmat",
+    "f_dowel_pin": "Holzdübel",
+    "f_biscuit": "Lamello",
+    "f_pocket_screw": "Taschenlochschraube",
+    "f_angle_bracket": "Winkel",
+    "f_joist_hanger": "Balkenschuh",
+    "f_nail": "Klammer/Nagel",
+    "list": "Verbindungen",
     "delete": "Verbindung entfernen"
   },
   "collision": {
@@ -123,6 +139,9 @@
     "grain": "Faser",
     "edgeBanding": "Kantenband",
     "edgeBandingTotal": "Kantenband gesamt",
+    "fasteners": "Verbindungsmittel",
+    "fastenerSize": "Größe (mm)",
+    "qty": "Anzahl",
     "edgeBandingM": "m Kantenband"
   },
   "measurements": {
@@ -258,6 +277,7 @@
     "fitView": "Ansicht anpassen",
     "saved": "Gespeichert",
     "confirmNew": "Ungespeicherte \u00c4nderungen gehen verloren. Neues Projekt erstellen?",
+    "invalidProjectFile": "Projektdatei ungültig: {{reason}}",
     "confirmOpen": "Ungespeicherte \u00c4nderungen gehen verloren. Datei \u00f6ffnen?"
   },
   "presets": {
@@ -272,7 +292,12 @@
     "multiplexPlatte": "Multiplexplatte",
     "arbeitsplatteGranit": "Arbeitsplatte Granit",
     "arbeitsplatteKeramik": "Arbeitsplatte Keramik",
-    "fensterbank": "Fensterbank"
+    "fensterbank": "Fensterbank",
+    "appliances": "Geräte",
+    "herd": "Herd",
+    "kochfeld": "Kochfeld",
+    "spuele": "Spüle",
+    "geschirrspueler": "Geschirrspüler"
   },
   "units": {
     "mm": "mm",
