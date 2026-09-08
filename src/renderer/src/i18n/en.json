@@ -105,6 +105,8 @@
     "screw": "Screw",
     "pocket_screw": "Pocket Screw",
     "noJoints": "No joints.",
+    "badge_one": "{{count}} joint",
+    "badge_other": "{{count}} joints",
     "lap": "Lap joint",
     "glued": "Glued",
     "note": "Note",

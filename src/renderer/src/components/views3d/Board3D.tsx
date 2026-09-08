@@ -1,5 +1,6 @@
 import React, { useRef, useEffect, useMemo, useState } from 'react'
 import { useThree, useFrame } from '@react-three/fiber'
+import { useTranslation } from 'react-i18next'
 import { useUIStore } from '../../store/useUIStore'
 import { useProjectStore } from '../../store/useProjectStore'
 import { TransformControls, Line, Html } from '@react-three/drei'
@@ -37,6 +38,7 @@ const DRAG_PLANE_NORMALS: Record<Exclude<ViewMode, '3d'>, THREE.Vector3> = {
 }
 
 export function Board3D({ board, assemblyId, orbitRef, highlight = false, dimmed = false }: Board3DProps) {
+  const { t } = useTranslation()
   const meshRef = useRef<THREE.Mesh>(null)
   const transformRef = useRef<any>(null)
   const dragStartPosRef = useRef<THREE.Vector3>(new THREE.Vector3())
@@ -491,7 +493,7 @@ export function Board3D({ board, assemblyId, orbitRef, highlight = false, dimmed
             whiteSpace: 'nowrap',
             userSelect: 'none',
           }}>
-            {jointCount} {jointCount === 1 ? 'joint' : 'joints'}
+            {t('joints.badge', { count: jointCount })}
           </div>
         </Html>
       )}

@@ -105,6 +105,8 @@
     "screw": "Schraubenverbindung",
     "pocket_screw": "Taschenschraube",
     "noJoints": "Keine Verbindungen.",
+    "badge_one": "{{count}} Verbindung",
+    "badge_other": "{{count}} Verbindungen",
     "lap": "Überblattung",
     "glued": "Verleimt",
     "note": "Hinweis",
