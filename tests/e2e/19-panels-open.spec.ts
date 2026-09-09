@@ -59,4 +59,23 @@ test.describe('Panels open without crashing', () => {
     }
     expect(pageErrors).toEqual([])
   })
+
+  test('cost panel lists project-defined hardware attached to a board', async ({ page }) => {
+    await bootWithSample(page)
+    await page.evaluate(() => {
+      const store = window.__projectStore.getState()
+      const p = store.project
+      const first = p.assemblies[0].boards[0]
+      store.loadProject({
+        ...p,
+        customHardware: [{ id: 'hw-x', name: 'Abfallsammler Test', nameEn: 'Waste bin test', category: 'slides', unitPrice: 99 }],
+        assemblies: p.assemblies.map((a: any, i: number) => i !== 0 ? a : {
+          ...a,
+          boards: a.boards.map((b: any) => b.id !== first.id ? b : { ...b, hardware: [{ hardwareId: 'hw-x', quantity: 2 }] })
+        })
+      })
+      window.__uiStore.getState().setShowCostPanel(true)
+    })
+    await expect(page.getByText(/Abfallsammler Test|Waste bin test/)).toBeVisible()
+  })
 })

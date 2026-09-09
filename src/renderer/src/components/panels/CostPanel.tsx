@@ -64,6 +64,7 @@ export function CostPanel() {
     for (const board of assembly.boards) {
       for (const attached of board.hardware ?? []) {
         const hw = hardwareItems.find((h) => h.id === attached.hardwareId)
+          ?? project.customHardware?.find((h) => h.id === attached.hardwareId)   // project-defined hardware counts too
         if (!hw) continue
         if (!hwMap[hw.id]) {
           hwMap[hw.id] = { name: lang === 'de' ? hw.name : hw.nameEn, qty: 0, unitPrice: hw.unitPrice, total: 0 }
