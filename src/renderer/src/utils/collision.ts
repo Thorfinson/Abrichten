@@ -1,5 +1,6 @@
 import type { Board } from '../types/furniture'
 import { boardCorners3D, projectAABB, type Rect2D } from './projection'
+import { insideCutout } from './geometry'
 
 export interface CollisionPair {
   boardIdA: string
@@ -212,6 +213,15 @@ function buildSorted(boards: Board[]): BoardEntry[] {
     .sort((a, b) => a.aabb.minX - b.aabb.minX)
 }
 
+/** The overlap lies in a notch or hole of one of the boards (e.g. a shelf notched around a post). */
+function overlapsOnlyInCutout(a: { board: Board; aabb: AABB3D }, b: { board: Board; aabb: AABB3D }): boolean {
+  const box = {
+    minX: Math.max(a.aabb.minX, b.aabb.minX), maxX: Math.min(a.aabb.maxX, b.aabb.maxX),
+    minZ: Math.max(a.aabb.minZ, b.aabb.minZ), maxZ: Math.min(a.aabb.maxZ, b.aabb.maxZ)
+  }
+  return insideCutout(a.board, box) || insideCutout(b.board, box)
+}
+
 /**
  * Detect all colliding board pairs using sweep-and-prune + SAT OBB.
  *
@@ -251,6 +261,7 @@ export function detectCollisions(
 
       // SAT narrow phase — accurate for rotated boards
       if (!satOBBOverlap(a.obb, b.obb)) continue
+      if (overlapsOnlyInCutout(a, b)) continue
 
       // 2D overlap rect for visual display
       const rectA = projectAABB(a.board, getU, getV)
@@ -290,6 +301,7 @@ export function detectCollisions3D(
       if (b.aabb.minZ >= a.aabb.maxZ || b.aabb.maxZ <= a.aabb.minZ) continue
 
       if (!satOBBOverlap(a.obb, b.obb)) continue
+      if (overlapsOnlyInCutout(a, b)) continue
 
       // AABB intersection as visual overlap box approximation
       results.push({

@@ -78,4 +78,20 @@ test.describe('Panels open without crashing', () => {
     })
     await expect(page.getByText(/Abfallsammler Test|Waste bin test/)).toBeVisible()
   })
+
+  test('cutting list leaves hidden assemblies out and says so', async ({ page }) => {
+    await bootWithSample(page)
+    const { assemblyId, total } = await page.evaluate(() => {
+      const a = window.__projectStore.getState().project.assemblies[0]
+      return { assemblyId: a.id, total: a.boards.length }
+    })
+    await page.evaluate(() => window.__uiStore.getState().setShowCuttingList(true))
+    const rows = page.locator('table').first().locator('tbody tr')
+    await expect(rows).toHaveCount(total)
+    await page.evaluate((id) => window.__projectStore.getState().toggleAssemblyVisibility(id), assemblyId)
+    await expect(page.getByText(/1 ausgeblendete Baugruppe nicht enthalten|1 hidden assembly not included/)).toBeVisible()
+    await expect(rows).toHaveCount(0)
+    await page.evaluate((id) => window.__projectStore.getState().toggleAssemblyVisibility(id), assemblyId)
+    await expect(rows).toHaveCount(total)
+  })
 })

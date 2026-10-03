@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { activeAssemblies } from '../../utils/activeParts'
 import { useTranslation } from 'react-i18next'
 import { useProjectStore } from '../../store/useProjectStore'
 import { useUIStore } from '../../store/useUIStore'
@@ -41,7 +42,7 @@ export function CostPanel() {
 
   // ── Material cost ────────────────────────────────────────────────────────
   const usageMap: Record<string, { name: string; areaSqm: number; cost: number }> = {}
-  for (const assembly of project.assemblies) {
+  for (const assembly of activeAssemblies(project)) {
     for (const board of assembly.boards) {
       const mat = getMaterialById(board.materialId)
       if (!mat) continue
@@ -60,7 +61,7 @@ export function CostPanel() {
 
   // ── Hardware cost ────────────────────────────────────────────────────────
   const hwMap: Record<string, { name: string; qty: number; unitPrice: number; total: number }> = {}
-  for (const assembly of project.assemblies) {
+  for (const assembly of activeAssemblies(project)) {
     for (const board of assembly.boards) {
       for (const attached of board.hardware ?? []) {
         const hw = hardwareItems.find((h) => h.id === attached.hardwareId)

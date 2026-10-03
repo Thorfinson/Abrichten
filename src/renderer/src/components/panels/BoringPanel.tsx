@@ -1,4 +1,6 @@
 import { useState } from 'react'
+import { activeAssemblies } from '../../utils/activeParts'
+import { assemblyPath } from '../../utils/assemblyTree'
 import { useTranslation } from 'react-i18next'
 import { useProjectStore } from '../../store/useProjectStore'
 import { useUIStore } from '../../store/useUIStore'
@@ -82,10 +84,10 @@ export function BoringPanel() {
   if (!showBoringPanel) return null
 
   // Filter to boards taller than minHeight — side panels only, not shelves/backs
-  const allBoards = project.assemblies.flatMap((a) =>
+  const allBoards = activeAssemblies(project).flatMap((a) =>
     a.boards
       .filter((b) => b.height >= minHeight)
-      .map((b) => ({ ...b, assemblyName: a.name }))
+      .map((b) => ({ ...b, assemblyName: assemblyPath(project.assemblies, a.id) }))
   )
 
   const allHoles: BoringHole[] = allBoards.flatMap((b) => {

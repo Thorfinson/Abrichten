@@ -21,6 +21,9 @@ const ORTHO_CONFIGS: Record<Exclude<ViewMode, '3d'>, OrthoConfig> = {
 }
 
 const INITIAL_ORTHO_ZOOM = 2
+/** Ortho zoom in screen px per mm: 0.01 shows 100 m across a 1000 px view, 300 shows 3 mm. */
+const ORTHO_ZOOM_MIN = 0.01
+const ORTHO_ZOOM_MAX = 300
 
 /**
  * Manages camera switching based on activeView.
@@ -159,7 +162,7 @@ export function CameraController({ orbitRef, forceView }: { orbitRef?: React.Ref
         tX = centerX; tY = 0; tZ = centerZ
       }
       const currentSize = sizeRef.current
-      const newZoom = Math.max(0.1, Math.min(30,
+      const newZoom = Math.max(ORTHO_ZOOM_MIN, Math.min(ORTHO_ZOOM_MAX,
         Math.min(currentSize.width / spanA, currentSize.height / spanB)
       ))
       const vs = viewState.current[activeView]
@@ -198,7 +201,7 @@ export function CameraController({ orbitRef, forceView }: { orbitRef?: React.Ref
       const oldZoom = cam.zoom
       const factor = 1.08
       const newZoom = e.deltaY < 0 ? oldZoom * factor : oldZoom / factor
-      const clampedZoom = Math.max(0.1, Math.min(30, newZoom))
+      const clampedZoom = Math.max(ORTHO_ZOOM_MIN, Math.min(ORTHO_ZOOM_MAX, newZoom))
 
       // Zoom toward mouse: find world position under mouse, keep it fixed
       const rect = canvas.getBoundingClientRect()

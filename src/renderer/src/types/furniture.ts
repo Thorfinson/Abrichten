@@ -60,6 +60,8 @@ export interface Board {
 export interface Assembly {
   id: string
   name: string
+  /** Parent assembly; missing = top level. The tree order is the array order among siblings. */
+  parentId?: string
   visible: boolean
   /** X-ray highlight: group edges drawn through all other geometry */
   highlight?: boolean

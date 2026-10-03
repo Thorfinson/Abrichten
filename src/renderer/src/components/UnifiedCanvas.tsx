@@ -51,7 +51,7 @@ export function UnifiedCanvas({ forceView }: { forceView?: 'front' | 'side' | 't
   return (
     <div className="w-full h-full relative" ref={canvasContainerRef}>
       <Canvas
-        camera={{ position: [500, 400, 500], fov: 50, near: 1, far: 20000 }}
+        camera={{ position: [500, 400, 500], fov: 50, near: 1, far: 200000 }}
         style={{ background: '#f8f9fa' }}
         onPointerMissed={(e) => {
           // Only deselect on a true click — ignore drag-releases (gizmo / orbit)
@@ -139,8 +139,8 @@ export function UnifiedCanvas({ forceView }: { forceView?: 'front' | 'side' | 't
             makeDefault
             target={[0, 0, 0]}
             enableDamping={false}
-            minDistance={100}
-            maxDistance={5000}
+            minDistance={10}
+            maxDistance={50000}
             mouseButtons={{
               LEFT: undefined as any,
               MIDDLE: THREE.MOUSE.ROTATE,

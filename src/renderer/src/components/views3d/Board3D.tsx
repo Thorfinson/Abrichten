@@ -1,10 +1,12 @@
 import React, { useRef, useEffect, useMemo, useState } from 'react'
+import { activeJoints } from '../../utils/activeParts'
 import { useThree, useFrame } from '@react-three/fiber'
 import { useTranslation } from 'react-i18next'
 import { useUIStore } from '../../store/useUIStore'
 import { useProjectStore } from '../../store/useProjectStore'
 import { TransformControls, Line, Html } from '@react-three/drei'
-import { snapToGrid, clampCutouts } from '../../utils/geometry'
+import { snapToGrid } from '../../utils/geometry'
+import { buildBoardGeometry } from '../../utils/boardGeometry'
 import { getMaterialById } from '../../data/materials'
 import { beginTransform, endTransform } from '../../utils/transformLock'
 import { setHoveringGizmo, isHoveringGizmo } from '../../utils/gizmoHover'
@@ -73,9 +75,9 @@ export function Board3D({ board, assemblyId, orbitRef, highlight = false, dimmed
   const isPrimary = selectedBoardIds.length === 1 && selectedBoardIds[0] === board.id
   const isOrtho = activeView !== '3d'
 
-  // Count joints for this board in the active assembly
+  // Count this board's joints in visible assemblies (joints may span assemblies)
   const jointCount = useProjectStore((s) =>
-    s.project.assemblies.reduce((n, a) => n + a.joints.filter((j) => j.boardA === board.id || j.boardB === board.id).length, 0)
+    activeJoints(s.project).filter(({ joint: j }) => j.boardA === board.id || j.boardB === board.id).length
   )
 
   const { camera, gl, raycaster } = useThree()
@@ -346,36 +348,9 @@ export function Board3D({ board, assemblyId, orbitRef, highlight = false, dimmed
     }
   }
 
-  // Board geometry: plain box, or an extruded profile with rectangular holes
-  // when cutouts are defined (cooktop / sink openings in a worktop).
-  const boardGeometry = useMemo(() => {
-    const cuts = clampCutouts(board)
-    if (cuts.length === 0) {
-      return new THREE.BoxGeometry(board.width, board.height, board.depth)
-    }
-    const shape = new THREE.Shape()
-    shape.moveTo(0, 0)
-    shape.lineTo(board.width, 0)
-    shape.lineTo(board.width, board.depth)
-    shape.lineTo(0, board.depth)
-    shape.closePath()
-    for (const c of cuts) {
-      const x0 = c.x, z0 = c.z, x1 = c.x + c.width, z1 = c.z + c.depth
-      const hole = new THREE.Path()
-      hole.moveTo(x0, z0)
-      hole.lineTo(x0, z1)
-      hole.lineTo(x1, z1)
-      hole.lineTo(x1, z0)
-      hole.closePath()
-      shape.holes.push(hole)
-    }
-    const geo = new THREE.ExtrudeGeometry(shape, { depth: board.height, bevelEnabled: false })
-    // Shape lives in the (width, depth) plane, extruded along +z by height.
-    // Rotate so the extrusion becomes the y-axis, then center like BoxGeometry.
-    geo.rotateX(-Math.PI / 2)
-    geo.translate(-board.width / 2, -board.height / 2, board.depth / 2)
-    return geo
-  }, [board.width, board.height, board.depth, board.cutouts])
+  // Board geometry: plain box, or an extruded outline with holes and edge notches
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const boardGeometry = useMemo(() => buildBoardGeometry(board), [board.width, board.height, board.depth, board.cutouts])
 
   useEffect(() => () => boardGeometry.dispose(), [boardGeometry])
 

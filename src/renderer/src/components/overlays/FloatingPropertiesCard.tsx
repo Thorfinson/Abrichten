@@ -1,4 +1,6 @@
 import { useTranslation } from 'react-i18next'
+import { activeJoints } from '../../utils/activeParts'
+import { assemblyPath } from '../../utils/assemblyTree'
 import { useProjectStore } from '../../store/useProjectStore'
 import { useUIStore } from '../../store/useUIStore'
 import { materials, getMaterialById } from '../../data/materials'
@@ -65,7 +67,7 @@ export function FloatingPropertiesCard() {
         title={lang === 'de' ? 'In andere Baugruppe verschieben' : 'Move to another building group'}
       >
         {assemblies.map((a) => (
-          <option key={a.id} value={a.id} className={OPTION_DARK}>{a.name}</option>
+          <option key={a.id} value={a.id} className={OPTION_DARK}>{assemblyPath(assemblies, a.id)}</option>
         ))}
       </select>
     </div>
@@ -201,10 +203,10 @@ export function FloatingPropertiesCard() {
     handleUpdate({ cutouts: cutouts.filter((c) => c.id !== id) })
   }
 
-  // Joints may span assemblies: collect from all of them, remember the owner for removal
-  const boardJoints = assemblies.flatMap((a) =>
-    a.joints.filter((j) => j.boardA === board.id || j.boardB === board.id).map((j) => ({ j, ownerId: a.id }))
-  )
+  // Joints may span assemblies: collect from all visible ones, remember the owner for removal
+  const boardJoints = activeJoints(project)
+    .filter(({ joint }) => joint.boardA === board.id || joint.boardB === board.id)
+    .map(({ joint, ownerId }) => ({ j: joint, ownerId }))
   const allBoards = assemblies.flatMap((a) => a.boards)
   const fastenerLabel = (f: Fastener) => `${f.quantity}× ${t(`joints.f_${f.type}`)} ${f.diameter}×${f.length}`
 

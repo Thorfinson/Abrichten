@@ -11,7 +11,7 @@ Desktop application for planning furniture, shelving, and kitchen projects in wo
 ### Canvas & Modelling
 - **Single unified canvas** — one React Three Fiber scene, four camera modes (front, side, top, 3D)
 - **Quad layout** — all four views side by side, toggled with the `⊞` button in the view tabs
-- **Boards** — parametric rectangles with width × height × depth, material, grain direction, edge banding, rectangular cutouts (hob / sink openings, rendered as holes and exported as a DXF layer)
+- **Boards** — parametric rectangles with width × height × depth, material, grain direction, edge banding, rectangular cutouts measured from the board's min-x / min-z corner (hob / sink openings render as holes, cutouts reaching the edge as notches, e.g. a shelf notched around posts; exported as a DXF layer; mesh in `utils/boardGeometry.ts`)
 - **TransformControls gizmo** — translate / rotate in 3D view; pointer-drag in orthographic views
 - **Zoom & pan** — scroll-wheel zoom around cursor, right-click drag to pan; state persisted per view
 - **Snap to grid** — configurable step (mm), snap indicator pulses on hit
@@ -20,18 +20,18 @@ Desktop application for planning furniture, shelving, and kitchen projects in wo
 ### Overlays (in-canvas glass cards)
 - **FloatingPropertiesCard** — appears bottom-right when a board is selected; edit name, W×H×D, material, cutouts, duplicate, rotate 90°, delete; lists the board's joints with their fasteners and notes
 - **ContextHUD** — always-visible bottom-left card with LED overlay toggles (Static / Collision / Joints) and context-sensitive shortcut hints
-- **AssemblyDrawer** — slide-in panel (left edge) showing the assembly tree; toggle with `◧` button or `B` key
+- **AssemblyDrawer** — slide-in panel (left edge) showing the assembly tree; toggle with `◧` button or `B` key. Hiding an assembly (eye icon) also leaves it out of the cutting list, fastener summary, cost, nesting, boring list and shop drawings, so one project can hold design variants as separate assemblies and only the visible one is counted (rule in `utils/activeParts.ts`). Assemblies nest: drag a group onto the middle of another to put it inside, onto its top or bottom edge to reorder; the context menu adds a subgroup or moves one back to the top level. Eye and X-ray apply to the whole subtree, deleting a group deletes its subgroups, and files without nesting load unchanged (tree rules in `utils/assemblyTree.ts`). Groups start collapsed; selecting a board opens its group and every group above it, then scrolls to it
 - **ChatPanel** — AI assistant as a fixed right-edge drawer
 
 ### Analysis & Engineering
 - **Static analysis** — beam deflection with 20 % safety factor and the weight of stone resting on a member; stone must be supported, vertical members and members lying on the floor or on another member are not rated as beams; colour-coded overlay (green / amber / red)
-- **Collision detection** — AABB overlap, highlighted in-canvas with collision box overlay
+- **Collision detection** — AABB overlap, highlighted in-canvas with collision box overlay; an overlap that lies inside a notch or hole of an unrotated board is not a collision
 - **Joints & fasteners** — butt, miter, dado, rabbet, dowel, biscuit, screw, pocket screw, dovetail, lap and glued joints between any two boards, also across assemblies; each joint carries its fasteners (screws, dowels, angle brackets, joist hangers, staples) and a workshop note; markers in 3D, joint count badge per board, dado/rabbet grooves drawn on the host board
 - **Dimension overlay** — staggered dimension lines with assembly total dims
 
 ### Panels (via ⌘K command palette)
 - **Carcass generator** — build a full cabinet from outer dimensions in one step
-- **Cutting list** — sortable table of all parts, grouping of identical parts, fastener summary (screws, brackets, staples by size), CSV and DXF export
+- **Cutting list** — sortable table of the parts in visible assemblies, grouping of identical parts, fastener summary (screws, brackets, staples by size), CSV and DXF export; the group column shows the full path (e.g. Küche › Backofen) and the list says how many hidden assemblies are left out
 - **Sheet nesting** — guillotine-optimised layout with SVG / DXF export
 - **Shop drawings** — DXF/PDF workshop drawings per assembly
 - **Cost calculator** — material + hardware cost breakdown with PDF export
@@ -104,7 +104,7 @@ npm run test:e2e:headed  # watch the browser while tests run
 npm run test:unit        # node:test unit tests, no extra dependencies
 ```
 
-The suite in `tests/e2e/` (57 tests in 19 spec files) covers boot, selection, keyboard shortcuts, undo/redo, gizmo drags (translate / resize / rotate), camera pan & zoom, view switching, marquee-vs-drag selection, cutouts, project-file validation with joint pruning, and every panel opening without a page error. The unit tests in `tests/unit/` check the board rotation math against Three.js.
+The suite in `tests/e2e/` (61 tests in 20 spec files) covers boot, selection, keyboard shortcuts, undo/redo, gizmo drags (translate / resize / rotate), camera pan & zoom, view switching, marquee-vs-drag selection, cutouts, project-file validation with joint pruning, every panel opening without a page error, hidden assemblies dropping out of the cutting list, the assembly tree opening the group of a selected board, and nesting groups by drag and drop. The unit tests in `tests/unit/` check the board rotation math against Three.js, that loaded assembly trees never contain a parent cycle, and that cutouts and notches render on the right side of the board.
 
 ## Project Structure
 

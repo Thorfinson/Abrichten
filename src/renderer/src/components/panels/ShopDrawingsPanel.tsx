@@ -1,4 +1,7 @@
 import { useTranslation } from 'react-i18next'
+import { activeAssemblies } from '../../utils/activeParts'
+import { assemblyPath } from '../../utils/assemblyTree'
+import { escapeHtml } from '../../utils/textSafety'
 import { useProjectStore } from '../../store/useProjectStore'
 import { useUIStore } from '../../store/useUIStore'
 import { getMaterialById } from '../../data/materials'
@@ -102,8 +105,8 @@ export function ShopDrawingsPanel() {
   if (!showShopDrawingsPanel) return null
 
   const handlePrint = () => {
-    const allBoards: { board: Board; assemblyName: string }[] = project.assemblies.flatMap((a) =>
-      a.boards.map((b) => ({ board: b, assemblyName: a.name }))
+    const allBoards: { board: Board; assemblyName: string }[] = activeAssemblies(project).flatMap((a) =>
+      a.boards.map((b) => ({ board: b, assemblyName: assemblyPath(project.assemblies, a.id) }))
     )
 
     const rows = allBoards.map(({ board, assemblyName }) => {
@@ -115,7 +118,7 @@ export function ShopDrawingsPanel() {
       return `<div style="break-inside:avoid;border:1px solid #ddd;border-radius:4px;padding:12px;margin:8px;display:inline-block;vertical-align:top;width:240px">
   ${svg}
   <div style="font-size:9px;color:#555;margin-top:6px;text-align:center">
-    <div><strong>${assemblyName}</strong></div>
+    <div><strong>${escapeHtml(assemblyName)}</strong></div>
     <div>${matName} · t=${board.depth}mm · L=${board.width} × H=${board.height}</div>
     ${edges ? `<div style="color:#2563eb">${lang === 'de' ? 'Kantenband' : 'Edge Banding'}: ${edges}</div>` : ''}
     ${board.grainDirection ? `<div style="color:#d97706">${lang === 'de' ? 'Faser' : 'Grain'}: ${board.grainDirection}</div>` : ''}
@@ -123,13 +126,13 @@ export function ShopDrawingsPanel() {
 </div>`
     }).join('')
 
-    const assemblyGroups = project.assemblies.map((a) => {
+    const assemblyGroups = activeAssemblies(project).map((a) => {
       const boards = a.boards.map((b) => {
         const mat = getMaterialById(b.materialId)
         const matName = mat ? (lang === 'de' ? mat.name : mat.nameEn) : b.materialId
-        return `<tr><td>${b.name}</td><td>${matName}</td><td>${b.width}</td><td>${b.height}</td><td>${b.depth}</td></tr>`
+        return `<tr><td>${escapeHtml(b.name)}</td><td>${matName}</td><td>${b.width}</td><td>${b.height}</td><td>${b.depth}</td></tr>`
       }).join('')
-      return `<h3>${a.name}</h3><table><tr><th>Name</th><th>Material</th><th>B</th><th>H</th><th>T</th></tr>${boards}</table>`
+      return `<h3>${escapeHtml(assemblyPath(project.assemblies, a.id))}</h3><table><tr><th>Name</th><th>Material</th><th>B</th><th>H</th><th>T</th></tr>${boards}</table>`
     }).join('')
 
     const html = `<!DOCTYPE html>
@@ -167,7 +170,7 @@ ${assemblyGroups}
   }
 
   const handleDxf = () => {
-    const boards = project.assemblies.flatMap((a) => a.boards)
+    const boards = activeAssemblies(project).flatMap((a) => a.boards)
     const content = exportDxf(boards)
     const filename = `${project.name}_shop_drawings.dxf`
     if ((window as any).electronAPI?.fileExportCsv) {
@@ -181,7 +184,7 @@ ${assemblyGroups}
     }
   }
 
-  const totalBoards = project.assemblies.reduce((s, a) => s + a.boards.length, 0)
+  const totalBoards = activeAssemblies(project).reduce((s, a) => s + a.boards.length, 0)
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={(e) => { if (e.target === e.currentTarget) setShowShopDrawingsPanel(false) }}>

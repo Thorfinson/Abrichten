@@ -1,21 +1,22 @@
 import { useState, useEffect, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
-import { useProjectStore } from '../../store/useProjectStore'
+import { useProjectStore, type AssemblyDrop } from '../../store/useProjectStore'
 import { useUIStore } from '../../store/useUIStore'
 import { boardPresets, presetToBoard } from '../../data/board-presets'
 import { getMaterialById } from '../../data/materials'
 import type { ToolMode } from '../../types/measurement'
-import type { Assembly, JointType } from '../../types/furniture'
+import type { Assembly, Board, JointType } from '../../types/furniture'
+import { subtreeIds, ancestorIds } from '../../utils/assemblyTree'
 
-function assemblyStats(assembly: Assembly) {
-  if (assembly.boards.length === 0) return null
+function assemblyStats(boards: Board[]) {
+  if (boards.length === 0) return null
 
   let minX = Infinity, maxX = -Infinity
   let minY = Infinity, maxY = -Infinity
   let minZ = Infinity, maxZ = -Infinity
   let totalWeightKg = 0
 
-  for (const b of assembly.boards) {
+  for (const b of boards) {
     minX = Math.min(minX, b.position.x)
     maxX = Math.max(maxX, b.position.x + b.width)
     minY = Math.min(minY, b.position.y)
@@ -63,7 +64,7 @@ export function AssemblyDrawer() {
   const addBoard = useProjectStore((s) => s.addBoard)
   const removeAssembly = useProjectStore((s) => s.removeAssembly)
   const renameAssembly = useProjectStore((s) => s.renameAssembly)
-  const reorderAssemblies = useProjectStore((s) => s.reorderAssemblies)
+  const moveAssembly = useProjectStore((s) => s.moveAssembly)
   const moveBoardsToAssembly = useProjectStore((s) => s.moveBoardsToAssembly)
   const toggleAssemblyVisibility = useProjectStore((s) => s.toggleAssemblyVisibility)
   const toggleAssemblyHighlight = useProjectStore((s) => s.toggleAssemblyHighlight)
@@ -88,16 +89,30 @@ export function AssemblyDrawer() {
   const assemblyMenuRef = useRef<HTMLDivElement>(null)
   const boardItemRefs = useRef<Map<string, HTMLDivElement>>(new Map())
 
-  useEffect(() => {
-    if (selectedBoardIds.length !== 1) return
-    const el = boardItemRefs.current.get(selectedBoardIds[0])
-    el?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
-  }, [selectedBoardIds])
 
-  const dragSrcIdx = useRef<number | null>(null)
+  const dragSrcId = useRef<string | null>(null)
   const boardDrag = useRef<{ fromAssemblyId: string; boardIds: string[] } | null>(null)
-  const [dragOverIdx, setDragOverIdx] = useState<number | null>(null)
-  const [collapsedIds, setCollapsedIds] = useState<Set<string>>(new Set())
+  const [dropHint, setDropHint] = useState<{ id: string; where: AssemblyDrop } | null>(null)
+  // Groups start collapsed; the group of a selected board (and every group above it) opens automatically
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set())
+
+  useEffect(() => {
+    if (selectedBoardIds.length === 0 || !selectedAssemblyId) return
+    const open = [selectedAssemblyId, ...ancestorIds(useProjectStore.getState().project.assemblies, selectedAssemblyId)]
+    setExpandedIds((prev) => (open.every((id) => prev.has(id)) ? prev : new Set([...prev, ...open])))
+  }, [selectedAssemblyId, selectedBoardIds])
+
+  // Scroll the selected board into view once it is rendered (its group may open first)
+  const lastScrolledId = useRef<string | null>(null)
+  useEffect(() => {
+    if (selectedBoardIds.length !== 1) { lastScrolledId.current = null; return }
+    const id = selectedBoardIds[0]
+    if (lastScrolledId.current === id) return
+    const el = boardItemRefs.current.get(id)
+    if (!el) return
+    el.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+    lastScrolledId.current = id
+  }, [selectedBoardIds, expandedIds])
 
   const [jointDialog, setJointDialog] = useState<{
     assemblyId: string; boardAId: string; boardBId: string
@@ -158,8 +173,15 @@ export function AssemblyDrawer() {
     setPresetMenuOpen(null)
   }
 
+  const handleAddSubAssembly = (parentId: string) => {
+    const id = addAssembly(t('sidebar.newAssemblyName') + ' ' + (project.assemblies.length + 1), parentId)
+    setExpandedIds((prev) => new Set(prev).add(parentId))
+    selectBoard(id, null)
+    setAssemblyMenu(null)
+  }
+
   const handleDeleteAssembly = (id: string) => {
-    if (selectedAssemblyId === id) deselectAll()
+    if (selectedAssemblyId && subtreeIds(project.assemblies, id).has(selectedAssemblyId)) deselectAll()
     removeAssembly(id)
     setAssemblyMenu(null)
   }
@@ -202,28 +224,43 @@ export function AssemblyDrawer() {
     setAssemblyMenu({ id: assemblyId, x: e.clientX, y: e.clientY })
   }
 
-  const handleDragStart = (idx: number) => { dragSrcIdx.current = idx }
-  const handleDragOver = (e: React.DragEvent, idx: number) => {
-    e.preventDefault()
-    setDragOverIdx(idx)
+  // Dragging a group onto a header: top quarter = before, bottom quarter = after, middle = into it.
+  // Boards dropped anywhere on a group move into that group.
+  const dropZone = (e: React.DragEvent): AssemblyDrop => {
+    const r = e.currentTarget.getBoundingClientRect()
+    const f = (e.clientY - r.top) / r.height
+    return f < 0.25 ? 'before' : f > 0.75 ? 'after' : 'inside'
   }
-  const handleDrop = (idx: number, assemblyId: string) => {
-    if (boardDrag.current) {
-      const { fromAssemblyId, boardIds } = boardDrag.current
-      if (fromAssemblyId !== assemblyId) {
-        moveBoardsToAssembly(fromAssemblyId, boardIds, assemblyId)
-      }
-    } else if (dragSrcIdx.current !== null && dragSrcIdx.current !== idx) {
-      reorderAssemblies(dragSrcIdx.current, idx)
-    }
-    boardDrag.current = null
-    dragSrcIdx.current = null
-    setDragOverIdx(null)
+  const showDropHint = (id: string, where: AssemblyDrop) =>
+    setDropHint((h) => (h?.id === id && h.where === where ? h : { id, where }))
+  const dropBoards = (assemblyId: string) => {
+    if (!boardDrag.current) return
+    const { fromAssemblyId, boardIds } = boardDrag.current
+    if (fromAssemblyId !== assemblyId) moveBoardsToAssembly(fromAssemblyId, boardIds, assemblyId)
   }
   const handleDragEnd = () => {
     boardDrag.current = null
-    dragSrcIdx.current = null
-    setDragOverIdx(null)
+    dragSrcId.current = null
+    setDropHint(null)
+  }
+  const handleHeaderDragOver = (e: React.DragEvent, id: string) => {
+    const src = dragSrcId.current
+    if (!boardDrag.current && (!src || subtreeIds(project.assemblies, src).has(id))) return   // not into itself
+    e.preventDefault()
+    e.stopPropagation()
+    showDropHint(id, boardDrag.current ? 'inside' : dropZone(e))
+  }
+  const handleHeaderDrop = (e: React.DragEvent, id: string) => {
+    e.preventDefault()
+    e.stopPropagation()
+    const src = dragSrcId.current
+    if (boardDrag.current) dropBoards(id)
+    else if (src && src !== id) {
+      const where = dropZone(e)
+      moveAssembly(src, id, where)
+      if (where === 'inside') setExpandedIds((prev) => new Set(prev).add(id))
+    }
+    handleDragEnd()
   }
 
   const handleCreateJoint = () => {
@@ -254,6 +291,280 @@ export function AssemblyDrawer() {
       fasteners: []
     })
     setJointDialog(null)
+  }
+
+  /** One tree level: header row, then (when open) stats, subgroups, own boards, add-board menu. */
+  const renderNode = (assembly: Assembly, depth: number): React.ReactNode => {
+    const open = expandedIds.has(assembly.id)
+    const children = project.assemblies.filter((c) => c.parentId === assembly.id)
+    const subtree = subtreeIds(project.assemblies, assembly.id)
+    const stats = assemblyStats(project.assemblies.filter((a) => subtree.has(a.id)).flatMap((a) => a.boards))
+    const hint = dropHint?.id === assembly.id ? dropHint.where : null
+    const dim = assembly.visible === false ? 'opacity-40' : ''
+    return (
+      <div
+        key={assembly.id}
+        className={depth === 0 ? 'mb-3' : 'mb-1'}
+        onDragOver={(e) => {
+          if (!boardDrag.current) return
+          e.preventDefault()
+          e.stopPropagation()
+          showDropHint(assembly.id, 'inside')
+        }}
+        onDrop={(e) => {
+          if (!boardDrag.current) return
+          e.preventDefault()
+          e.stopPropagation()
+          dropBoards(assembly.id)
+          handleDragEnd()
+        }}
+      >
+        <div
+          data-assembly-id={assembly.id}
+          draggable
+          onDragStart={(e) => {
+            e.stopPropagation()
+            dragSrcId.current = assembly.id
+            e.dataTransfer.effectAllowed = 'move'
+          }}
+          onDragOver={(e) => handleHeaderDragOver(e, assembly.id)}
+          onDrop={(e) => handleHeaderDrop(e, assembly.id)}
+          onDragEnd={handleDragEnd}
+          className={`text-sm font-medium px-2 py-1 rounded cursor-pointer flex items-center gap-1 ${
+            selectedAssemblyId === assembly.id && selectedBoardIds.length === 0
+              ? 'bg-blue-100 text-blue-800'
+              : 'text-gray-700 hover:bg-gray-100'
+          } ${hint === 'inside' ? 'ring-2 ring-blue-400' : ''} ${
+            hint === 'before' ? 'shadow-[inset_0_2px_0_0_#60a5fa]' : hint === 'after' ? 'shadow-[inset_0_-2px_0_0_#60a5fa]' : ''
+          }`}
+          onClick={() => selectBoard(assembly.id, null)}
+          onContextMenu={(e) => handleAssemblyContextMenu(e, assembly.id)}
+        >
+          <button
+            onClick={(e) => {
+              e.stopPropagation()
+              setExpandedIds((prev) => {
+                const next = new Set(prev)
+                next.has(assembly.id) ? next.delete(assembly.id) : next.add(assembly.id)
+                return next
+              })
+            }}
+            className="shrink-0 w-4 h-4 flex items-center justify-center text-gray-400 hover:text-gray-600 text-[9px]"
+            title={!open
+              ? (lang === 'de' ? 'Aufklappen' : 'Expand')
+              : (lang === 'de' ? 'Einklappen' : 'Collapse')}
+          >
+            {open ? '▼' : '▶'}
+          </button>
+          <span
+            className="shrink-0 text-gray-300 hover:text-gray-500 cursor-grab active:cursor-grabbing select-none mr-0.5"
+            title={lang === 'de' ? 'Ziehen: auf den Rand zum Sortieren, auf die Mitte zum Einhängen' : 'Drag: onto the edge to reorder, onto the middle to nest'}
+          >⠿</span>
+          <button
+            onClick={(e) => {
+              e.stopPropagation()
+              toggleAssemblyVisibility(assembly.id)
+            }}
+            className={`shrink-0 w-5 h-5 flex items-center justify-center rounded hover:bg-gray-200 ${
+              assembly.visible !== false ? 'text-gray-500' : 'text-gray-300'
+            }`}
+            title={t('sidebar.toggleVisibility')}
+          >
+            {assembly.visible !== false ? (
+              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                <path strokeLinecap="round" strokeLinejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+              </svg>
+            ) : (
+              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" />
+              </svg>
+            )}
+          </button>
+          <button
+            onClick={(e) => {
+              e.stopPropagation()
+              toggleAssemblyHighlight(assembly.id)
+            }}
+            className={`shrink-0 w-5 h-5 flex items-center justify-center rounded hover:bg-gray-200 ${
+              assembly.highlight ? 'text-amber-500' : 'text-gray-300'
+            }`}
+            title={t('sidebar.highlightAssembly')}
+          >
+            {/* X-ray cube icon */}
+            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.6}>
+              <path strokeLinecap="round" strokeLinejoin="round"
+                d="M8 6h13v13H8zM3 3h13v13H3zM3 3l5 3M16 3l5 3M3 16l5 3M16 16l5 3" />
+            </svg>
+          </button>
+          {renamingAssemblyId === assembly.id ? (
+            <input
+              autoFocus
+              type="text"
+              defaultValue={assembly.name}
+              className="flex-1 text-xs bg-white border border-blue-400 rounded px-1 py-0"
+              onClick={(e) => e.stopPropagation()}
+              onBlur={(e) => handleRenameCommit(assembly.id, e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
+                if (e.key === 'Escape') setRenamingAssemblyId(null)
+                e.stopPropagation()
+              }}
+            />
+          ) : (
+            <span className={`flex-1 truncate ${assembly.visible === false ? 'opacity-50' : ''}`}>
+              {assembly.name}
+            </span>
+          )}
+        </div>
+
+        {open && (
+          <div className="ml-3 mt-1">
+            {stats && (
+              <div className={`text-[10px] text-gray-400 px-2 py-0.5 font-mono ${dim}`}>
+                {stats.w}×{stats.h}×{stats.d}mm · {stats.kg}kg
+              </div>
+            )}
+
+            {children.map((c) => renderNode(c, depth + 1))}
+
+            <div className={dim}>
+              {assembly.boards.map((board) => (
+                <div
+                  key={board.id}
+                  ref={(el) => {
+                    if (el) boardItemRefs.current.set(board.id, el)
+                    else boardItemRefs.current.delete(board.id)
+                  }}
+                  title={`${board.name} · ${board.width}×${board.height}×${board.depth}mm`}
+                  draggable
+                  onDragStart={(e) => {
+                    e.stopPropagation()
+                    const ids = selectedBoardIds.includes(board.id)
+                      ? assembly.boards.filter((b) => selectedBoardIds.includes(b.id)).map((b) => b.id)
+                      : [board.id]
+                    boardDrag.current = { fromAssemblyId: assembly.id, boardIds: ids }
+                  }}
+                  onDragEnd={handleDragEnd}
+                  className={`text-xs px-2 py-1 rounded cursor-pointer flex items-center gap-1.5 ${
+                    selectedBoardIds.includes(board.id)
+                      ? 'bg-blue-100 text-blue-800'
+                      : 'text-gray-600 hover:bg-gray-100'
+                  }`}
+                  onClick={(e) => {
+                    if (e.ctrlKey || e.metaKey) {
+                      toggleBoardSelection(assembly.id, board.id)
+                    } else {
+                      selectBoard(assembly.id, board.id)
+                    }
+                  }}
+                >
+                  <span
+                    className="inline-block w-2 h-2 rounded-sm shrink-0 border border-white/30"
+                    style={{ backgroundColor: board.color }}
+                  />
+                  <div className="flex-1 min-w-0">
+                    <div className="truncate leading-tight">{board.name}</div>
+                    <div className={`text-[10px] font-mono leading-tight ${
+                      selectedBoardIds.includes(board.id) ? 'text-blue-500' : 'text-gray-400'
+                    }`}>
+                      {board.width}×{board.height}×{board.depth}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Add board — preset picker */}
+            <div className="relative mt-1" ref={presetMenuOpen === assembly.id ? menuRef : undefined}>
+              <button
+                onClick={() => setPresetMenuOpen(presetMenuOpen === assembly.id ? null : assembly.id)}
+                className="text-xs text-blue-600 hover:text-blue-800 px-2 py-1"
+              >
+                + {t('sidebar.addBoard')}
+              </button>
+
+              {presetMenuOpen === assembly.id && (
+                <div className="absolute left-0 top-full z-50 bg-white rounded-lg shadow-lg border border-gray-200 py-1 w-52 max-h-80 overflow-y-auto">
+                  {presetGroups.map((group) => (
+                    <div key={group.labelKey}>
+                      <div className="px-3 py-1 text-[10px] font-bold text-gray-400 uppercase tracking-wide">
+                        {t(group.labelKey)}
+                      </div>
+                      {group.ids.map((pid) => {
+                        const preset = boardPresets.find((p) => p.id === pid)
+                        if (!preset) return null
+                        return (
+                          <button
+                            key={preset.id}
+                            onClick={() => handleAddPreset(assembly.id, preset.id)}
+                            className="w-full text-left px-3 py-1.5 text-xs hover:bg-blue-50 hover:text-blue-700 flex items-center gap-2"
+                          >
+                            <span
+                              className="inline-block w-3 h-3 rounded-sm shrink-0 border border-gray-200"
+                              style={{ backgroundColor: preset.color }}
+                            />
+                            <span className="flex-1 truncate">{t(preset.labelKey)}</span>
+                            <span className="text-[10px] text-gray-400 whitespace-nowrap">
+                              {preset.width}x{preset.height}x{preset.depth}
+                            </span>
+                          </button>
+                        )
+                      })}
+                    </div>
+                  ))}
+                  {/* Custom board */}
+                  <div className="border-t border-gray-100 mt-1 pt-1">
+                    {customFormAssemblyId === assembly.id ? (
+                      <div className="px-3 py-2">
+                        <div className="text-[10px] font-bold text-gray-400 uppercase mb-1">{t('board.customBoard')}</div>
+                        {[
+                          { label: t('board.width'), state: customW, setter: setCustomW },
+                          { label: t('board.height'), state: customH, setter: setCustomH },
+                          { label: t('board.depth'), state: customD, setter: setCustomD }
+                        ].map(({ label, state, setter }) => (
+                          <div key={label} className="flex items-center gap-1 mb-1">
+                            <label className="text-[10px] text-gray-500 w-10 shrink-0">{label}</label>
+                            <input
+                              type="number"
+                              value={state}
+                              onChange={(e) => setter(e.target.value)}
+                              className="flex-1 text-xs border border-gray-300 rounded px-1 py-0.5"
+                            />
+                            <span className="text-[10px] text-gray-400">mm</span>
+                          </div>
+                        ))}
+                        <div className="flex gap-1 mt-1">
+                          <button
+                            onClick={() => handleAddCustomBoard(assembly.id)}
+                            className="flex-1 text-xs bg-blue-600 text-white rounded py-0.5 hover:bg-blue-700"
+                          >
+                            + {t('sidebar.addBoard')}
+                          </button>
+                          <button
+                            onClick={() => setCustomFormAssemblyId(null)}
+                            className="text-xs text-gray-400 hover:text-gray-600 px-2"
+                          >
+                            ✕
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <button
+                        onClick={() => setCustomFormAssemblyId(assembly.id)}
+                        className="w-full text-left px-3 py-1.5 text-xs text-gray-500 hover:bg-gray-50 hover:text-gray-700"
+                      >
+                        {t('board.customBoard')}
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+    )
   }
 
   return (
@@ -303,249 +614,7 @@ export function AssemblyDrawer() {
             </button>
           </div>
 
-          {project.assemblies.map((assembly, idx) => (
-            <div
-              key={assembly.id}
-              className={`mb-3 rounded transition-colors ${dragOverIdx === idx ? 'ring-2 ring-blue-400' : ''}`}
-              draggable
-              onDragStart={() => handleDragStart(idx)}
-              onDragOver={(e) => handleDragOver(e, idx)}
-              onDrop={() => handleDrop(idx, assembly.id)}
-              onDragEnd={handleDragEnd}
-            >
-              <div
-                className={`text-sm font-medium px-2 py-1 rounded cursor-pointer flex items-center gap-1 ${
-                  selectedAssemblyId === assembly.id && selectedBoardIds.length === 0
-                    ? 'bg-blue-100 text-blue-800'
-                    : 'text-gray-700 hover:bg-gray-100'
-                }`}
-                onClick={() => selectBoard(assembly.id, null)}
-                onContextMenu={(e) => handleAssemblyContextMenu(e, assembly.id)}
-              >
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    setCollapsedIds((prev) => {
-                      const next = new Set(prev)
-                      next.has(assembly.id) ? next.delete(assembly.id) : next.add(assembly.id)
-                      return next
-                    })
-                  }}
-                  className="shrink-0 w-4 h-4 flex items-center justify-center text-gray-400 hover:text-gray-600 text-[9px]"
-                  title={collapsedIds.has(assembly.id)
-                    ? (lang === 'de' ? 'Aufklappen' : 'Expand')
-                    : (lang === 'de' ? 'Einklappen' : 'Collapse')}
-                >
-                  {collapsedIds.has(assembly.id) ? '▶' : '▼'}
-                </button>
-                <span
-                  className="shrink-0 text-gray-300 hover:text-gray-500 cursor-grab active:cursor-grabbing select-none mr-0.5"
-                  title={lang === 'de' ? 'Ziehen zum Sortieren' : 'Drag to reorder'}
-                >⠿</span>
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    toggleAssemblyVisibility(assembly.id)
-                  }}
-                  className={`shrink-0 w-5 h-5 flex items-center justify-center rounded hover:bg-gray-200 ${
-                    assembly.visible !== false ? 'text-gray-500' : 'text-gray-300'
-                  }`}
-                  title={t('sidebar.toggleVisibility')}
-                >
-                  {assembly.visible !== false ? (
-                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                    </svg>
-                  ) : (
-                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" />
-                    </svg>
-                  )}
-                </button>
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    toggleAssemblyHighlight(assembly.id)
-                  }}
-                  className={`shrink-0 w-5 h-5 flex items-center justify-center rounded hover:bg-gray-200 ${
-                    assembly.highlight ? 'text-amber-500' : 'text-gray-300'
-                  }`}
-                  title={t('sidebar.highlightAssembly')}
-                >
-                  {/* X-ray cube icon */}
-                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.6}>
-                    <path strokeLinecap="round" strokeLinejoin="round"
-                      d="M8 6h13v13H8zM3 3h13v13H3zM3 3l5 3M16 3l5 3M3 16l5 3M16 16l5 3" />
-                  </svg>
-                </button>
-                {renamingAssemblyId === assembly.id ? (
-                  <input
-                    autoFocus
-                    type="text"
-                    defaultValue={assembly.name}
-                    className="flex-1 text-xs bg-white border border-blue-400 rounded px-1 py-0"
-                    onClick={(e) => e.stopPropagation()}
-                    onBlur={(e) => handleRenameCommit(assembly.id, e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
-                      if (e.key === 'Escape') setRenamingAssemblyId(null)
-                      e.stopPropagation()
-                    }}
-                  />
-                ) : (
-                  <span className={`flex-1 truncate ${assembly.visible === false ? 'opacity-50' : ''}`}>
-                    {assembly.name}
-                  </span>
-                )}
-              </div>
-
-              {!collapsedIds.has(assembly.id) && (
-                <div className={`ml-3 mt-1 ${assembly.visible === false ? 'opacity-40' : ''}`}>
-                  {(() => {
-                    const stats = assemblyStats(assembly)
-                    if (!stats) return null
-                    return (
-                      <div className="text-[10px] text-gray-400 px-2 py-0.5 font-mono">
-                        {stats.w}×{stats.h}×{stats.d}mm · {stats.kg}kg
-                      </div>
-                    )
-                  })()}
-
-                  {assembly.boards.map((board) => (
-                    <div
-                      key={board.id}
-                      ref={(el) => {
-                        if (el) boardItemRefs.current.set(board.id, el)
-                        else boardItemRefs.current.delete(board.id)
-                      }}
-                      title={`${board.name} · ${board.width}×${board.height}×${board.depth}mm`}
-                      draggable
-                      onDragStart={(e) => {
-                        e.stopPropagation()
-                        const ids = selectedBoardIds.includes(board.id)
-                          ? assembly.boards.filter((b) => selectedBoardIds.includes(b.id)).map((b) => b.id)
-                          : [board.id]
-                        boardDrag.current = { fromAssemblyId: assembly.id, boardIds: ids }
-                      }}
-                      className={`text-xs px-2 py-1 rounded cursor-pointer flex items-center gap-1.5 ${
-                        selectedBoardIds.includes(board.id)
-                          ? 'bg-blue-100 text-blue-800'
-                          : 'text-gray-600 hover:bg-gray-100'
-                      }`}
-                      onClick={(e) => {
-                        if (e.ctrlKey || e.metaKey) {
-                          toggleBoardSelection(assembly.id, board.id)
-                        } else {
-                          selectBoard(assembly.id, board.id)
-                        }
-                      }}
-                    >
-                      <span
-                        className="inline-block w-2 h-2 rounded-sm shrink-0 border border-white/30"
-                        style={{ backgroundColor: board.color }}
-                      />
-                      <div className="flex-1 min-w-0">
-                        <div className="truncate leading-tight">{board.name}</div>
-                        <div className={`text-[10px] font-mono leading-tight ${
-                          selectedBoardIds.includes(board.id) ? 'text-blue-500' : 'text-gray-400'
-                        }`}>
-                          {board.width}×{board.height}×{board.depth}
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-
-                  {/* Add board — preset picker */}
-                  <div className="relative mt-1" ref={presetMenuOpen === assembly.id ? menuRef : undefined}>
-                    <button
-                      onClick={() => setPresetMenuOpen(presetMenuOpen === assembly.id ? null : assembly.id)}
-                      className="text-xs text-blue-600 hover:text-blue-800 px-2 py-1"
-                    >
-                      + {t('sidebar.addBoard')}
-                    </button>
-
-                    {presetMenuOpen === assembly.id && (
-                      <div className="absolute left-0 top-full z-50 bg-white rounded-lg shadow-lg border border-gray-200 py-1 w-52 max-h-80 overflow-y-auto">
-                        {presetGroups.map((group) => (
-                          <div key={group.labelKey}>
-                            <div className="px-3 py-1 text-[10px] font-bold text-gray-400 uppercase tracking-wide">
-                              {t(group.labelKey)}
-                            </div>
-                            {group.ids.map((pid) => {
-                              const preset = boardPresets.find((p) => p.id === pid)
-                              if (!preset) return null
-                              return (
-                                <button
-                                  key={preset.id}
-                                  onClick={() => handleAddPreset(assembly.id, preset.id)}
-                                  className="w-full text-left px-3 py-1.5 text-xs hover:bg-blue-50 hover:text-blue-700 flex items-center gap-2"
-                                >
-                                  <span
-                                    className="inline-block w-3 h-3 rounded-sm shrink-0 border border-gray-200"
-                                    style={{ backgroundColor: preset.color }}
-                                  />
-                                  <span className="flex-1 truncate">{t(preset.labelKey)}</span>
-                                  <span className="text-[10px] text-gray-400 whitespace-nowrap">
-                                    {preset.width}x{preset.height}x{preset.depth}
-                                  </span>
-                                </button>
-                              )
-                            })}
-                          </div>
-                        ))}
-                        {/* Custom board */}
-                        <div className="border-t border-gray-100 mt-1 pt-1">
-                          {customFormAssemblyId === assembly.id ? (
-                            <div className="px-3 py-2">
-                              <div className="text-[10px] font-bold text-gray-400 uppercase mb-1">{t('board.customBoard')}</div>
-                              {[
-                                { label: t('board.width'), state: customW, setter: setCustomW },
-                                { label: t('board.height'), state: customH, setter: setCustomH },
-                                { label: t('board.depth'), state: customD, setter: setCustomD }
-                              ].map(({ label, state, setter }) => (
-                                <div key={label} className="flex items-center gap-1 mb-1">
-                                  <label className="text-[10px] text-gray-500 w-10 shrink-0">{label}</label>
-                                  <input
-                                    type="number"
-                                    value={state}
-                                    onChange={(e) => setter(e.target.value)}
-                                    className="flex-1 text-xs border border-gray-300 rounded px-1 py-0.5"
-                                  />
-                                  <span className="text-[10px] text-gray-400">mm</span>
-                                </div>
-                              ))}
-                              <div className="flex gap-1 mt-1">
-                                <button
-                                  onClick={() => handleAddCustomBoard(assembly.id)}
-                                  className="flex-1 text-xs bg-blue-600 text-white rounded py-0.5 hover:bg-blue-700"
-                                >
-                                  + {t('sidebar.addBoard')}
-                                </button>
-                                <button
-                                  onClick={() => setCustomFormAssemblyId(null)}
-                                  className="text-xs text-gray-400 hover:text-gray-600 px-2"
-                                >
-                                  ✕
-                                </button>
-                              </div>
-                            </div>
-                          ) : (
-                            <button
-                              onClick={() => setCustomFormAssemblyId(assembly.id)}
-                              className="w-full text-left px-3 py-1.5 text-xs text-gray-500 hover:bg-gray-50 hover:text-gray-700"
-                            >
-                              {t('board.customBoard')}
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              )}
-            </div>
-          ))}
+          {project.assemblies.filter((a) => !a.parentId).map((a) => renderNode(a, 0))}
 
           {project.assemblies.length === 0 && (
             <p className="text-xs text-gray-400 italic">
@@ -577,6 +646,23 @@ export function AssemblyDrawer() {
           >
             {t('sidebar.toggleVisibility')}
           </button>
+          <button
+            onClick={() => handleAddSubAssembly(assemblyMenu.id)}
+            className="w-full text-left px-4 py-1.5 text-sm hover:bg-blue-50 hover:text-blue-700"
+          >
+            {t('sidebar.addSubAssembly')}
+          </button>
+          {project.assemblies.find((a) => a.id === assemblyMenu.id)?.parentId && (
+            <button
+              onClick={() => {
+                moveAssembly(assemblyMenu.id, null, 'inside')
+                setAssemblyMenu(null)
+              }}
+              className="w-full text-left px-4 py-1.5 text-sm hover:bg-blue-50 hover:text-blue-700"
+            >
+              {t('sidebar.moveToTopLevel')}
+            </button>
+          )}
           <button
             onClick={() => handleSelectAllInAssembly(assemblyMenu.id)}
             className="w-full text-left px-4 py-1.5 text-sm hover:bg-blue-50 hover:text-blue-700"

@@ -1,10 +1,12 @@
 import { csvCell, escapeHtml } from '../../utils/textSafety'
+import { activeAssemblies, activeJoints } from '../../utils/activeParts'
 import { useState, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useProjectStore } from '../../store/useProjectStore'
 import { useUIStore } from '../../store/useUIStore'
 import { getMaterialById, materials } from '../../data/materials'
 import { exportDxf } from '../../utils/dxf'
+import { assemblyPath } from '../../utils/assemblyTree'
 import type { Board } from '../../types/furniture'
 
 function edgeBandingLabel(board: Board): string {
@@ -94,13 +96,13 @@ export function CuttingList() {
   const rawRows = useMemo<Row[]>(() => {
     const result: Row[] = []
     let nr = 0
-    for (const assembly of project.assemblies) {
+    for (const assembly of activeAssemblies(project)) {
       for (const board of assembly.boards) {
         nr++
         const mat = getMaterialById(board.materialId)
         result.push({
           nr,
-          assemblyName: assembly.name,
+          assemblyName: assemblyPath(project.assemblies, assembly.id),
           name: board.name,
           materialId: board.materialId,
           material: mat ? (lang === 'de' ? mat.name : mat.nameEn) : board.materialId,
@@ -189,10 +191,10 @@ export function CuttingList() {
     return result
   }, [rawRows])
 
-  // Fastener summary over all joints (joints may span assemblies)
+  // Fastener summary over the joints of visible assemblies (joints may span assemblies)
   const fastenerRows = useMemo(() => {
     const map = new Map<string, { type: string; size: string; qty: number }>()
-    for (const a of project.assemblies) for (const j of a.joints) for (const f of j.fasteners) {
+    for (const { joint: j } of activeJoints(project)) for (const f of j.fasteners) {
       const key = `${f.type}|${f.diameter}|${f.length}`
       const prev = map.get(key)
       map.set(key, { type: f.type, size: `${f.diameter} × ${f.length}`, qty: (prev?.qty ?? 0) + f.quantity })
@@ -203,6 +205,7 @@ export function CuttingList() {
   // Early return only AFTER every hook: a conditional return above the useMemos
   // changes the hook count between renders and crashes React (#310).
   if (!showCuttingList) return null
+  const hiddenCount = project.assemblies.length - activeAssemblies(project).length
 
   const buildCsvRows = (rows: Row[]) => {
     const headers = [
@@ -282,7 +285,7 @@ th{background:#f0f0f0}@media print{@page{size:A4;margin:15mm}}</style></head>
   }
 
   const handleExportDxf = () => {
-    const allBoards = project.assemblies.flatMap((a) => a.boards)
+    const allBoards = activeAssemblies(project).flatMap((a) => a.boards)
     const dxfContent = exportDxf(allBoards)
     const filename = `${project.name}.dxf`
     try {
@@ -308,6 +311,11 @@ th{background:#f0f0f0}@media print{@page{size:A4;margin:15mm}}</style></head>
         {/* Header */}
         <div className="p-4 border-b border-gray-200 flex items-center gap-3 shrink-0 flex-wrap">
           <h2 className="text-base font-bold flex-1">{t('cutting.title')}</h2>
+          {hiddenCount > 0 && (
+            <span className="text-xs font-medium px-2 py-1 rounded bg-amber-50 text-amber-800">
+              {t('cutting.hiddenExcluded', { count: hiddenCount })}
+            </span>
+          )}
 
           {/* Export toast */}
           {exportToast && (

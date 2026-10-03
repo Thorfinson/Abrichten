@@ -117,3 +117,63 @@ export function clampCutouts(board: Board): BoardCutout[] {
       : []
   })
 }
+
+/** A clamped cutout that reaches the board edge is a notch (Ausklinkung), not a hole. */
+export function isNotch(board: Board, c: BoardCutout): boolean {
+  return c.x <= 0 || c.z <= 0 || c.x + c.width >= board.width || c.z + c.depth >= board.depth
+}
+
+/**
+ * Outline of a width × depth rectangle minus edge notches, counter-clockwise in the
+ * (x, z) plane, collinear points merged.
+ * ponytail: traces one loop; notches that split the board or meet only at a corner
+ * point are not handled (no real board needs that).
+ */
+export function notchedOutline(width: number, depth: number, notches: BoardCutout[]): [number, number][] {
+  const xs = [...new Set([0, width, ...notches.flatMap((c) => [c.x, c.x + c.width])])].sort((a, b) => a - b)
+  const zs = [...new Set([0, depth, ...notches.flatMap((c) => [c.z, c.z + c.depth])])].sort((a, b) => a - b)
+  const solid = (i: number, j: number): boolean => {
+    if (i < 0 || j < 0 || i >= xs.length - 1 || j >= zs.length - 1) return false
+    const cx = (xs[i] + xs[i + 1]) / 2
+    const cz = (zs[j] + zs[j + 1]) / 2
+    return !notches.some((c) => cx > c.x && cx < c.x + c.width && cz > c.z && cz < c.z + c.depth)
+  }
+  // boundary edges of the solid grid cells, each mapped start → end
+  const next = new Map<string, [number, number]>()
+  const key = ([x, z]: [number, number]): string => `${x},${z}`
+  for (let i = 0; i < xs.length - 1; i++) {
+    for (let j = 0; j < zs.length - 1; j++) {
+      if (!solid(i, j)) continue
+      const [x0, x1, z0, z1] = [xs[i], xs[i + 1], zs[j], zs[j + 1]]
+      if (!solid(i, j - 1)) next.set(key([x0, z0]), [x1, z0])
+      if (!solid(i + 1, j)) next.set(key([x1, z0]), [x1, z1])
+      if (!solid(i, j + 1)) next.set(key([x1, z1]), [x0, z1])
+      if (!solid(i - 1, j)) next.set(key([x0, z1]), [x0, z0])
+    }
+  }
+  const start = next.values().next().value
+  if (!start) return []
+  const loop: [number, number][] = []
+  for (let p = start; loop.length <= next.size; ) {
+    loop.push(p)
+    const q = next.get(key(p))
+    if (!q || key(q) === key(start)) break
+    p = q
+  }
+  return loop.filter((p, i) => {
+    const a = loop[(i + loop.length - 1) % loop.length]
+    const b = loop[(i + 1) % loop.length]
+    return !((a[0] === p[0] && p[0] === b[0]) || (a[1] === p[1] && p[1] === b[1]))
+  })
+}
+
+/** True when the box lies inside one of the board's cutouts (unrotated boards only). */
+export function insideCutout(board: Board, box: { minX: number; maxX: number; minZ: number; maxZ: number }): boolean {
+  const r = board.rotation
+  if (r.x !== 0 || r.y !== 0 || r.z !== 0) return false   // ponytail: rotated boards keep the plain box test
+  const x0 = box.minX - board.position.x
+  const x1 = box.maxX - board.position.x
+  const z0 = box.minZ - board.position.z
+  const z1 = box.maxZ - board.position.z
+  return clampCutouts(board).some((c) => x0 >= c.x && x1 <= c.x + c.width && z0 >= c.z && z1 <= c.z + c.depth)
+}

@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import { temporal } from 'zundo'
 import type { Project, Assembly, Board, Joint, Unit, Vec3, Material, CustomHardwareItem } from '../types/furniture'
 import { validateProject } from '../utils/validateProject'
+import { subtreeIds } from '../utils/assemblyTree'
 
 function uid(): string {
   return Math.random().toString(36).slice(2, 10)
@@ -34,10 +35,13 @@ interface ProjectState {
   resetProject: () => void
 
   // Assembly
-  addAssembly: (name: string) => string
+  addAssembly: (name: string, parentId?: string) => string
+  /** Removes the assembly with everything nested below it. */
   removeAssembly: (id: string) => void
   renameAssembly: (id: string, name: string) => void
-  reorderAssemblies: (fromIdx: number, toIdx: number) => void
+  /** Places an assembly before/after a sibling or inside a group (targetId null + inside = top level). */
+  moveAssembly: (id: string, targetId: string | null, where: AssemblyDrop) => void
+  /** Visibility and X-ray apply to the whole subtree. */
   toggleAssemblyVisibility: (id: string) => void
   toggleAssemblyHighlight: (id: string) => void
 
@@ -87,6 +91,8 @@ interface ProjectState {
   addHardwareToBoard: (assemblyId: string, boardId: string, hardwareId: string, quantity: number) => void
 }
 
+export type AssemblyDrop = 'before' | 'after' | 'inside'
+
 function createEmptyProject(): Project {
   return {
     id: uid(),
@@ -125,26 +131,31 @@ export const useProjectStore = create<ProjectState>()(
       resetProject: () =>
         set({ project: createEmptyProject() }),
 
-      addAssembly: (name) => {
+      addAssembly: (name, parentId) => {
         const id = uid()
-        set((s) => ({
-          project: {
-            ...s.project,
-            updatedAt: now(),
-            assemblies: [...s.project.assemblies, { id, name, visible: true, boards: [], joints: [] }]
-          }
-        }))
+        set((s) => {
+          // a subgroup takes the parent's eye and X-ray state; an unknown parent means top level
+          const parent = parentId ? s.project.assemblies.find((a) => a.id === parentId) : undefined
+          const added: Assembly = parent
+            ? { id, name, parentId: parent.id, visible: parent.visible, highlight: parent.highlight, boards: [], joints: [] }
+            : { id, name, visible: true, boards: [], joints: [] }
+          return { project: { ...s.project, updatedAt: now(), assemblies: [...s.project.assemblies, added] } }
+        })
         return id
       },
 
       removeAssembly: (id) =>
-        set((s) => ({
-          project: {
-            ...s.project,
-            updatedAt: now(),
-            assemblies: s.project.assemblies.filter((a) => a.id !== id)
+        set((s) => {
+          const gone = subtreeIds(s.project.assemblies, id)
+          const goneBoards = new Set(s.project.assemblies.filter((a) => gone.has(a.id)).flatMap((a) => a.boards.map((b) => b.id)))
+          return {
+            project: {
+              ...s.project,
+              updatedAt: now(),
+              assemblies: s.project.assemblies.filter((a) => !gone.has(a.id)).map((a) => pruneJoints(a, goneBoards))
+            }
           }
-        })),
+        }),
 
       renameAssembly: (id, name) =>
         set((s) => ({
@@ -157,34 +168,55 @@ export const useProjectStore = create<ProjectState>()(
           }
         })),
 
-      reorderAssemblies: (fromIdx, toIdx) => {
-        const assemblies = [...get().project.assemblies]
-        const [moved] = assemblies.splice(fromIdx, 1)
-        assemblies.splice(toIdx, 0, moved)
-        set((s) => ({ project: { ...s.project, assemblies, updatedAt: now() } }))
+      moveAssembly: (id, targetId, where) => {
+        const list = get().project.assemblies
+        const moving = list.find((a) => a.id === id)
+        const target = targetId === null ? undefined : list.find((a) => a.id === targetId)
+        if (!moving || (targetId !== null && !target)) return
+        if (target && subtreeIds(list, id).has(target.id)) return   // not into itself or its own subgroups
+        const parentId = where === 'inside' ? target?.id : target?.parentId
+        if (where === 'inside' && parentId === moving.parentId) return   // already in there: keep its place
+        const rest = list.filter((a) => a.id !== id)
+        const at = where === 'inside' || !target ? rest.length : rest.indexOf(target) + (where === 'after' ? 1 : 0)
+        if (parentId === moving.parentId && at === list.indexOf(moving)) return   // same place, no undo step
+        // the moved subtree takes the new parent's eye and X-ray state
+        const parent = parentId ? list.find((a) => a.id === parentId) : undefined
+        const subtree = subtreeIds(list, id)
+        const inherit = (a: Assembly): Assembly =>
+          parent && subtree.has(a.id) ? { ...a, visible: parent.visible, highlight: parent.highlight } : a
+        const placed = [...rest.slice(0, at), { ...moving, parentId }, ...rest.slice(at)].map(inherit)
+        set((s) => ({ project: { ...s.project, updatedAt: now(), assemblies: placed } }))
       },
 
       toggleAssemblyVisibility: (id) =>
-        set((s) => ({
-          project: {
-            ...s.project,
-            updatedAt: now(),
-            assemblies: s.project.assemblies.map((a) =>
-              a.id === id ? { ...a, visible: !a.visible } : a
-            )
+        set((s) => {
+          const self = s.project.assemblies.find((a) => a.id === id)
+          if (!self) return {}
+          const ids = subtreeIds(s.project.assemblies, id)
+          const value = !self.visible
+          return {
+            project: {
+              ...s.project,
+              updatedAt: now(),
+              assemblies: s.project.assemblies.map((a) => (ids.has(a.id) ? { ...a, visible: value } : a))
+            }
           }
-        })),
+        }),
 
       toggleAssemblyHighlight: (id) =>
-        set((s) => ({
-          project: {
-            ...s.project,
-            updatedAt: now(),
-            assemblies: s.project.assemblies.map((a) =>
-              a.id === id ? { ...a, highlight: !a.highlight } : a
-            )
+        set((s) => {
+          const self = s.project.assemblies.find((a) => a.id === id)
+          if (!self) return {}
+          const ids = subtreeIds(s.project.assemblies, id)
+          const value = !self.highlight
+          return {
+            project: {
+              ...s.project,
+              updatedAt: now(),
+              assemblies: s.project.assemblies.map((a) => (ids.has(a.id) ? { ...a, highlight: value } : a))
+            }
           }
-        })),
+        }),
 
       addBoard: (assemblyId, board) => {
         const id = uid()

@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { activeAssemblies } from '../../utils/activeParts'
 import { useTranslation } from 'react-i18next'
 import { useProjectStore } from '../../store/useProjectStore'
 import { useUIStore } from '../../store/useUIStore'
@@ -53,7 +54,7 @@ export function NestingPanel() {
 
   if (!showNestingPanel) return null
 
-  const allBoards = project.assemblies.flatMap((a) => a.boards)
+  const allBoards = activeAssemblies(project).flatMap((a) => a.boards)
 
   const handleOptimize = () => {
     if (allBoards.length === 0) return

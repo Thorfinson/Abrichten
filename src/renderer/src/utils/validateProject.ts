@@ -2,6 +2,7 @@ import type {
   Project, Assembly, Board, BoardCutout, Joint, JointType, Fastener, FastenerType, HeadType, FastenerMaterial,
   AttachedHardware, Vec3, GrainDirection
 } from '../types/furniture'
+import { sanitizeParents } from './assemblyTree'
 
 const JOINT_TYPES: readonly JointType[] = ['butt', 'miter', 'dado', 'rabbet', 'dowel', 'biscuit', 'screw', 'pocket_screw', 'dovetail', 'lap', 'glued']
 const FASTENER_TYPES: readonly FastenerType[] = ['wood_screw', 'confirmat', 'dowel_pin', 'biscuit', 'pocket_screw', 'angle_bracket', 'joist_hanger', 'nail']
@@ -22,10 +23,10 @@ export function validateProject(raw: unknown): Project {
   if (!Array.isArray(raw.assemblies)) throw new Error('"assemblies" missing')
   const parsed = raw.assemblies.map((a, i) => validateAssembly(a, `assemblies[${i}]`))
   const boardIds = new Set(parsed.flatMap(({ assembly }) => assembly.boards.map((b) => b.id)))
-  const assemblies = parsed.map(({ assembly, rawJoints }) => ({
+  const assemblies = sanitizeParents(parsed.map(({ assembly, rawJoints }) => ({
     ...assembly,
     joints: rawJoints.flatMap((j) => validateJoint(j, boardIds))
-  }))
+  })))
   return {
     ...raw,
     id: str(raw.id, crypto.randomUUID()),
