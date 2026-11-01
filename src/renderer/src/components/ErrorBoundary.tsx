@@ -1,5 +1,6 @@
 import { Component, type ErrorInfo, type ReactNode } from 'react'
 import i18n from '../i18n'
+import { Button } from './ui/Dialog'
 
 interface Props { children: ReactNode }
 interface State { error: Error | null }
@@ -25,30 +26,29 @@ export class ErrorBoundary extends Component<Props, State> {
     if (!this.state.error) return this.props.children
     const de = i18n.language === 'de'
     return (
-      <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-gray-900 text-white p-8">
-        <div className="max-w-xl w-full rounded-lg border border-red-500/40 bg-gray-800 p-6 shadow-2xl">
-          <h1 className="text-base font-bold text-red-400 mb-2">
+      <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-chrome-deep p-8 text-chrome-text [color-scheme:dark]">
+        <div
+          role="alertdialog"
+          aria-modal="true"
+          aria-labelledby="error-boundary-title"
+          className="w-full max-w-xl rounded-lg border border-chrome-border border-t-2 border-t-danger bg-chrome-bg p-6 shadow-2xl"
+        >
+          <h1 id="error-boundary-title" className="mb-2 text-sm font-semibold text-danger-text">
             {de ? 'Anzeigefehler' : 'Render error'}
           </h1>
-          <p className="text-sm text-white/80 mb-4">
+          <p className="mb-4 text-sm text-chrome-secondary">
             {de
               ? 'Ein Fenster ist abgestürzt. Das Projekt ist automatisch gespeichert; du kannst es weiter versuchen oder die Ansicht neu laden.'
               : 'A panel crashed. The project is auto-saved; you can try to continue or reload the view.'}
           </p>
-          <pre className="text-xs bg-black/40 rounded p-3 mb-4 overflow-auto max-h-40 whitespace-pre-wrap">{this.state.error.message}</pre>
+          <pre className="mb-4 max-h-40 overflow-auto whitespace-pre-wrap rounded border border-chrome-border bg-chrome-deep p-3 font-mono text-xs text-chrome-muted">{this.state.error.message}</pre>
           <div className="flex gap-2 justify-end">
-            <button
-              onClick={() => this.setState({ error: null })}
-              className="text-sm px-4 py-1.5 rounded bg-white/10 hover:bg-white/20"
-            >
+            <Button autoFocus onClick={() => this.setState({ error: null })}>
               {de ? 'Weiter' : 'Continue'}
-            </button>
-            <button
-              onClick={() => window.location.reload()}
-              className="text-sm px-4 py-1.5 rounded bg-blue-600 hover:bg-blue-700"
-            >
+            </Button>
+            <Button variant="primary" onClick={() => window.location.reload()}>
               {de ? 'Neu laden' : 'Reload'}
-            </button>
+            </Button>
           </div>
         </div>
       </div>

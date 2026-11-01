@@ -2,6 +2,16 @@
 <html lang="de">
   <head>
     <meta charset="UTF-8" />
+    <!--
+      Content Security Policy (production; electron.vite.config.ts relaxes it for the dev server).
+      style-src 'unsafe-inline': React/drei style attributes, inline <style>/SVG in the print iframe.
+      img-src data: image uploads in the AI chat.  connect-src: the AI endpoint is configurable
+      (any https host, or a local OpenAI-compatible server).
+    -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' https: http://localhost:* http://127.0.0.1:*; object-src 'none'; base-uri 'none'"
+    />
     <title>Abrichten</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   </head>

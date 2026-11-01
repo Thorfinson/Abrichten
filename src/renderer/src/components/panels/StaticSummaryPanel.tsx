@@ -2,173 +2,169 @@ import { useState, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useProjectStore } from '../../store/useProjectStore'
 import { useUIStore } from '../../store/useUIStore'
-import { getMaterialById } from '../../data/materials'
-import { calculateStatic } from '../../services/static-calc'
-import type { StaticRating } from '../../services/static-calc'
+import { useStaticSimulation } from '../../store/useStaticStore'
+import { GRAVITY, utilisationCss, type StaticStatus } from '../../services/static-calc'
+import type { BoardStatic } from '../../services/static-sim'
+import type { Assembly, Board } from '../../types/furniture'
 
-const RATING_COLOR: Record<StaticRating, string> = {
-  ok:       'text-green-700 bg-green-50',
-  warning:  'text-amber-700 bg-amber-50',
-  critical: 'text-red-700   bg-red-50',
+const STATUS_BADGE: Record<StaticStatus, string> = {
+  critical: 'bg-danger-dim text-danger-text',
+  unsupported: 'bg-ai-dim text-ai-text',
+  warning: 'bg-accent-dim text-accent-text',
+  ok: 'bg-success-dim text-success-text',
+  wallHung: 'bg-chrome-surface text-chrome-muted'
 }
 
-const RATING_ORDER: Record<StaticRating, number> = { critical: 0, warning: 1, ok: 2 }
+const STATUS_ORDER: Record<StaticStatus, number> = { critical: 0, unsupported: 1, warning: 2, ok: 3, wallHung: 4 }
 
 interface SummaryRow {
-  boardName: string
-  assemblyName: string
-  spanMm: number
-  thicknessMm: number
-  deflectionMm: number
-  allowableMm: number
-  minThicknessMm: number
-  rating: StaticRating
+  board: Board
+  assembly: Assembly
+  r: BoardStatic
 }
 
+/** Static summary: every part's load, utilisation and deflection from the load simulation. */
 export function StaticSummaryPanel() {
-  const { i18n } = useTranslation()
-  const lang = i18n.language as 'de' | 'en'
-
-  const project = useProjectStore((s) => s.project)
   const showStaticSummary = useUIStore((s) => s.showStaticSummary)
-  const setShowStaticSummary = useUIStore((s) => s.setShowStaticSummary)
-  const userLoadKg = useUIStore((s) => s.staticLoadKg)
+  return showStaticSummary ? <SummaryDialog /> : null
+}
 
+function SummaryDialog() {
+  const { t, i18n } = useTranslation()
+  const lang = i18n.language
+  const assemblies = useProjectStore((s) => s.project.assemblies)
+  const setShowStaticSummary = useUIStore((s) => s.setShowStaticSummary)
+  const payloadKg = useUIStore((s) => s.staticLoadKg)
+  const sim = useStaticSimulation()
   const [onlyIssues, setOnlyIssues] = useState(false)
 
-  const allBoards = useMemo(() =>
-    project.assemblies
-      .filter((a) => a.visible !== false)
-      .flatMap((a) => a.boards.map((b) => ({ board: b, assemblyName: a.name }))),
-    [project.assemblies]
-  )
-
   const rows = useMemo<SummaryRow[]>(() => {
-    const result: SummaryRow[] = []
-    for (const { board, assemblyName } of allBoards) {
-      const mat = getMaterialById(board.materialId)
-      if (!mat) continue
-      if (mat.category === 'glass' || mat.category === 'metal') continue
-
-      const thickness = Math.min(board.height, board.depth)
-      const r = calculateStatic(board.width, board.depth, thickness, userLoadKg, mat)
-
-      result.push({
-        boardName: board.name,
-        assemblyName,
-        spanMm: board.width,
-        thicknessMm: r.currentThicknessMm,
-        deflectionMm: r.deflectionMm,
-        allowableMm: r.allowableDeflectionMm,
-        minThicknessMm: r.minThicknessMm,
-        rating: r.rating
-      })
+    const out: SummaryRow[] = []
+    for (const assembly of assemblies) {
+      if (assembly.visible === false) continue
+      for (const board of assembly.boards) {
+        const r = sim.results.get(board.id)
+        if (r) out.push({ board, assembly, r })
+      }
     }
-    result.sort((a, b) => RATING_ORDER[a.rating] - RATING_ORDER[b.rating])
-    return result
-  }, [allBoards, userLoadKg])
+    return out.sort((a, b) => STATUS_ORDER[a.r.status] - STATUS_ORDER[b.r.status] || b.r.uMax - a.r.uMax)
+  }, [assemblies, sim])
 
-  if (!showStaticSummary) return null
+  const close = (): void => setShowStaticSummary(false)
+  const select = (row: SummaryRow): void => {
+    useUIStore.getState().selectBoard(row.assembly.id, row.board.id)
+    close()
+  }
+  const num = (v: number, digits = 1): string => v.toLocaleString(lang, { maximumFractionDigits: digits, minimumFractionDigits: digits })
+  const rated = (r: BoardStatic): boolean => r.status !== 'unsupported' && r.status !== 'wallHung'
+  const statusText = (s: StaticStatus): string =>
+    s === 'unsupported' ? t('sim.unsupported') : s === 'wallHung' ? t('sim.notChecked') : t(`sim.${s}`)
+  // Where it is used most, on the board's face from its min corner: x / z on a lying
+  // board (left, back), along / height on a standing one
+  const location = (r: BoardStatic): string => {
+    const [a, b] = r.field.axes
+    return t('sim.location', { a: `${a} ${Math.round(r.maxLocal.a)}`, b: `${b} ${Math.round(r.maxLocal.b)}` })
+  }
 
-  const displayed = onlyIssues ? rows.filter((r) => r.rating !== 'ok') : rows
-  const critCount = rows.filter((r) => r.rating === 'critical').length
-  const warnCount = rows.filter((r) => r.rating === 'warning').length
+  const displayed = onlyIssues ? rows.filter((row) => row.r.status !== 'ok' && row.r.status !== 'wallHung') : rows
+  const th = 'px-2 py-1.5 font-medium border-b border-chrome-border'
+  const td = 'px-2 py-1 border-b border-chrome-border/60 whitespace-nowrap'
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={(e) => { if (e.target === e.currentTarget) setShowStaticSummary(false) }}>
-      <div className="bg-white rounded-lg shadow-xl w-[720px] max-h-[85vh] overflow-hidden flex flex-col">
-
+    <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center" onClick={(e) => { if (e.target === e.currentTarget) close() }}>
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="static-summary-title"
+        className="bg-chrome-bg text-chrome-text border border-chrome-border rounded-lg shadow-2xl w-[960px] max-w-[95vw] max-h-[85vh] overflow-hidden flex flex-col"
+      >
         {/* Header */}
-        <div className="p-4 border-b border-gray-200 flex items-center gap-3 shrink-0">
-          <h2 className="text-sm font-bold text-gray-800 flex-1">
-            {lang === 'de' ? 'Statik-Übersicht' : 'Static Summary'}
-          </h2>
-          {critCount > 0 && (
-            <span className="text-xs font-bold text-red-700 bg-red-50 border border-red-200 rounded px-2 py-0.5">
-              {critCount} {lang === 'de' ? 'Kritisch' : 'Critical'}
-            </span>
-          )}
-          {warnCount > 0 && (
-            <span className="text-xs font-bold text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-0.5">
-              {warnCount} {lang === 'de' ? 'Warnung' : 'Warning'}
-            </span>
-          )}
-          <label className="flex items-center gap-1.5 text-xs text-gray-600 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={onlyIssues}
-              onChange={(e) => setOnlyIssues(e.target.checked)}
-              className="rounded"
-            />
-            {lang === 'de' ? 'Nur Probleme' : 'Issues only'}
+        <div className="px-4 py-3 border-b border-chrome-border flex items-center gap-3 shrink-0">
+          <h2 id="static-summary-title" className="text-sm font-semibold flex-1">{t('sim.summaryTitle')}</h2>
+          <span className="text-xs text-chrome-muted tabular-nums">
+            {t('sim.counts', { critical: sim.critical, warning: sim.warning, unsupported: sim.unsupported })}
+          </span>
+          <label className="flex items-center gap-1.5 text-xs text-chrome-secondary cursor-pointer">
+            <input type="checkbox" checked={onlyIssues} onChange={(e) => setOnlyIssues(e.target.checked)} className="accent-[var(--color-action)]" />
+            {t('sim.onlyIssues')}
           </label>
-          <button onClick={() => setShowStaticSummary(false)} className="text-gray-400 hover:text-gray-700 text-lg leading-none">×</button>
+          <button onClick={close} aria-label={t('sim.close')} title={t('sim.close')} className="text-chrome-muted hover:text-chrome-text text-lg leading-none">×</button>
         </div>
 
-        {/* User load note */}
-        <div className="px-4 py-2 border-b border-gray-100 text-xs text-gray-500 shrink-0">
-          {lang === 'de' ? `Nutzlast: ${userLoadKg} kg (einstellbar in der Statusleiste)` : `User load: ${userLoadKg} kg (adjustable in status bar)`}
+        <div className="px-4 py-2 border-b border-chrome-border text-xs text-chrome-secondary shrink-0">
+          {t('sim.payloadNote', { kg: payloadKg })}
         </div>
 
         {/* Table */}
         <div className="flex-1 overflow-y-auto">
           {displayed.length === 0 ? (
-            <div className="p-8 text-center text-sm text-gray-400">
-              {onlyIssues
-                ? (lang === 'de' ? 'Keine Probleme gefunden!' : 'No issues found!')
-                : (lang === 'de' ? 'Keine Bauteile vorhanden.' : 'No boards to analyze.')}
-            </div>
+            <div className="p-8 text-center text-sm text-chrome-muted">{onlyIssues ? t('sim.noIssues') : t('sim.noBoards')}</div>
           ) : (
             <table className="w-full text-xs border-collapse">
-              <thead className="sticky top-0 bg-gray-100 z-10">
+              <thead className="sticky top-0 z-10 bg-chrome-deep text-chrome-muted">
                 <tr>
-                  <th className="border border-gray-200 px-2 py-1.5 text-left">{lang === 'de' ? 'Bauteil' : 'Part'}</th>
-                  <th className="border border-gray-200 px-2 py-1.5 text-left">{lang === 'de' ? 'Gruppe' : 'Assembly'}</th>
-                  <th className="border border-gray-200 px-2 py-1.5 text-right">{lang === 'de' ? 'Stützweite' : 'Span'} (mm)</th>
-                  <th className="border border-gray-200 px-2 py-1.5 text-right">{lang === 'de' ? 'Stärke' : 'Thickness'} (mm)</th>
-                  <th className="border border-gray-200 px-2 py-1.5 text-right">{lang === 'de' ? 'Durchbiegung' : 'Deflection'} (mm)</th>
-                  <th className="border border-gray-200 px-2 py-1.5 text-right">{lang === 'de' ? 'Zulässig' : 'Allowable'} (mm)</th>
-                  <th className="border border-gray-200 px-2 py-1.5 text-right">{lang === 'de' ? 'Min. Stärke' : 'Min. Thickness'} (mm)</th>
-                  <th className="border border-gray-200 px-2 py-1.5 text-center">{lang === 'de' ? 'Bewertung' : 'Rating'}</th>
+                  <th className={`${th} text-left`}>{t('sim.colPart')}</th>
+                  <th className={`${th} text-left`}>{t('sim.colGroup')}</th>
+                  <th className={`${th} text-right`}>{t('sim.colLoad')}</th>
+                  <th className={`${th} text-right`}>{t('sim.colSpan')}</th>
+                  <th className={`${th} text-right`}>{t('sim.colUtilisation')}</th>
+                  <th className={`${th} text-right`}>{t('sim.colLocation')}</th>
+                  <th className={`${th} text-right`}>{t('sim.colDeflection')}</th>
+                  <th className={`${th} text-right`}>{t('sim.colMinThickness')}</th>
+                  <th className={`${th} text-center`}>{t('sim.colRating')}</th>
                 </tr>
               </thead>
               <tbody>
-                {displayed.map((r, i) => (
-                  <tr key={i} className={r.rating !== 'ok' ? 'bg-red-50/30' : ''}>
-                    <td className="border border-gray-200 px-2 py-1 font-medium">{r.boardName}</td>
-                    <td className="border border-gray-200 px-2 py-1 text-gray-500">{r.assemblyName}</td>
-                    <td className="border border-gray-200 px-2 py-1 text-right font-mono">{r.spanMm}</td>
-                    <td className="border border-gray-200 px-2 py-1 text-right font-mono">{r.thicknessMm}</td>
-                    <td className="border border-gray-200 px-2 py-1 text-right font-mono">
-                      {r.deflectionMm > 0 ? r.deflectionMm.toFixed(2) : '—'}
-                    </td>
-                    <td className="border border-gray-200 px-2 py-1 text-right font-mono">
-                      {r.allowableMm > 0 ? r.allowableMm.toFixed(2) : '—'}
-                    </td>
-                    <td className="border border-gray-200 px-2 py-1 text-right font-mono">
-                      {r.rating !== 'ok' ? (
-                        <span className="text-red-700 font-bold">{r.minThicknessMm}</span>
-                      ) : '—'}
-                    </td>
-                    <td className="border border-gray-200 px-2 py-1 text-center">
-                      <span className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-bold uppercase ${RATING_COLOR[r.rating]}`}>
-                        {r.rating}
-                      </span>
-                    </td>
-                  </tr>
-                ))}
+                {displayed.map((row) => {
+                  const { r } = row
+                  const spans = rated(r) && r.allowableDeflectionMm > 0
+                  return (
+                    <tr
+                      key={row.board.id}
+                      tabIndex={0}
+                      title={t('sim.selectHint')}
+                      onClick={() => select(row)}
+                      onKeyDown={(e) => { if (e.key === 'Enter') select(row) }}
+                      className="cursor-pointer hover:bg-chrome-hover focus:bg-chrome-hover outline-none"
+                    >
+                      <td className={`${td} font-medium`}>{row.board.name}</td>
+                      <td className={`${td} text-chrome-muted`}>{row.assembly.name}</td>
+                      <td className={`${td} text-right font-mono`}>{num(r.totalLoadN / GRAVITY)}</td>
+                      <td className={`${td} text-right font-mono`}>
+                        {spans && r.spanMm > 0 ? `${Math.round(r.spanMm)}${r.cantilever ? ` (${t('sim.cantilever')})` : ''}` : '—'}
+                      </td>
+                      <td className={`${td} text-right font-mono font-semibold`} style={rated(r) ? { color: utilisationCss(r.uMax) } : undefined}>
+                        {rated(r) ? `${Math.round(r.uMax * 100)} %` : '—'}
+                      </td>
+                      <td className={`${td} text-right font-mono text-chrome-secondary`}>
+                        {rated(r) && r.model !== 'none' && r.uMax > 0 ? location(r) : '—'}
+                      </td>
+                      <td className={`${td} text-right font-mono`}>
+                        {spans ? `${num(r.deflectionMm)} / ${num(r.allowableDeflectionMm)}` : '—'}
+                      </td>
+                      <td className={`${td} text-right font-mono`}>
+                        {rated(r) && r.status !== 'ok' && r.minThicknessMm !== null
+                          ? <span className="text-danger font-semibold">{r.minThicknessMm}</span>
+                          : '—'}
+                        <span className="text-chrome-hint"> / {num(r.thicknessMm, 0)}</span>
+                      </td>
+                      <td className={`${td} text-center`}>
+                        <span className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-semibold whitespace-nowrap ${STATUS_BADGE[r.status]}`}>
+                          {statusText(r.status)}
+                        </span>
+                      </td>
+                    </tr>
+                  )
+                })}
               </tbody>
             </table>
           )}
         </div>
 
         {/* Footer */}
-        <div className="p-3 border-t border-gray-200 flex justify-end shrink-0">
-          <button
-            onClick={() => setShowStaticSummary(false)}
-            className="text-sm px-4 py-1.5 rounded bg-gray-100 text-gray-700 hover:bg-gray-200"
-          >
-            {lang === 'de' ? 'Schließen' : 'Close'}
+        <div className="px-4 py-3 border-t border-chrome-border flex justify-end shrink-0">
+          <button onClick={close} className="h-7 px-4 rounded text-xs bg-action hover:bg-action-hover text-action-text transition-colors">
+            {t('sim.close')}
           </button>
         </div>
       </div>

@@ -1,8 +1,9 @@
-import { useRef } from 'react'
+import { useMemo, useRef } from 'react'
 import { Canvas, useThree } from '@react-three/fiber'
 import { OrbitControls } from '@react-three/drei'
 import { useProjectStore } from '../store/useProjectStore'
-import { useUIStore } from '../store/useUIStore'
+import { useUIStore, CanvasViewContext } from '../store/useUIStore'
+import { activeJoints } from '../utils/activeParts'
 import { Board3D } from './views3d/Board3D'
 import { CameraController } from './CameraController'
 import { OrthoGrid } from './OrthoGrid'
@@ -11,7 +12,6 @@ import { CollisionOverlay3D } from './overlays/CollisionOverlay3D'
 import { DimensionOverlay } from './overlays/DimensionOverlay'
 import { ResizeHandles3D } from './overlays/ResizeHandles3D'
 import { RotationHandle3D } from './overlays/RotationHandle3D'
-import { FaceHandles3D } from './overlays/FaceHandles3D'
 import { TranslateHandles3D } from './overlays/TranslateHandles3D'
 import { MeasureTools3D } from './tools/MeasureTools3D'
 import { SnapIndicator3D } from './overlays/SnapIndicator3D'
@@ -22,15 +22,20 @@ import { SelectionToolbar3D } from './overlays/SelectionToolbar3D'
 import { isTransforming } from '../utils/transformLock'
 import { isHoveringGizmo } from '../utils/gizmoHover'
 import * as THREE from 'three'
+import type { ViewMode } from '../types/measurement'
+import { CANVAS } from './canvasTheme'
 
 /** Syncs the current R3F camera to an external ref (for use outside the Canvas) */
-function CameraSync({ cameraRef }: { cameraRef: React.RefObject<THREE.Camera | null> }) {
+function CameraSync({ cameraRef, view }: { cameraRef: React.RefObject<THREE.Camera | null>; view?: ViewMode }) {
   const { camera, scene, size, gl } = useThree()
   ;(cameraRef as React.MutableRefObject<THREE.Camera | null>).current = camera
   // Test/debug: expose R3F state on window so Playwright (etc.) can compute
-  // projected screen positions of any mesh in the scene.
+  // projected screen positions of any mesh in the scene. In quad layout each
+  // quadrant is also reachable by its view via __r3fViews.
   if (typeof window !== 'undefined') {
-    ;(window as any).__r3f = { camera, scene, size, gl, THREE }
+    const state = { camera, scene, size, gl, THREE }
+    ;(window as any).__r3f = state
+    if (view) ((window as any).__r3fViews ??= {})[view] = state
   }
   return null
 }
@@ -40,19 +45,36 @@ function CameraSync({ cameraRef }: { cameraRef: React.RefObject<THREE.Camera | n
  * The scene content is always the same — only the camera changes.
  * Replaces the old Scene3D + Konva-based FrontView/SideView/TopView.
  */
-export function UnifiedCanvas({ forceView }: { forceView?: 'front' | 'side' | 'top' | '3d' } = {}) {
-  const project = useProjectStore((s) => s.project)
+export function UnifiedCanvas({ forceView }: { forceView?: ViewMode } = {}) {
+  const assemblies = useProjectStore((s) => s.project.assemblies)
   const storeView = useUIStore((s) => s.activeView)
   const activeView = forceView ?? storeView
   const orbitRef = useRef<any>(null)
   const canvasContainerRef = useRef<HTMLDivElement>(null)
   const cameraRef = useRef<THREE.Camera | null>(null)
 
+  // Joint badge counts, computed once per project change instead of once per board
+  const jointCounts = useMemo(() => {
+    const counts = new Map<string, number>()
+    for (const { joint } of activeJoints(useProjectStore.getState().project)) {
+      counts.set(joint.boardA, (counts.get(joint.boardA) ?? 0) + 1)
+      if (joint.boardB !== joint.boardA) counts.set(joint.boardB, (counts.get(joint.boardB) ?? 0) + 1)
+    }
+    return counts
+  }, [assemblies])
+
   return (
-    <div className="w-full h-full relative" ref={canvasContainerRef}>
+    // Everything below — inside the R3F canvas too (R3F bridges context) —
+    // reads this canvas's view via useCanvasView(). `isolate` gives the drei
+    // <Html> labels their own stacking context, so no scene label can paint
+    // over the cards, drawers and modals outside the canvas.
+    <CanvasViewContext.Provider value={forceView ?? null}>
+    <div className="w-full h-full relative isolate" ref={canvasContainerRef}>
+      {/* flat: no tone mapping — boards show their material colours as defined */}
       <Canvas
+        flat
         camera={{ position: [500, 400, 500], fov: 50, near: 1, far: 200000 }}
-        style={{ background: '#f8f9fa' }}
+        style={{ background: CANVAS.background }}
         onPointerMissed={(e) => {
           // Only deselect on a true click — ignore drag-releases (gizmo / orbit)
           // and clicks that land on a gizmo handle (which has no R3F handler).
@@ -62,23 +84,25 @@ export function UnifiedCanvas({ forceView }: { forceView?: 'front' | 'side' | 't
         }}
       >
         {/* Camera management (ortho/perspective switching, zoom, pan) */}
-        <CameraController orbitRef={orbitRef} forceView={forceView} />
-        <CameraSync cameraRef={cameraRef} />
+        <CameraController orbitRef={orbitRef} />
+        <CameraSync cameraRef={cameraRef} view={forceView} />
 
-        {/* Lighting */}
-        <ambientLight intensity={0.5} />
-        <directionalLight position={[500, 800, 500]} intensity={0.8} castShadow />
-        <directionalLight position={[-300, 400, -300]} intensity={0.3} />
+        {/* Lighting — three divides diffuse light by π, so these add up to
+            ~0.95 of the material colour on top faces, ~0.8 on front/side faces
+            (all the ortho views see) and ~0.6 on faces turned away */}
+        <ambientLight intensity={1.5} />
+        <directionalLight position={[500, 800, 500]} intensity={2} castShadow />
+        <directionalLight position={[-300, 400, -300]} intensity={0.8} />
 
         {/* Grid + colored origin axes + mm labels */}
-        <OrthoGrid forceView={forceView} />
+        <OrthoGrid />
 
         {/* Boards (skip hidden assemblies). While any assembly is highlighted,
             all other assemblies are ghosted so the highlighted one reads
             clearly through the rest of the model. */}
         {(() => {
-          const anyHighlight = project.assemblies.some((a) => a.highlight && a.visible !== false)
-          return project.assemblies
+          const anyHighlight = assemblies.some((a) => a.highlight && a.visible !== false)
+          return assemblies
             .filter((assembly) => assembly.visible !== false)
             .flatMap((assembly) =>
               assembly.boards.map((board) => (
@@ -89,6 +113,7 @@ export function UnifiedCanvas({ forceView }: { forceView?: 'front' | 'side' | 't
                   orbitRef={orbitRef}
                   highlight={assembly.highlight === true}
                   dimmed={anyHighlight && assembly.highlight !== true}
+                  jointCount={jointCounts.get(board.id) ?? 0}
                 />
               ))
             )
@@ -101,12 +126,10 @@ export function UnifiedCanvas({ forceView }: { forceView?: 'front' | 'side' | 't
         <TranslateHandles3D />
         <ResizeHandles3D />
         <RotationHandle3D />
-        {/* FaceHandles3D removed — TC scale gizmo handles 3D scaling in
-            Blender style with 3 axis-end boxes */}
         <MeasureTools3D />
         <JointMarkers3D />
         <JointGrooves3D />
-        <SelectionToolbar3D forceView={forceView} />
+        <SelectionToolbar3D />
         <SnapIndicator3D />
 
         {/* Transparent ground plane for world-position readout + void-click deselect */}
@@ -153,5 +176,6 @@ export function UnifiedCanvas({ forceView }: { forceView?: 'front' | 'side' | 't
       {/* Marquee selection overlay (HTML, not R3F) */}
       <MarqueeSelect canvasRef={canvasContainerRef} cameraRef={cameraRef as any} />
     </div>
+    </CanvasViewContext.Provider>
   )
 }

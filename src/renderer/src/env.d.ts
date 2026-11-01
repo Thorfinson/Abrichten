@@ -1,7 +1,7 @@
 /// <reference types="vite/client" />
 
 interface ImportMetaEnv {
-  /** OpenRouter API key used by the AI assistant (fallback when not set in Settings) */
+  /** OpenRouter API key for the AI assistant: dev server only, never part of a build (fallback when not set in Settings) */
   readonly VITE_OPENROUTER_API_KEY?: string
   /** OpenRouter model id, e.g. "anthropic/claude-sonnet-4.5" */
   readonly VITE_OPENROUTER_MODEL?: string
@@ -21,6 +21,8 @@ interface Window {
   electronAPI?: {
     fileSave: (data: string, defaultName: string) => Promise<string | null>
     fileOpen: () => Promise<{ path: string; content: string } | null>
-    fileExportCsv: (csvData: string, defaultName: string) => Promise<string | null>
+    fileExport: (content: string, defaultName: string) => Promise<string | null>
   }
+  /** Set while there are unsaved changes; the main process calls it when the user discards them on close. */
+  __abrichtenDiscard?: () => Promise<void>
 }

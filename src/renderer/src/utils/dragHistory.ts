@@ -45,3 +45,12 @@ export function endDragHistory(): void {
   snapshot = null
   temporal.getState().resume()
 }
+
+/** Abort the drag: put the pre-drag project back (untracked) and resume undo
+ *  tracking without adding a step. No-op outside a drag. */
+export function cancelDragHistory(): void {
+  if (snapshot === null) return
+  useProjectStore.setState({ project: snapshot.project })
+  snapshot = null
+  useProjectStore.temporal.getState().resume()
+}

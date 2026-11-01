@@ -1,6 +1,7 @@
 import { escapeHtml } from './textSafety'
-import type { Board } from '../types/furniture'
+import type { Board, Material } from '../types/furniture'
 import { getMaterialById } from '../data/materials'
+import { boardFace } from './boardFace'
 
 export interface NestingRect {
   boardId: string
@@ -29,6 +30,8 @@ export interface NestingSheet {
 export interface NestingGroup {
   materialId: string
   materialName: string
+  /** false: the id is neither built in nor a project material (name = raw id) */
+  materialKnown: boolean
   thickness: number       // mm
   sheets: NestingSheet[]
   unplacedCount: number
@@ -46,7 +49,9 @@ interface FreeRect {
   x: number; y: number; w: number; h: number
 }
 
-/** Guillotine cut packer — best-fit by smallest free rectangle */
+/** Guillotine cut packer — best-fit by smallest free rectangle. The kerf is taken
+ *  off the remainders after each cut, so it lies only between parts: a part may
+ *  run up to the sheet edge. */
 function packSheet(
   rects: NestingRect[],
   sheetW: number,
@@ -62,11 +67,11 @@ function packSheet(
 
     for (let fi = 0; fi < free.length; fi++) {
       const fr = free[fi]
-      if (rect.w + kerf <= fr.w && rect.h + kerf <= fr.h) {
+      if (rect.w <= fr.w && rect.h <= fr.h) {
         const score = fr.w * fr.h - rect.w * rect.h
         if (best === null || score < best.score) best = { fi, rotated: false, score }
       }
-      if (!rect.grainLocked && rect.h + kerf <= fr.w && rect.w + kerf <= fr.h) {
+      if (!rect.grainLocked && rect.h <= fr.w && rect.w <= fr.h) {
         const score = fr.w * fr.h - rect.h * rect.w
         if (best === null || score < best.score) best = { fi, rotated: true, score }
       }
@@ -96,14 +101,16 @@ function packSheet(
 }
 
 /**
- * Determine the two "face" dimensions of a board (the large flat face).
- * For a flat panel, depth (thickness) is the smallest dimension.
- * Returns { faceW, faceH, thickness }.
+ * Lay a board's face (boardFace) on the sheet. With a grain direction in the face
+ * (and rotation not allowed), the grain-axis dimension goes along sheet X — the
+ * sheet's grain — and the part is locked. Otherwise the longer side goes along X
+ * and the packer may rotate it.
  */
-function boardFace(b: Board): { faceW: number; faceH: number; thickness: number } {
-  const dims = [b.width, b.height, b.depth].sort((a, z) => a - z)
-  // dims[0] = smallest = thickness, dims[1] and dims[2] = face
-  return { faceW: dims[2], faceH: dims[1], thickness: dims[0] }
+function sheetRect(b: Board, allowRotation: boolean): { w: number; h: number; grainLocked: boolean } {
+  const f = boardFace(b)
+  if (!allowRotation && b.grainDirection === f.uAxis) return { w: f.u, h: f.v, grainLocked: true }
+  if (!allowRotation && b.grainDirection === f.vAxis) return { w: f.v, h: f.u, grainLocked: true }
+  return { w: Math.max(f.u, f.v), h: Math.min(f.u, f.v), grainLocked: false }
 }
 
 /**
@@ -126,43 +133,46 @@ function packGroup(
     remaining = unplaced
   }
 
-  const totalBoardArea = rects.reduce((s, r) => s + r.w * r.h, 0)
   const totalSheetArea = sheets.length * sheetW * sheetH
-  const efficiency = totalSheetArea > 0 ? Math.min(1, totalBoardArea / totalSheetArea) : 0
+  const efficiency = totalSheetArea > 0 ? Math.min(1, placedArea(sheets) / totalSheetArea) : 0
 
   return { sheets, unplacedCount, efficiency, wastePercent: Math.max(0, 100 - efficiency * 100) }
+}
+
+/** Area of the parts actually placed on the sheets (unplaced parts use no sheet). */
+function placedArea(sheets: NestingSheet[]): number {
+  return sheets.reduce((s, sh) => s + sh.placed.reduce((t, p) => t + p.w * p.h, 0), 0)
 }
 
 /**
  * Main entry point — groups boards by materialId+thickness, runs nesting per group.
  * @param allowRotation When true, boards may be rotated 90° even if they have a grain direction set.
+ * @param customMaterials Project materials, so their boards get a name.
  */
 export function nestBoards(
   boards: Board[],
   sheetW: number,
   sheetH: number,
   kerf: number,
-  allowRotation = false
+  allowRotation = false,
+  customMaterials?: Material[]
 ): NestingResult {
+  const safeKerf = Number.isFinite(kerf) ? Math.max(0, kerf) : 0
   // Group boards: key = "materialId::thickness"
   const groupMap = new Map<string, { materialId: string; thickness: number; rects: NestingRect[] }>()
 
   for (const b of boards) {
-    const { faceW, faceH, thickness } = boardFace(b)
+    const { thickness } = boardFace(b)
+    // A material without grain (MDF, chipboard, …) may always turn; unknown materials stay locked
+    const grainless = getMaterialById(b.materialId, customMaterials)?.grain === false
+    const { w, h, grainLocked } = sheetRect(b, allowRotation || grainless)
     // Round thickness to nearest 0.5mm for grouping tolerance
     const thickKey = Math.round(thickness * 2) / 2
     const key = `${b.materialId}::${thickKey}`
     if (!groupMap.has(key)) {
       groupMap.set(key, { materialId: b.materialId, thickness: thickKey, rects: [] })
     }
-    groupMap.get(key)!.rects.push({
-      boardId: b.id,
-      name: b.name,
-      w: faceW,
-      h: faceH,
-      // allowRotation overrides grain locking
-      grainLocked: !allowRotation && (b.grainDirection !== undefined && b.grainDirection !== null)
-    })
+    groupMap.get(key)!.rects.push({ boardId: b.id, name: b.name, w, h, grainLocked })
   }
 
   const groups: NestingGroup[] = []
@@ -171,13 +181,13 @@ export function nestBoards(
   let totalSheetArea = 0
 
   for (const [, g] of groupMap) {
-    const mat = getMaterialById(g.materialId)
+    const mat = getMaterialById(g.materialId, customMaterials)
     const materialName = mat?.name ?? g.materialId
-    const { sheets, unplacedCount, efficiency, wastePercent } = packGroup(g.rects, sheetW, sheetH, kerf)
+    const { sheets, unplacedCount, efficiency, wastePercent } = packGroup(g.rects, sheetW, sheetH, safeKerf)
 
-    groups.push({ materialId: g.materialId, materialName, thickness: g.thickness, sheets, unplacedCount, efficiency, wastePercent })
+    groups.push({ materialId: g.materialId, materialName, materialKnown: !!mat, thickness: g.thickness, sheets, unplacedCount, efficiency, wastePercent })
     totalSheets += sheets.length
-    totalBoardArea += g.rects.reduce((s, r) => s + r.w * r.h, 0)
+    totalBoardArea += placedArea(sheets)
     totalSheetArea += sheets.length * sheetW * sheetH
   }
 

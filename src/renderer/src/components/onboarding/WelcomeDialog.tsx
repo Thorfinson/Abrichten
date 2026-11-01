@@ -1,11 +1,25 @@
-import { useState } from 'react'
+import type { ReactNode } from 'react'
+import { useTranslation } from 'react-i18next'
 import { useUIStore } from '../../store/useUIStore'
 import { useProjectStore } from '../../store/useProjectStore'
+import { Dialog, Button } from '../ui/Dialog'
 import sampleProject from '../../assets/sample-project.json'
 import type { Project } from '../../types/furniture'
 
+/** 24 × 24 line icon, drawn with the current text colour */
+function Icon({ children }: { children: ReactNode }) {
+  return (
+    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth={1.75}
+      strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      {children}
+    </svg>
+  )
+}
+
 interface FeatureCard {
-  icon: string
+  icon: ReactNode
+  /** Tile colour: accent for the craft features, AI purple for the assistant */
+  tone: string
   titleDe: string
   titleEn: string
   descDe: string
@@ -14,21 +28,27 @@ interface FeatureCard {
 
 const FEATURES: FeatureCard[] = [
   {
-    icon: '⚙',
+    // dimension line between two extension lines
+    icon: <Icon><path d="M4 6v12M20 6v12M4 12h16M7 9l-3 3 3 3M17 9l3 3-3 3" /></Icon>,
+    tone: 'bg-accent-dim/60 text-accent',
     titleDe: 'Parametrisches Design',
     titleEn: 'Parametric Design',
-    descDe: 'Definiere Parameter wie H, B, T und verwende Formeln in Bauteilmaßen. Alle abhängigen Maße aktualisieren sich automatisch.',
-    descEn: 'Define parameters like H, W, D and use formulas in board dimensions. All dependent dimensions update automatically.'
+    descDe: 'Definiere Parameter wie H, B, T und verwende Formeln wie =H-18 in Bauteilmaßen. Alle abhängigen Maße aktualisieren sich automatisch.',
+    descEn: 'Define parameters like H, W, D and use formulas like =H-18 in board dimensions. All dependent dimensions update automatically.'
   },
   {
-    icon: '🔨',
+    // a sheet split into parts
+    icon: <Icon><rect x="3" y="4" width="18" height="16" rx="1.5" /><path d="M3 11h18M10 11v9M15 4v7" /></Icon>,
+    tone: 'bg-accent-dim/60 text-accent',
     titleDe: 'Produktionsbereit',
     titleEn: 'Production Ready',
     descDe: 'Generiere Zuschnittlisten, optimiere Plattenzuschnitt (Nesting), exportiere DXF und erstelle Bohrpläne.',
     descEn: 'Generate cutting lists, optimize sheet layout (nesting), export DXF files, and create boring patterns.'
   },
   {
-    icon: '✦',
+    // sparkles
+    icon: <Icon><path d="M11 3l1.9 5.1L18 10l-5.1 1.9L11 17l-1.9-5.1L4 10l5.1-1.9z" /><path d="M18.5 15.5l.7 1.8 1.8.7-1.8.7-.7 1.8-.7-1.8-1.8-.7 1.8-.7z" /></Icon>,
+    tone: 'bg-ai-dim/60 text-ai',
     titleDe: 'KI-Assistent',
     titleEn: 'AI Assistant',
     descDe: 'Beschreibe dein Möbelstück in natürlicher Sprache oder lade eine Skizze hoch. Der KI-Assistent erstellt Bauteile automatisch.',
@@ -39,127 +59,80 @@ const FEATURES: FeatureCard[] = [
 export function WelcomeDialog() {
   const hasSeenWelcome = useUIStore((s) => s.hasSeenWelcome)
   const setHasSeenWelcome = useUIStore((s) => s.setHasSeenWelcome)
-  const setTooltipsEnabled = useUIStore((s) => s.setTooltipsEnabled)
+  const setShowShortcutsOverlay = useUIStore((s) => s.setShowShortcutsOverlay)
   const loadProject = useProjectStore((s) => s.loadProject)
-  const i18nLang = typeof localStorage !== 'undefined'
-    ? (localStorage.getItem('i18nextLng') ?? 'de')
-    : 'de'
-  const lang = i18nLang.startsWith('de') ? 'de' : 'en'
-
-  const [dontShow, setDontShow] = useState(false)
+  const { t, i18n } = useTranslation()
+  const lang = i18n.language === 'en' ? 'en' : 'de'
 
   if (hasSeenWelcome) return null
 
-  const dismiss = () => {
-    if (dontShow) setHasSeenWelcome()
-    else setHasSeenWelcome() // Always mark as seen on any action
-  }
+  // Every way out marks the welcome as seen: it shows once, on the first start
+  const dismiss = () => setHasSeenWelcome()
 
   const handleSample = () => {
     loadProject(sampleProject as unknown as Project)
+    useUIStore.getState().setActiveView('3d')   // the cabinet reads best in 3D; App fits the view on load
     dismiss()
   }
 
-  const handleScratch = () => {
+  const handleShortcuts = () => {
     dismiss()
-  }
-
-  const handleTooltips = () => {
-    setTooltipsEnabled(true)
-    dismiss()
+    setShowShortcutsOverlay(true)
   }
 
   return (
-    <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-[100]">
-      <div className="bg-white rounded-xl shadow-2xl w-[640px] max-h-[85vh] overflow-hidden flex flex-col">
+    <Dialog
+      title={t('dlg.welcomeTitle')}
+      titleId="welcome-title"
+      onClose={dismiss}
+      closeOnBackdrop={false}
+      className="w-[600px]"
+      footer={<>
+        <span className="mr-auto text-xs text-chrome-hint">{t('dlg.welcomePaletteHint')}</span>
+        <Button variant="ghost" size="sm" onClick={handleShortcuts}>
+          {t('dlg.welcomeShortcuts')}
+          <kbd className="rounded border border-chrome-border bg-chrome-deep px-1 font-mono text-[10px] text-chrome-muted">?</kbd>
+        </Button>
+      </>}
+    >
+      <div className="space-y-5">
+        <p className="text-base text-chrome-secondary">{t('dlg.welcomeTagline')}</p>
 
-        {/* Header */}
-        <div className="bg-gradient-to-r from-blue-600 to-blue-800 px-6 py-5 text-white">
-          <h1 className="text-xl font-bold">
-            {lang === 'de' ? 'Willkommen bei Abrichten' : 'Welcome to Abrichten'}
-          </h1>
-          <p className="text-sm text-blue-200 mt-1">
-            {lang === 'de'
-              ? 'CAD-Software für den modernen Schreiner'
-              : 'CAD software for the modern woodworker'}
-          </p>
-        </div>
-
-        <div className="flex-1 overflow-y-auto p-6">
-          {/* Feature cards */}
-          <div className="grid grid-cols-1 gap-3 mb-6">
-            {FEATURES.map((f, i) => (
-              <div key={i} className="flex items-start gap-3 p-3 rounded-lg border border-gray-100 bg-gray-50 hover:bg-blue-50 hover:border-blue-200 transition-colors">
-                <span className="text-2xl shrink-0 mt-0.5">{f.icon}</span>
-                <div>
-                  <h3 className="text-sm font-semibold text-gray-800 mb-0.5">
-                    {lang === 'de' ? f.titleDe : f.titleEn}
-                  </h3>
-                  <p className="text-xs text-gray-600">
-                    {lang === 'de' ? f.descDe : f.descEn}
-                  </p>
-                </div>
+        {/* Feature cards */}
+        <ul className="space-y-2">
+          {FEATURES.map((f) => (
+            <li key={f.titleEn} className="flex items-start gap-3 rounded-lg border border-chrome-border bg-chrome-deep/50 p-3">
+              <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-md ${f.tone}`}>{f.icon}</span>
+              <div className="min-w-0">
+                <h3 className="text-sm font-semibold text-chrome-text">
+                  {lang === 'de' ? f.titleDe : f.titleEn}
+                </h3>
+                <p className="mt-0.5 text-xs leading-relaxed text-chrome-muted">
+                  {lang === 'de' ? f.descDe : f.descEn}
+                </p>
               </div>
-            ))}
-          </div>
+            </li>
+          ))}
+        </ul>
 
-          {/* Action buttons */}
-          <div className="flex flex-col gap-2">
-            <button
-              onClick={handleSample}
-              className="w-full py-3 px-4 rounded-lg bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 transition-colors flex items-center gap-2"
-            >
-              <span className="text-lg">📂</span>
-              <div className="text-left">
-                <div className="font-semibold">
-                  {lang === 'de' ? 'Beispielprojekt laden' : 'Load Sample Project'}
-                </div>
-                <div className="text-xs text-blue-200">
-                  {lang === 'de'
-                    ? 'Wandschrank mit 6 Bauteilen, Verbindungen und Parametern'
-                    : 'Wall cabinet with 6 boards, joints, and parameters'}
-                </div>
-              </div>
-            </button>
-
-            <button
-              onClick={handleScratch}
-              className="w-full py-2.5 px-4 rounded-lg border border-gray-300 text-gray-700 text-sm font-medium hover:bg-gray-50 transition-colors"
-            >
-              {lang === 'de' ? 'Von Null beginnen' : 'Start from Scratch'}
-            </button>
-
-            <button
-              onClick={handleTooltips}
-              className="w-full py-2.5 px-4 rounded-lg border border-blue-200 text-blue-700 bg-blue-50 text-sm font-medium hover:bg-blue-100 transition-colors"
-            >
-              {lang === 'de' ? 'Mit Hinweisen lernen' : 'Learn with Tips'}
-              <span className="text-xs text-blue-500 ml-1">
-                {lang === 'de' ? '(zeigt kontextuelle Tipps)' : '(shows contextual tips)'}
+        {/* Actions */}
+        <div className="grid grid-cols-[1fr_auto] gap-2">
+          <Button variant="primary" onClick={handleSample} className="justify-start gap-3 px-4 py-2.5 text-left">
+            <Icon><path d="M3 7.5A1.5 1.5 0 0 1 4.5 6H9l2 2h8.5A1.5 1.5 0 0 1 21 9.5v8a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 17.5z" /></Icon>
+            <span>
+              <span className="block font-semibold">{lang === 'de' ? 'Beispielprojekt laden' : 'Load Sample Project'}</span>
+              <span className="block text-xs font-normal text-action-text/75">
+                {lang === 'de'
+                  ? 'Wandschrank mit 6 Bauteilen, Verbindungen und Parametern'
+                  : 'Wall cabinet with 6 boards, joints, and parameters'}
               </span>
-            </button>
-          </div>
-        </div>
-
-        {/* Footer */}
-        <div className="px-6 py-3 border-t border-gray-100 flex items-center justify-between">
-          <label className="flex items-center gap-2 text-xs text-gray-500 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={dontShow}
-              onChange={(e) => setDontShow(e.target.checked)}
-              className="w-3 h-3"
-            />
-            {lang === 'de' ? 'Nicht mehr anzeigen' : "Don't show again"}
-          </label>
-          <button
-            onClick={handleScratch}
-            className="text-xs text-gray-400 hover:text-gray-600"
-          >
-            {lang === 'de' ? 'Schließen' : 'Close'}
-          </button>
+            </span>
+          </Button>
+          <Button onClick={dismiss} className="px-4">
+            {t('dlg.welcomeEmpty')}
+          </Button>
         </div>
       </div>
-    </div>
+    </Dialog>
   )
 }

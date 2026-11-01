@@ -26,7 +26,8 @@ export interface AreaMeasurement {
   area: number // mm²
 }
 
-export type Measurement = DistanceMeasurement | AngleMeasurement | AreaMeasurement
+/** `view`: the view whose plane the 2D points lie in, so every canvas draws it in place */
+export type Measurement = (DistanceMeasurement | AngleMeasurement | AreaMeasurement) & { view?: ViewMode }
 
 export type ToolMode = 'select' | 'measure' | 'angle' | 'area'
 export type ViewMode = 'front' | 'side' | 'top' | '3d'

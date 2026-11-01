@@ -29,52 +29,64 @@ import { FloatingPropertiesCard } from './components/overlays/FloatingProperties
 import { ContextHUD } from './components/overlays/ContextHUD'
 import { ShortcutsOverlay } from './components/overlays/ShortcutsOverlay'
 import { QuadLayout } from './components/layout/QuadLayout'
-import { useProjectStore } from './store/useProjectStore'
+import { ToolStrip } from './components/tools/ToolStrip'
 import { useUIStore } from './store/useUIStore'
+import { useProjectStore, isProjectDirty } from './store/useProjectStore'
 import { useKeyboard } from './hooks/useKeyboard'
 import { useAutoSave } from './hooks/useAutoSave'
-import { loadProjectFromDB } from './services/storage'
+import { restoreAutoSave } from './services/projectFile'
+import { useUnsavedChanges } from './hooks/useUnsavedChanges'
+import { StaticLegend } from './components/overlays/StaticLegend'
 
 export default function App() {
   useKeyboard()
   useAutoSave()
+  useUnsavedChanges()
+  const unsaved = useProjectStore(isProjectDirty)
   const showChatPanel = useUIStore((s) => s.showChatPanel)
   const viewLayout    = useUIStore((s) => s.viewLayout)
 
-  // Restore project from IndexedDB on startup
-  useEffect(() => {
-    loadProjectFromDB()
-      .then((saved) => {
-        if (saved) {
-          useProjectStore.getState().loadProject(saved)
-        }
-      })
-      .catch((err) => console.error('Failed to restore project:', err))
-  }, [])
+  // Restore project from IndexedDB on startup (an unreadable save is kept as a backup)
+  useEffect(() => { restoreAutoSave() }, [])
+
+  // Every project load — sample, open file, restore, new — frames the model.
+  // A loaded or new project always brings its own id.
+  useEffect(() => useProjectStore.subscribe((state, prev) => {
+    if (state.project.id !== prev.project.id) useUIStore.getState().triggerFitView()
+  }), [])
 
   return (
-    <div className="flex flex-col h-screen w-screen bg-gray-100 text-gray-900 select-none">
+    <div className="flex flex-col h-screen w-screen bg-chrome-deep text-gray-900 select-none">
       {/* Top toolbar */}
       <Toolbar />
 
-      <div className="flex-1 flex flex-col overflow-hidden">
-        {/* View tabs */}
-        <ViewTabs />
+      <div className="flex-1 flex min-h-0">
+        {/* Assembly tree: its own column, pushes tabs and canvas aside */}
+        <AssemblyDrawer />
 
-        {/* Canvas area — full width, overlays positioned absolutely inside */}
-        <div className="flex-1 relative overflow-hidden">
-          {viewLayout === 'quad' ? <QuadLayout /> : <UnifiedCanvas />}
-          {/* Floating glass cards over the canvas */}
-          <FloatingPropertiesCard />
-          <ContextHUD />
-        </div>
+        <main className="flex-1 flex flex-col min-w-0">
+          {/* View tabs */}
+          <ViewTabs />
+
+          {/* Canvas area — overlays positioned absolutely inside */}
+          <div className="flex-1 relative overflow-hidden bg-canvas">
+            {viewLayout === 'quad' ? <QuadLayout /> : <UnifiedCanvas />}
+            {/* Floating cards over the canvas (z-30) */}
+            <ToolStrip />
+            <FloatingPropertiesCard />
+            <ContextHUD />
+            {/* Static legend (renders only while the static overlay is on) */}
+            <div className="absolute bottom-3 left-1/2 -translate-x-1/2 z-30">
+              <StaticLegend />
+            </div>
+          </div>
+        </main>
       </div>
 
-      {/* Status bar */}
-      <StatusBar />
+      {/* Status bar, with the unsaved-changes marker */}
+      <StatusBar unsaved={unsaved} />
 
-      {/* Drawers (fixed, overlay the canvas) */}
-      <AssemblyDrawer />
+      {/* AI drawer (fixed, overlays the canvas) */}
       {showChatPanel && <ChatPanel />}
 
       {/* Modals & overlays */}

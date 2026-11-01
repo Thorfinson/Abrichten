@@ -2,11 +2,11 @@ import { useState, useCallback } from 'react'
 import { useUIStore } from '../store/useUIStore'
 import { useProjectStore } from '../store/useProjectStore'
 import { angleBetween } from '../utils/geometry'
-import type { MeasurementPoint, AngleMeasurement } from '../types/measurement'
+import type { MeasurementPoint, AngleMeasurement, ViewMode } from '../types/measurement'
 
 type AngleState = 'idle' | 'first_placed' | 'second_placed' | 'complete'
 
-export function useAngle() {
+export function useAngle(view?: ViewMode) {
   const [state, setState] = useState<AngleState>('idle')
   const [pointA, setPointA] = useState<MeasurementPoint | null>(null)
   const [pointB, setPointB] = useState<MeasurementPoint | null>(null)
@@ -31,16 +31,17 @@ export function useAngle() {
       setState('complete')
 
       const angle = angleBetween(pointA, pointB, point)
-      const measurement: AngleMeasurement = {
+      const measurement: AngleMeasurement & { view?: ViewMode } = {
         type: 'angle',
         pointA,
         pointB,
         pointC: point,
-        angle
+        angle,
+        view
       }
       addMeasurement(measurement)
     }
-  }, [state, pointA, pointB, addMeasurement])
+  }, [state, pointA, pointB, addMeasurement, view])
 
   const reset = useCallback(() => {
     setState('idle')

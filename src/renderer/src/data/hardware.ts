@@ -1,3 +1,5 @@
+import type { AttachedHardware } from '../types/furniture'
+
 export type HardwareCategory = 'hinges' | 'slides' | 'shelfPins' | 'handles' | 'camLocks'
 
 export interface HardwareItem {
@@ -192,4 +194,36 @@ export const hardwareItems: HardwareItem[] = [
 
 export function getHardwareByCategory(cat: HardwareCategory): HardwareItem[] {
   return hardwareItems.filter((h) => h.category === cat)
+}
+
+// ── Hinge layout (shared by the hinge calculator and the boring list) ──────
+
+/** Cup centre from the door edge: Ø35 cup + 3–6 mm boring distance gives
+ *  21.5–23.5 mm; 22 mm is the usual default (Blum, Hettich, Grass). */
+export const HINGE_CUP_EDGE_MM = 22
+/** More hinges than this on one door is a data error, not a layout. */
+export const MAX_HINGES_PER_DOOR = 10
+
+/** Cup centre distance from the door's top and bottom edge. */
+export function hingeEdgeMarginMm(doorHeightMm: number): number {
+  return Math.min(doorHeightMm / 2, Math.max(50, Math.min(100, doorHeightMm * 0.15)))
+}
+
+/** Cup centre positions along the door height (mm from one end), evenly spread
+ *  between the two edge margins; the count is clamped to 0…MAX_HINGES_PER_DOOR. */
+export function hingePositionsMm(doorHeightMm: number, count: number): number[] {
+  const n = Number.isFinite(count) ? Math.max(0, Math.min(MAX_HINGES_PER_DOOR, Math.floor(count))) : 0
+  if (n === 0 || !(doorHeightMm > 0)) return []
+  if (n === 1) return [Math.round(doorHeightMm / 2)]
+  const margin = hingeEdgeMarginMm(doorHeightMm)
+  const step = (doorHeightMm - 2 * margin) / (n - 1)
+  return Array.from({ length: n }, (_, i) => Math.round(margin + i * step))
+}
+
+/** The board's hardware with every hinge replaced by `quantity` × `hardwareId`: one hinge
+ *  type per door, so switching systems in the calculator never doubles the cups. */
+export function withHinges(list: AttachedHardware[] | undefined, hardwareId: string, quantity: number): AttachedHardware[] {
+  const hinge = (id: string): boolean => hardwareItems.some((h) => h.id === id && h.category === 'hinges')
+  const n = Number.isFinite(quantity) ? Math.max(1, Math.min(MAX_HINGES_PER_DOOR, Math.round(quantity))) : 1
+  return [...(list ?? []).filter((h) => !hinge(h.hardwareId)), { hardwareId, quantity: n }]
 }

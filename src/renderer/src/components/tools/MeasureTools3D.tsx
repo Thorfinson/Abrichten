@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { memo, useEffect, useMemo, useRef, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { useThree, useFrame } from '@react-three/fiber'
 import { Line, Html } from '@react-three/drei'
 import * as THREE from 'three'
-import { useUIStore } from '../../store/useUIStore'
+import { useUIStore, useCanvasView } from '../../store/useUIStore'
 import { useProjectStore } from '../../store/useProjectStore'
 import { useMeasure } from '../../hooks/useMeasure'
 import { useAngle } from '../../hooks/useAngle'
@@ -11,6 +12,20 @@ import { formatValue } from '../../utils/units'
 import { distance, angleBetween, polygonArea } from '../../utils/geometry'
 import type { ViewMode } from '../../types/measurement'
 import type { Measurement, MeasurementPoint } from '../../types/measurement'
+import { CANVAS, HTML_Z_RANGE, sceneLabelStyle } from '../canvasTheme'
+
+/** Measurements are annotations: drawn last (transparent pass, high render
+ *  order) without depth test, so boards — opaque or see-through — never hide them */
+const ON_TOP = 10
+
+const DIST = CANVAS.measureDistance
+const ANGLE = CANVAS.measureAngle
+const AREA = CANVAS.measureArea
+
+/** Measurement label: tinted pill with the value and its delete button */
+function measureLabelStyle(color: string): React.CSSProperties {
+  return { ...sceneLabelStyle(color), padding: '1px 4px', display: 'flex', alignItems: 'center' }
+}
 
 const PLANE_NORMALS: Record<Exclude<ViewMode, '3d'>, THREE.Vector3> = {
   front: new THREE.Vector3(0, 0, 1),
@@ -40,14 +55,16 @@ function toMeasureCoords(world: THREE.Vector3, view: ViewMode): MeasurementPoint
 
 /** Delete button shown on each stored measurement */
 function MeasureDeleteBtn({ idx, color }: { idx: number; color: string }) {
+  const { t } = useTranslation()
   const removeMeasurement = useUIStore((s) => s.removeMeasurement)
   return (
     <button
       onClick={(e) => { e.stopPropagation(); removeMeasurement(idx) }}
+      aria-label={t('measurements.delete')}
       style={{
         fontSize: '9px',
         color,
-        background: 'rgba(255,255,255,0.9)',
+        background: 'transparent',
         border: `1px solid ${color}`,
         borderRadius: 2,
         padding: '0 3px',
@@ -55,24 +72,26 @@ function MeasureDeleteBtn({ idx, color }: { idx: number; color: string }) {
         cursor: 'pointer',
         lineHeight: '14px'
       }}
-      title="×"
+      title={t('measurements.delete')}
     >
       ×
     </button>
   )
 }
 
-/** Renders stored measurements */
-function StoredMeasurements({ activeView }: { activeView: ViewMode }) {
+/** Renders stored measurements, each in the view it was taken in. Memoized so
+ *  cursor moves of the in-progress measurement don't rebuild these lines. */
+const StoredMeasurements = memo(function StoredMeasurements({ activeView }: { activeView: ViewMode }) {
   const measurements = useUIStore((s) => s.measurements)
   const displayUnit = useProjectStore((s) => s.project.displayUnit)
 
   return (
     <>
       {measurements.map((m, idx) => {
+        const view = m.view ?? activeView
         if (m.type === 'distance') {
-          const from = to3D(m.pointA, activeView)
-          const to = to3D(m.pointB, activeView)
+          const from = to3D(m.pointA, view)
+          const to = to3D(m.pointB, view)
           const mid: [number, number, number] = [
             (from[0] + to[0]) / 2,
             (from[1] + to[1]) / 2,
@@ -80,38 +99,38 @@ function StoredMeasurements({ activeView }: { activeView: ViewMode }) {
           ]
           return (
             <group key={`dist-${idx}`}>
-              <Line points={[from, to]} color="#ef4444" lineWidth={1} dashed dashSize={6} gapSize={3} />
-              <mesh position={from}><sphereGeometry args={[3, 8, 8]} /><meshBasicMaterial color="#ef4444" /></mesh>
-              <mesh position={to}><sphereGeometry args={[3, 8, 8]} /><meshBasicMaterial color="#ef4444" /></mesh>
-              <Html position={mid} center style={{ pointerEvents: 'auto' }} zIndexRange={[100, 0]}>
-                <span style={{ fontSize: '10px', color: '#ef4444', background: 'rgba(255,255,255,0.9)', padding: '1px 4px', borderRadius: 2, whiteSpace: 'nowrap', display: 'flex', alignItems: 'center' }}>
+              <Line transparent depthTest={false} renderOrder={ON_TOP} points={[from, to]} color={DIST} lineWidth={1.5} dashed dashSize={6} gapSize={3} />
+              <mesh renderOrder={ON_TOP} position={from}><sphereGeometry args={[3, 8, 8]} /><meshBasicMaterial color={DIST} transparent depthTest={false} /></mesh>
+              <mesh renderOrder={ON_TOP} position={to}><sphereGeometry args={[3, 8, 8]} /><meshBasicMaterial color={DIST} transparent depthTest={false} /></mesh>
+              <Html position={mid} center style={{ pointerEvents: 'auto' }} zIndexRange={HTML_Z_RANGE}>
+                <span style={measureLabelStyle(DIST)}>
                   {formatValue(m.distance, displayUnit)}
-                  <MeasureDeleteBtn idx={idx} color="#ef4444" />
+                  <MeasureDeleteBtn idx={idx} color={DIST} />
                 </span>
               </Html>
             </group>
           )
         }
         if (m.type === 'angle') {
-          const a = to3D(m.pointA, activeView)
-          const b = to3D(m.pointB, activeView)
-          const c = to3D(m.pointC, activeView)
+          const a = to3D(m.pointA, view)
+          const b = to3D(m.pointB, view)
+          const c = to3D(m.pointC, view)
           return (
             <group key={`angle-${idx}`}>
-              <Line points={[a, b]} color="#8b5cf6" lineWidth={1} dashed dashSize={6} gapSize={3} />
-              <Line points={[b, c]} color="#8b5cf6" lineWidth={1} dashed dashSize={6} gapSize={3} />
-              <mesh position={b}><sphereGeometry args={[3, 8, 8]} /><meshBasicMaterial color="#8b5cf6" /></mesh>
-              <Html position={b} center style={{ pointerEvents: 'auto' }} zIndexRange={[100, 0]}>
-                <span style={{ fontSize: '10px', color: '#8b5cf6', background: 'rgba(255,255,255,0.9)', padding: '1px 4px', borderRadius: 2, display: 'flex', alignItems: 'center' }}>
+              <Line transparent depthTest={false} renderOrder={ON_TOP} points={[a, b]} color={ANGLE} lineWidth={1.5} dashed dashSize={6} gapSize={3} />
+              <Line transparent depthTest={false} renderOrder={ON_TOP} points={[b, c]} color={ANGLE} lineWidth={1.5} dashed dashSize={6} gapSize={3} />
+              <mesh renderOrder={ON_TOP} position={b}><sphereGeometry args={[3, 8, 8]} /><meshBasicMaterial color={ANGLE} transparent depthTest={false} /></mesh>
+              <Html position={b} center style={{ pointerEvents: 'auto' }} zIndexRange={HTML_Z_RANGE}>
+                <span style={measureLabelStyle(ANGLE)}>
                   {m.angle.toFixed(1)}°
-                  <MeasureDeleteBtn idx={idx} color="#8b5cf6" />
+                  <MeasureDeleteBtn idx={idx} color={ANGLE} />
                 </span>
               </Html>
             </group>
           )
         }
         if (m.type === 'area') {
-          const pts = m.points.map((p) => to3D(p, activeView))
+          const pts = m.points.map((p) => to3D(p, view))
           const centroid: [number, number, number] = [
             pts.reduce((s, p) => s + p[0], 0) / pts.length,
             pts.reduce((s, p) => s + p[1], 0) / pts.length,
@@ -122,14 +141,14 @@ function StoredMeasurements({ activeView }: { activeView: ViewMode }) {
             : `${(m.area / 1000000).toFixed(3)} m²`
           return (
             <group key={`area-${idx}`}>
-              <Line points={[...pts, pts[0]]} color="#10b981" lineWidth={1} dashed dashSize={6} gapSize={3} />
+              <Line transparent depthTest={false} renderOrder={ON_TOP} points={[...pts, pts[0]]} color={AREA} lineWidth={1.5} dashed dashSize={6} gapSize={3} />
               {pts.map((p, i) => (
-                <mesh key={i} position={p}><sphereGeometry args={[3, 8, 8]} /><meshBasicMaterial color="#10b981" /></mesh>
+                <mesh key={i} renderOrder={ON_TOP} position={p}><sphereGeometry args={[3, 8, 8]} /><meshBasicMaterial color={AREA} transparent depthTest={false} /></mesh>
               ))}
-              <Html position={centroid} center style={{ pointerEvents: 'auto' }} zIndexRange={[100, 0]}>
-                <span style={{ fontSize: '10px', color: '#10b981', background: 'rgba(255,255,255,0.9)', padding: '1px 4px', borderRadius: 2, display: 'flex', alignItems: 'center' }}>
+              <Html position={centroid} center style={{ pointerEvents: 'auto' }} zIndexRange={HTML_Z_RANGE}>
+                <span style={measureLabelStyle(AREA)}>
                   {areaText}
-                  <MeasureDeleteBtn idx={idx} color="#10b981" />
+                  <MeasureDeleteBtn idx={idx} color={AREA} />
                 </span>
               </Html>
             </group>
@@ -139,7 +158,7 @@ function StoredMeasurements({ activeView }: { activeView: ViewMode }) {
       })}
     </>
   )
-}
+})
 
 /**
  * 3D measurement tools — MeasureTool, AngleTool, AreaTool combined.
@@ -148,17 +167,21 @@ function StoredMeasurements({ activeView }: { activeView: ViewMode }) {
  */
 export function MeasureTools3D() {
   const activeTool = useUIStore((s) => s.activeTool)
-  const activeView = useUIStore((s) => s.activeView)
-  const displayUnit = useProjectStore((s) => s.project.displayUnit)
+  const activeView = useCanvasView()
   const { camera, gl, raycaster } = useThree()
 
-  const measure = useMeasure()
-  const angle = useAngle()
-  const area = useArea()
+  const measure = useMeasure(activeView)
+  const angle = useAngle(activeView)
+  const area = useArea(activeView)
 
-  // Rubber-band cursor tracking
+  // Rubber-band cursor tracking: mousemove writes the ref and flags it dirty;
+  // useFrame copies it into state only when it moved AND the rubber band is
+  // drawn, so an idle canvas (or the angle/area tool) never re-renders per frame.
   const cursorWorldRef = useRef<THREE.Vector3 | null>(null)
+  const cursorDirtyRef = useRef(false)
   const [cursorWorld, setCursorWorld] = useState<THREE.Vector3 | null>(null)
+  const showsRubberBandRef = useRef(false)
+  showsRubberBandRef.current = activeTool === 'measure' && !!measure.pointA && !measure.pointB
 
   const isOrtho = activeView !== '3d'
   const plane = useMemo(() => {
@@ -180,18 +203,24 @@ export function MeasureTools3D() {
     if (activeTool === 'select') return
     const canvas = gl.domElement
     const onMove = (e: MouseEvent) => {
-      const pos = raycastToPlane(e.clientX, e.clientY)
-      cursorWorldRef.current = pos
+      cursorWorldRef.current = raycastToPlane(e.clientX, e.clientY)
+      cursorDirtyRef.current = true
     }
     canvas.addEventListener('mousemove', onMove)
-    return () => canvas.removeEventListener('mousemove', onMove)
-  }, [activeTool, activeView, gl, camera, raycaster, plane])
-
-  // Sync cursor ref to state each frame (avoids re-rendering every mousemove)
-  useFrame(() => {
-    if (cursorWorldRef.current) {
-      setCursorWorld(cursorWorldRef.current.clone())
+    return () => {
+      canvas.removeEventListener('mousemove', onMove)
+      // Tool or view switched: forget the cursor
+      cursorWorldRef.current = null
+      cursorDirtyRef.current = false
+      setCursorWorld(null)
     }
+  }, [activeTool, activeView, gl, camera, raycaster, plane]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Copy the cursor ref to state at most once per frame, only when it moved
+  useFrame(() => {
+    if (!cursorDirtyRef.current || !showsRubberBandRef.current) return
+    cursorDirtyRef.current = false
+    setCursorWorld(cursorWorldRef.current?.clone() ?? null)
   })
 
   // Click handler on canvas for placing measurement points
@@ -235,13 +264,9 @@ export function MeasureTools3D() {
     }
   }, [activeTool, activeView, gl, camera, raycaster, plane, measure, angle, area])
 
-  // Convert cursor world pos to view-space 3D
+  // Cursor world pos → the same view-plane point a click there would place
   const cursorPos3D: [number, number, number] | null = cursorWorld
-    ? [
-        activeView === 'front' ? cursorWorld.x : activeView === 'side' ? 0 : cursorWorld.x,
-        activeView === 'top' ? 0 : cursorWorld.y,
-        activeView === 'front' ? 0 : activeView === 'side' ? cursorWorld.z : cursorWorld.y
-      ]
+    ? to3D(toMeasureCoords(cursorWorld, activeView), activeView)
     : null
 
   // Render current in-progress measurement
@@ -251,12 +276,15 @@ export function MeasureTools3D() {
         const from = to3D(measure.pointA, activeView)
         return (
           <group>
-            <mesh position={from}><sphereGeometry args={[3, 8, 8]} /><meshBasicMaterial color="#ef4444" /></mesh>
+            <mesh renderOrder={ON_TOP} position={from}><sphereGeometry args={[3, 8, 8]} /><meshBasicMaterial color={DIST} transparent depthTest={false} /></mesh>
             {/* Rubber-band dashed line to cursor */}
             {cursorPos3D && (
               <Line
+                transparent
+                depthTest={false}
+                renderOrder={ON_TOP}
                 points={[from, cursorPos3D]}
-                color="#ef4444"
+                color={DIST}
                 lineWidth={1}
                 dashed
                 dashSize={4}
@@ -274,9 +302,9 @@ export function MeasureTools3D() {
       if (pts.length > 0) {
         return (
           <group>
-            {pts.length >= 2 && <Line points={pts} color="#8b5cf6" lineWidth={2} />}
+            {pts.length >= 2 && <Line transparent depthTest={false} renderOrder={ON_TOP} points={pts} color={ANGLE} lineWidth={2} />}
             {pts.map((p, i) => (
-              <mesh key={i} position={p}><sphereGeometry args={[3, 8, 8]} /><meshBasicMaterial color="#8b5cf6" /></mesh>
+              <mesh key={i} renderOrder={ON_TOP} position={p}><sphereGeometry args={[3, 8, 8]} /><meshBasicMaterial color={ANGLE} transparent depthTest={false} /></mesh>
             ))}
           </group>
         )
@@ -287,9 +315,9 @@ export function MeasureTools3D() {
         const pts = area.points.map((p) => to3D(p, activeView))
         return (
           <group>
-            {pts.length >= 2 && <Line points={pts} color="#10b981" lineWidth={2} />}
+            {pts.length >= 2 && <Line transparent depthTest={false} renderOrder={ON_TOP} points={pts} color={AREA} lineWidth={2} />}
             {pts.map((p, i) => (
-              <mesh key={i} position={p}><sphereGeometry args={[3, 8, 8]} /><meshBasicMaterial color="#10b981" /></mesh>
+              <mesh key={i} renderOrder={ON_TOP} position={p}><sphereGeometry args={[3, 8, 8]} /><meshBasicMaterial color={AREA} transparent depthTest={false} /></mesh>
             ))}
           </group>
         )

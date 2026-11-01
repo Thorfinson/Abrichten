@@ -19,7 +19,7 @@ export function useAutoSave() {
 
         // Schedule new save
         timerRef.current = setTimeout(() => {
-          saveProjectToDB(state.project)
+          saveProjectToDB(state.project, state.savedProject)
             .then(() => {
               useUIStore.getState().setSaveStatus('saved')
               setTimeout(() => useUIStore.getState().setSaveStatus('idle'), 2000)

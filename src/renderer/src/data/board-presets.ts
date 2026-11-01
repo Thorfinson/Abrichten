@@ -1,5 +1,8 @@
 import type { Board } from '../types/furniture'
 
+/** Presets are created as placed (width = X, height = Y, depth = Z), so the
+ *  thickness axis says how a part stands: lying parts have height = thickness,
+ *  side panels width = thickness, backs and fronts depth = thickness. */
 export interface BoardPreset {
   id: string
   labelKey: string        // i18n key
@@ -17,8 +20,8 @@ export const boardPresets: BoardPreset[] = [
     id: 'brett',
     labelKey: 'presets.brett',
     width: 600,
-    height: 400,
-    depth: 18,
+    height: 18,
+    depth: 400,
     materialId: 'buche',
     color: '#D4A574',
     icon: 'B'
@@ -27,8 +30,8 @@ export const boardPresets: BoardPreset[] = [
     id: 'dachlatte',
     labelKey: 'presets.dachlatte',
     width: 1000,
-    height: 48,
-    depth: 24,
+    height: 24,
+    depth: 48,
     materialId: 'fichte',
     color: '#F5DEB3',
     icon: 'D'
@@ -36,6 +39,7 @@ export const boardPresets: BoardPreset[] = [
   {
     id: 'kantholz',
     labelKey: 'presets.kantholz',
+    // a beam, standing on edge (stiffer than lying flat)
     width: 2000,
     height: 80,
     depth: 60,
@@ -47,8 +51,8 @@ export const boardPresets: BoardPreset[] = [
     id: 'leiste',
     labelKey: 'presets.leiste',
     width: 1000,
-    height: 30,
-    depth: 10,
+    height: 10,
+    depth: 30,
     materialId: 'buche',
     color: '#D4A574',
     icon: 'L'
@@ -57,8 +61,8 @@ export const boardPresets: BoardPreset[] = [
     id: 'bohle',
     labelKey: 'presets.bohle',
     width: 2000,
-    height: 250,
-    depth: 40,
+    height: 40,
+    depth: 250,
     materialId: 'eiche',
     color: '#B8860B',
     icon: 'Bo'
@@ -67,9 +71,9 @@ export const boardPresets: BoardPreset[] = [
   {
     id: 'regal-seite',
     labelKey: 'presets.regalSeite',
-    width: 400,
+    width: 19,
     height: 800,
-    depth: 19,
+    depth: 400,
     materialId: 'spanplatte',
     color: '#C8B896',
     icon: 'RS'
@@ -78,8 +82,8 @@ export const boardPresets: BoardPreset[] = [
     id: 'regal-boden',
     labelKey: 'presets.regalBoden',
     width: 800,
-    height: 400,
-    depth: 19,
+    height: 19,
+    depth: 400,
     materialId: 'spanplatte',
     color: '#C8B896',
     icon: 'RB'
@@ -98,8 +102,8 @@ export const boardPresets: BoardPreset[] = [
     id: 'multiplex-platte',
     labelKey: 'presets.multiplexPlatte',
     width: 600,
-    height: 400,
-    depth: 18,
+    height: 18,
+    depth: 400,
     materialId: 'multiplex-birke',
     color: '#E8D5B7',
     icon: 'MP'
@@ -109,8 +113,8 @@ export const boardPresets: BoardPreset[] = [
     id: 'arbeitsplatte-granit',
     labelKey: 'presets.arbeitsplatteGranit',
     width: 2000,
-    height: 600,
-    depth: 30,
+    height: 30,
+    depth: 600,
     materialId: 'granit',
     color: '#808080',
     icon: 'AG'
@@ -119,8 +123,8 @@ export const boardPresets: BoardPreset[] = [
     id: 'arbeitsplatte-keramik',
     labelKey: 'presets.arbeitsplatteKeramik',
     width: 2000,
-    height: 600,
-    depth: 12,
+    height: 12,
+    depth: 600,
     materialId: 'keramik',
     color: '#E0E0E0',
     icon: 'AK'
@@ -129,8 +133,8 @@ export const boardPresets: BoardPreset[] = [
     id: 'fensterbank',
     labelKey: 'presets.fensterbank',
     width: 1200,
-    height: 250,
-    depth: 20,
+    height: 20,
+    depth: 250,
     materialId: 'marmor',
     color: '#F5F5F5',
     icon: 'Fb'

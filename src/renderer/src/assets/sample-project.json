@@ -18,35 +18,63 @@
       "joints": [
         {
           "id": "j1",
-          "type": "butt",
+          "type": "screw",
           "boardA": "b-boden",
           "boardB": "b-links",
-          "position": { "x": 0, "y": 0, "z": 0 },
-          "fasteners": []
+          "position": { "x": 18, "y": 9, "z": 150 },
+          "fasteners": [
+            { "id": "f1", "type": "confirmat", "diameter": 7, "length": 50, "quantity": 3, "headType": "countersunk", "material": "steel" }
+          ]
         },
         {
           "id": "j2",
-          "type": "butt",
+          "type": "screw",
           "boardA": "b-boden",
           "boardB": "b-rechts",
-          "position": { "x": 600, "y": 0, "z": 0 },
-          "fasteners": []
+          "position": { "x": 582, "y": 9, "z": 150 },
+          "fasteners": [
+            { "id": "f2", "type": "confirmat", "diameter": 7, "length": 50, "quantity": 3, "headType": "countersunk", "material": "steel" }
+          ]
         },
         {
           "id": "j3",
-          "type": "butt",
+          "type": "screw",
           "boardA": "b-deckel",
           "boardB": "b-links",
-          "position": { "x": 0, "y": 720, "z": 0 },
-          "fasteners": []
+          "position": { "x": 18, "y": 711, "z": 150 },
+          "fasteners": [
+            { "id": "f3", "type": "confirmat", "diameter": 7, "length": 50, "quantity": 3, "headType": "countersunk", "material": "steel" }
+          ]
         },
         {
           "id": "j4",
-          "type": "butt",
+          "type": "screw",
           "boardA": "b-deckel",
           "boardB": "b-rechts",
-          "position": { "x": 600, "y": 720, "z": 0 },
-          "fasteners": []
+          "position": { "x": 582, "y": 711, "z": 150 },
+          "fasteners": [
+            { "id": "f4", "type": "confirmat", "diameter": 7, "length": 50, "quantity": 3, "headType": "countersunk", "material": "steel" }
+          ]
+        },
+        {
+          "id": "j5",
+          "type": "rabbet",
+          "boardA": "b-rueckwand",
+          "boardB": "b-links",
+          "position": { "x": 18, "y": 360, "z": 4 },
+          "fasteners": [
+            { "id": "f5", "type": "nail", "diameter": 1.2, "length": 25, "quantity": 6, "headType": "countersunk", "material": "steel" }
+          ]
+        },
+        {
+          "id": "j6",
+          "type": "rabbet",
+          "boardA": "b-rueckwand",
+          "boardB": "b-rechts",
+          "position": { "x": 582, "y": 360, "z": 4 },
+          "fasteners": [
+            { "id": "f6", "type": "nail", "diameter": 1.2, "length": 25, "quantity": 6, "headType": "countersunk", "material": "steel" }
+          ]
         }
       ],
       "boards": [
@@ -56,12 +84,14 @@
           "width": 18,
           "height": 720,
           "depth": 300,
+          "heightFormula": "H",
+          "depthFormula": "T",
           "position": { "x": 0, "y": 0, "z": 0 },
           "rotation": { "x": 0, "y": 0, "z": 0 },
-          "materialId": "birke_mdf",
+          "materialId": "multiplex-birke",
           "color": "#E8D5B0",
           "grainDirection": "height",
-          "edgeBanding": { "e1": true, "e3": false, "e4": false }
+          "edgeBanding": { "e1": true }
         },
         {
           "id": "b-rechts",
@@ -69,12 +99,14 @@
           "width": 18,
           "height": 720,
           "depth": 300,
+          "heightFormula": "H",
+          "depthFormula": "T",
           "position": { "x": 582, "y": 0, "z": 0 },
           "rotation": { "x": 0, "y": 0, "z": 0 },
-          "materialId": "birke_mdf",
+          "materialId": "multiplex-birke",
           "color": "#E8D5B0",
           "grainDirection": "height",
-          "edgeBanding": { "e1": true, "e3": false, "e4": false }
+          "edgeBanding": { "e1": true }
         },
         {
           "id": "b-boden",
@@ -82,9 +114,11 @@
           "width": 564,
           "height": 18,
           "depth": 300,
+          "widthFormula": "B - 36",
+          "depthFormula": "T",
           "position": { "x": 18, "y": 0, "z": 0 },
           "rotation": { "x": 0, "y": 0, "z": 0 },
-          "materialId": "birke_mdf",
+          "materialId": "multiplex-birke",
           "color": "#E8D5B0",
           "grainDirection": "width",
           "edgeBanding": { "e1": true }
@@ -95,9 +129,11 @@
           "width": 564,
           "height": 18,
           "depth": 300,
+          "widthFormula": "B - 36",
+          "depthFormula": "T",
           "position": { "x": 18, "y": 702, "z": 0 },
           "rotation": { "x": 0, "y": 0, "z": 0 },
-          "materialId": "birke_mdf",
+          "materialId": "multiplex-birke",
           "color": "#E8D5B0",
           "grainDirection": "width",
           "edgeBanding": { "e1": true }
@@ -107,10 +143,12 @@
           "name": "Einlegeboden",
           "width": 564,
           "height": 18,
-          "depth": 295,
-          "position": { "x": 18, "y": 340, "z": 2 },
+          "depth": 288,
+          "widthFormula": "B - 36",
+          "depthFormula": "T - 12",
+          "position": { "x": 18, "y": 340, "z": 10 },
           "rotation": { "x": 0, "y": 0, "z": 0 },
-          "materialId": "birke_mdf",
+          "materialId": "multiplex-birke",
           "color": "#E8D5B0",
           "grainDirection": "width",
           "edgeBanding": { "e1": true }
@@ -119,13 +157,14 @@
           "id": "b-rueckwand",
           "name": "Rückwand",
           "width": 564,
-          "height": 702,
+          "height": 684,
           "depth": 8,
-          "position": { "x": 18, "y": 18, "z": 293 },
+          "widthFormula": "B - 36",
+          "heightFormula": "H - 36",
+          "position": { "x": 18, "y": 18, "z": 0 },
           "rotation": { "x": 0, "y": 0, "z": 0 },
           "materialId": "hdf",
-          "color": "#D4C49A",
-          "grainDirection": "height"
+          "color": "#D4C49A"
         }
       ]
     }

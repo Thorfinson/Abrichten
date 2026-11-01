@@ -1,50 +1,59 @@
 import type { MeasurementPoint } from '../types/measurement'
-import type { Board, BoardCutout, Vec3 } from '../types/furniture'
+import type { Board, BoardCutout, GrainDirection, Vec3 } from '../types/furniture'
+import { boardCorners3D } from './projection'
+import { boardFace, type BoardAxis } from './boardFace'
 
 // ── Joint geometry ────────────────────────────────────────────────────────────
 
-/** Return the 6 face-center points of a board's AABB */
-function boardFaceCenters(board: Board): Vec3[] {
-  const cx = board.position.x + board.width / 2
-  const cy = board.position.y + board.height / 2
-  const cz = board.position.z + board.depth / 2
-  const hw = board.width / 2
-  const hh = board.height / 2
-  const hd = board.depth / 2
-  return [
-    { x: cx - hw, y: cy, z: cz },
-    { x: cx + hw, y: cy, z: cz },
-    { x: cx, y: cy - hh, z: cz },
-    { x: cx, y: cy + hh, z: cz },
-    { x: cx, y: cy, z: cz - hd },
-    { x: cx, y: cy, z: cz + hd },
-  ]
-}
-
-function vec3Dist(a: Vec3, b: Vec3): number {
-  const dx = b.x - a.x
-  const dy = b.y - a.y
-  const dz = b.z - a.z
-  return Math.sqrt(dx * dx + dy * dy + dz * dz)
-}
-
 /**
- * Compute a joint position between two boards:
- * midpoint of the closest pair of opposing face centers.
+ * Joint position between two boards: centre of the region where they touch,
+ * i.e. per axis the middle of the overlap of their (rotated) bounding boxes.
+ * Where the boxes don't overlap on an axis, that is the middle of the gap.
+ * A shelf at y 300–318 against a side panel gives y = 309.
  */
 export function computeJointPosition(boardA: Board, boardB: Board): Vec3 {
-  const facesA = boardFaceCenters(boardA)
-  const facesB = boardFaceCenters(boardB)
-  let minDist = Infinity
-  let bestA = facesA[0]
-  let bestB = facesB[0]
-  for (const fa of facesA) {
-    for (const fb of facesB) {
-      const d = vec3Dist(fa, fb)
-      if (d < minDist) { minDist = d; bestA = fa; bestB = fb }
-    }
+  const bounds = (b: Board, axis: 'x' | 'y' | 'z'): [number, number] => {
+    const v = boardCorners3D(b).map((c) => c[axis])
+    return [Math.min(...v), Math.max(...v)]
   }
-  return { x: (bestA.x + bestB.x) / 2, y: (bestA.y + bestB.y) / 2, z: (bestA.z + bestB.z) / 2 }
+  const mid = (axis: 'x' | 'y' | 'z'): number => {
+    const [aMin, aMax] = bounds(boardA, axis)
+    const [bMin, bMax] = bounds(boardB, axis)
+    return (Math.max(aMin, bMin) + Math.min(aMax, bMax)) / 2
+  }
+  return { x: mid('x'), y: mid('y'), z: mid('z') }
+}
+
+// Board dimension along world x, y, z (unrotated boards, like the groove overlay)
+const WORLD_AXES: BoardAxis[] = ['width', 'height', 'depth']
+const lowAt = (b: Board, i: number): number => [b.position.x, b.position.y, b.position.z][i]
+const highAt = (b: Board, i: number): number => lowAt(b, i) + b[WORLD_AXES[i]]
+
+/**
+ * Groove of a dado/rabbet joint: cut into the host (boardA) from the face towards
+ * the let-in board (boardB). Depth runs along A's thickness (35 % of it, max 14 mm),
+ * width along B's thickness centred on the joint, length over the boards' overlap.
+ * Returns centre and size as [x, y, z] in world mm.
+ */
+export function grooveBox(jointPos: Vec3, boardA: Board, boardB: Board): { centre: number[]; size: number[] } {
+  const iA = WORLD_AXES.indexOf(boardFace(boardA).thicknessAxis)
+  const iB = WORLD_AXES.indexOf(boardFace(boardB).thicknessAxis)
+  const iW = iB !== iA ? iB : (iA + 1) % 3
+  const iL = 3 - iA - iW
+  const depth = Math.min(boardA[WORLD_AXES[iA]] * 0.35, 14)
+  const towardsB = lowAt(boardB, iA) + highAt(boardB, iA) >= lowAt(boardA, iA) + highAt(boardA, iA)
+  const lenLow = Math.max(lowAt(boardA, iL), lowAt(boardB, iL))
+  const lenHigh = Math.min(highAt(boardA, iL), highAt(boardB, iL))
+
+  const centre = [0, 0, 0]
+  const size = [0, 0, 0]
+  centre[iA] = towardsB ? highAt(boardA, iA) - depth / 2 : lowAt(boardA, iA) + depth / 2
+  size[iA] = depth + 0.5
+  centre[iW] = [jointPos.x, jointPos.y, jointPos.z][iW]
+  size[iW] = boardB[WORLD_AXES[iW]]
+  centre[iL] = (lenLow + lenHigh) / 2
+  size[iL] = Math.max(lenHigh - lenLow, 1) + 1
+  return { centre, size }
 }
 
 /** Euclidean distance between two 2D points (in mm on the canvas) */
@@ -176,4 +185,42 @@ export function insideCutout(board: Board, box: { minX: number; maxX: number; mi
   const z0 = box.minZ - board.position.z
   const z1 = box.maxZ - board.position.z
   return clampCutouts(board).some((c) => x0 >= c.x && x1 <= c.x + c.width && z0 >= c.z && z1 <= c.z + c.depth)
+}
+
+// ── Drawer box ────────────────────────────────────────────────────────────────
+
+/** Drawer sides, front and back */
+export const DRAWER_WALL_MM = 16
+/** Drawer bottom: 16 mm, set in between the four walls (glued and screwed, no groove) */
+export const DRAWER_BOTTOM_MM = 16
+
+export interface DrawerPart {
+  key: 'sideLeft' | 'sideRight' | 'front' | 'back' | 'bottom'
+  width: number
+  height: number
+  depth: number
+  position: Vec3
+  grainDirection: GrainDirection
+}
+
+/**
+ * Parts of a drawer box with the outer size width × height × depth (mm) and its
+ * min corner at `origin`: the sides run the full depth, back (low z, wall side) and
+ * front (high z, towards the front view like every project) sit between them, the
+ * bottom between all four walls, flush with their lower edges.
+ * The parts touch but never overlap. Null when the box is too small for its walls.
+ */
+export function drawerBoxParts(width: number, height: number, depth: number, origin: Vec3): DrawerPart[] | null {
+  const t = DRAWER_WALL_MM
+  const innerWidth = width - 2 * t
+  const innerDepth = depth - 2 * t
+  if (!(innerWidth >= 1 && innerDepth >= 1 && height >= DRAWER_BOTTOM_MM + 1)) return null
+  const at = (x: number, y: number, z: number): Vec3 => ({ x: origin.x + x, y: origin.y + y, z: origin.z + z })
+  return [
+    { key: 'sideLeft', width: t, height, depth, position: at(0, 0, 0), grainDirection: 'depth' },
+    { key: 'sideRight', width: t, height, depth, position: at(width - t, 0, 0), grainDirection: 'depth' },
+    { key: 'front', width: innerWidth, height, depth: t, position: at(t, 0, depth - t), grainDirection: 'width' },
+    { key: 'back', width: innerWidth, height, depth: t, position: at(t, 0, 0), grainDirection: 'width' },
+    { key: 'bottom', width: innerWidth, height: DRAWER_BOTTOM_MM, depth: innerDepth, position: at(t, 0, t), grainDirection: 'width' }
+  ]
 }

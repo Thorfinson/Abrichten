@@ -4,11 +4,11 @@ export function escapeHtml(s: string): string {
   return s.replace(/[&<>"']/g, (c) => map[c])
 }
 
-/** Quote a CSV cell; text starting with = + - @ gets a leading apostrophe so
- *  spreadsheets do not evaluate it as a formula (CSV injection). */
+/** Quote a CSV cell; text starting with = + - @ tab or CR gets a leading apostrophe
+ *  so spreadsheets do not evaluate it as a formula (CSV injection). */
 export function csvCell(v: unknown): string {
   if (typeof v === 'number') return String(v)
   const s = String(v)
-  const safe = /^[=+@-]/.test(s) ? "'" + s : s
+  const safe = /^[=+@\t\r-]/.test(s) ? "'" + s : s
   return '"' + safe.replace(/"/g, '""') + '"'
 }

@@ -4,9 +4,14 @@ import { useState, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useProjectStore } from '../../store/useProjectStore'
 import { useUIStore } from '../../store/useUIStore'
-import { getMaterialById, materials } from '../../data/materials'
+import { getMaterialById } from '../../data/materials'
 import { exportDxf } from '../../utils/dxf'
 import { assemblyPath } from '../../utils/assemblyTree'
+import { edgeBandingLengthMm } from '../../utils/boardFace'
+import { cuttingDims, type GrainRelation } from '../../utils/cuttingDims'
+import { printHtml } from '../../utils/printHtml'
+import { Dialog, Button, FIELD_CLASS, TH_CLASS, TD_CLASS, CHECK_CLASS, SECTION_LABEL_CLASS } from '../ui/Dialog'
+import { getCsvDelimiter } from '../layout/SettingsDialog'
 import type { Board } from '../../types/furniture'
 
 function edgeBandingLabel(board: Board): string {
@@ -20,18 +25,7 @@ function edgeBandingLabel(board: Board): string {
   return parts.join('+')
 }
 
-function edgeBandingLengthMm(board: Board): number {
-  const eb = board.edgeBanding
-  if (!eb) return 0
-  let total = 0
-  if (eb.e1) total += board.width
-  if (eb.e2) total += board.width
-  if (eb.e3) total += board.depth
-  if (eb.e4) total += board.depth
-  return total
-}
-
-type SortCol = 'nr' | 'assemblyName' | 'name' | 'material' | 'width' | 'height' | 'depth'
+type SortCol = 'nr' | 'assemblyName' | 'name' | 'material' | 'length' | 'width' | 'thickness'
 type SortDir = 'asc' | 'desc'
 
 interface Row {
@@ -40,33 +34,37 @@ interface Row {
   name: string
   materialId: string
   material: string
+  /** Longer face side, shorter face side, thickness (utils/cuttingDims) */
+  length: number
   width: number
-  height: number
-  depth: number
-  grain: string
+  thickness: number
+  grain: GrainRelation | null
   ebLabel: string
   ebMm: number
   qty?: number
-  board: Board
 }
 
 function SortTh({
-  col, label, sortCol, sortDir, onSort
+  col, label, sortCol, sortDir, onSort, align = 'left', title
 }: {
   col: SortCol
   label: string
   sortCol: SortCol
   sortDir: SortDir
   onSort: (col: SortCol) => void
+  align?: 'left' | 'right'
+  title?: string
 }) {
   const active = sortCol === col
   return (
     <th
-      className="border border-gray-300 px-2 py-1 text-left cursor-pointer select-none hover:bg-gray-200 whitespace-nowrap"
+      className={`${TH_CLASS} cursor-pointer select-none whitespace-nowrap hover:text-chrome-text ${align === 'right' ? 'text-right' : ''}`}
       onClick={() => onSort(col)}
+      title={title}
+      aria-sort={active ? (sortDir === 'asc' ? 'ascending' : 'descending') : undefined}
     >
       {label}
-      <span className="ml-1 text-gray-400 text-[10px]">
+      <span className={`ml-1 text-[10px] ${active ? 'text-accent' : 'text-chrome-hint'}`}>
         {active ? (sortDir === 'asc' ? '▲' : '▼') : '⇅'}
       </span>
     </th>
@@ -92,34 +90,34 @@ export function CuttingList() {
     setTimeout(() => setExportToast(null), 3000)
   }
 
-  // Build raw rows
+  const grainLabel = (g: GrainRelation | null): string => (g ? t(g === 'along' ? 'dlg.grainAlong' : 'dlg.grainAcross') : '')
+
+  // Build raw rows: length × width × thickness, the way the part is cut
   const rawRows = useMemo<Row[]>(() => {
     const result: Row[] = []
     let nr = 0
     for (const assembly of activeAssemblies(project)) {
       for (const board of assembly.boards) {
         nr++
-        const mat = getMaterialById(board.materialId)
+        const mat = getMaterialById(board.materialId, project.customMaterials)
+        const dims = cuttingDims(board)
         result.push({
           nr,
           assemblyName: assemblyPath(project.assemblies, assembly.id),
           name: board.name,
           materialId: board.materialId,
           material: mat ? (lang === 'de' ? mat.name : mat.nameEn) : board.materialId,
-          width: board.width,
-          height: board.height,
-          depth: board.depth,
-          grain: board.grainDirection
-            ? t(`board.grain${board.grainDirection.charAt(0).toUpperCase() + board.grainDirection.slice(1)}`)
-            : '',
+          length: dims.length,
+          width: dims.width,
+          thickness: dims.thickness,
+          grain: dims.grain,
           ebLabel: edgeBandingLabel(board),
-          ebMm: edgeBandingLengthMm(board),
-          board
+          ebMm: edgeBandingLengthMm(board)
         })
       }
     }
     return result
-  }, [project.assemblies, lang, t])
+  }, [project.assemblies, project.customMaterials, lang])
 
   // Apply text + material filters
   const filtered = useMemo(() => {
@@ -136,18 +134,14 @@ export function CuttingList() {
     return rows
   }, [rawRows, filterText, filterMaterial])
 
-  // Group identical boards (same material, W, H, D, grain, edge banding)
+  // Group identical parts (same material, L × B × D, grain, edge banding)
   const grouped = useMemo<Row[]>(() => {
     if (!groupIdentical) return filtered
     const map = new Map<string, Row & { qty: number }>()
     for (const r of filtered) {
-      const key = `${r.materialId}|${r.width}|${r.height}|${r.depth}|${r.grain}|${r.ebLabel}`
-      if (map.has(key)) {
-        map.get(key)!.qty++
-        map.get(key)!.ebMm += r.ebMm
-      } else {
-        map.set(key, { ...r, qty: 1 })
-      }
+      const key = `${r.materialId}|${r.length}|${r.width}|${r.thickness}|${r.grain}|${r.ebLabel}`
+      const prev = map.get(key)
+      map.set(key, prev ? { ...prev, qty: prev.qty + 1, ebMm: prev.ebMm + r.ebMm } : { ...r, qty: 1 })
     }
     return Array.from(map.values())
   }, [filtered, groupIdentical])
@@ -156,10 +150,10 @@ export function CuttingList() {
   const sorted = useMemo(() => {
     const arr = [...grouped]
     arr.sort((a, b) => {
-      let va: string | number = a[sortCol] ?? 0
-      let vb: string | number = b[sortCol] ?? 0
-      if (typeof va === 'string') {
-        const cmp = va.localeCompare(vb as string)
+      const va = a[sortCol]
+      const vb = b[sortCol]
+      if (typeof va === 'string' && typeof vb === 'string') {
+        const cmp = va.localeCompare(vb)
         return sortDir === 'asc' ? cmp : -cmp
       }
       return sortDir === 'asc' ? (va as number) - (vb as number) : (vb as number) - (va as number)
@@ -206,6 +200,9 @@ export function CuttingList() {
   // changes the hook count between renders and crashes React (#310).
   if (!showCuttingList) return null
   const hiddenCount = project.assemblies.length - activeAssemblies(project).length
+  const totalPieces = sorted.reduce((s, r) => s + (r.qty ?? 1), 0)
+
+  const dimHeaders = [`${t('dlg.length')} (mm)`, `${t('dlg.width')} (mm)`, `${t('dlg.thickness')} (mm)`]
 
   const buildCsvRows = (rows: Row[]) => {
     const headers = [
@@ -213,64 +210,64 @@ export function CuttingList() {
       t('cutting.assembly'),
       t('board.name'),
       t('board.material'),
-      `${t('board.width')} (mm)`,
-      `${t('board.height')} (mm)`,
-      `${t('board.depth')} (mm)`,
+      ...dimHeaders,
       t('cutting.grain'),
       t('cutting.edgeBanding'),
-      ...(groupIdentical ? ['Qty'] : [])
+      ...(groupIdentical ? [t('cutting.qty')] : [])
     ]
-    const csvRows = [headers.map(csvCell).join(';')]
+    const sep = getCsvDelimiter()
+    const csvRows = [headers.map(csvCell).join(sep)]
     let rowNr = 0
     for (const r of rows) {
       rowNr++
       csvRows.push([
         rowNr, r.assemblyName, r.name, r.material,
-        r.width, r.height, r.depth, r.grain, r.ebLabel,
+        r.length, r.width, r.thickness, grainLabel(r.grain), r.ebLabel,
         ...(groupIdentical ? [r.qty ?? 1] : [])
-      ].map(csvCell).join(';'))
+      ].map(csvCell).join(sep))
     }
     if (totalEdgeBandingMm > 0) {
       csvRows.push('')
       csvRows.push([t('cutting.edgeBandingTotal'), '', '', '', '', '', '',
-        `${(totalEdgeBandingMm / 1000).toFixed(2)} m`].map(csvCell).join(';'))
+        `${(totalEdgeBandingMm / 1000).toFixed(2)} m`].map(csvCell).join(sep))
     }
     if (fastenerRows.length > 0) {
       csvRows.push('')
-      csvRows.push([t('cutting.fasteners'), t('cutting.fastenerSize'), t('cutting.qty')].map(csvCell).join(';'))
-      for (const f of fastenerRows) csvRows.push([t(`joints.f_${f.type}`), f.size, f.qty].map(csvCell).join(';'))
+      csvRows.push([t('cutting.fasteners'), t('cutting.fastenerSize'), t('cutting.qty')].map(csvCell).join(sep))
+      for (const f of fastenerRows) csvRows.push([t(`joints.f_${f.type}`), f.size, f.qty].map(csvCell).join(sep))
     }
     return csvRows.join('\n')
   }
 
   const handlePrint = () => {
-    const colHeaders = groupIdentical
-      ? (lang === 'de' ? ['#', 'Name', 'Baugruppe', 'Material', 'B (mm)', 'H (mm)', 'T (mm)', 'Anz.'] : ['#', 'Name', 'Assembly', 'Material', 'W (mm)', 'H (mm)', 'D (mm)', 'Qty'])
-      : (lang === 'de' ? ['#', 'Name', 'Baugruppe', 'Material', 'B (mm)', 'H (mm)', 'T (mm)'] : ['#', 'Name', 'Assembly', 'Material', 'W (mm)', 'H (mm)', 'D (mm)'])
+    const colHeaders = [
+      '#', t('board.name'), t('cutting.assembly'), t('board.material'), ...dimHeaders,
+      t('cutting.grain'), t('cutting.edgeBanding'), ...(groupIdentical ? [t('cutting.qty')] : [])
+    ]
     const rows = sorted.map((r, i) => {
-      const cols = [i + 1, r.name, r.assemblyName, r.material, r.width, r.height, r.depth]
-      if (groupIdentical) cols.push((r as any).qty ?? 1)
-      return `<tr>${cols.map((c) => `<td>${escapeHtml(String(c))}</td>`).join('')}</tr>`
+      const cols: (string | number)[] = [i + 1, r.name, r.assemblyName, r.material, r.length, r.width, r.thickness, grainLabel(r.grain), r.ebLabel]
+      if (groupIdentical) cols.push(r.qty ?? 1)
+      return `<tr>${cols.map((c) => `<td${typeof c === 'number' ? ' class="n"' : ''}>${escapeHtml(String(c))}</td>`).join('')}</tr>`
     })
+    const title = t('cutting.title')
     const html = `<!DOCTYPE html><html><head><meta charset="utf-8">
-<title>${escapeHtml(project.name)} - ${lang === 'de' ? 'Zuschnittliste' : 'Cutting List'}</title>
+<title>${escapeHtml(project.name)} - ${escapeHtml(title)}</title>
 <style>body{font:12px sans-serif;margin:20px}h1{font-size:14px;margin-bottom:8px}
 table{border-collapse:collapse;width:100%}th,td{border:1px solid #ccc;padding:4px 6px;text-align:left}
-th{background:#f0f0f0}@media print{@page{size:A4;margin:15mm}}</style></head>
-<body><h1>${escapeHtml(project.name)} — ${lang === 'de' ? 'Zuschnittliste' : 'Cutting List'}</h1>
-<table><thead><tr>${colHeaders.map((h) => `<th>${h}</th>`).join('')}</tr></thead>
+td.n{text-align:right;font-variant-numeric:tabular-nums}th{background:#f0f0f0}@media print{@page{size:A4;margin:15mm}}</style></head>
+<body><h1>${escapeHtml(project.name)} — ${escapeHtml(title)}</h1>
+<table><thead><tr>${colHeaders.map((h) => `<th>${escapeHtml(h)}</th>`).join('')}</tr></thead>
 <tbody>${rows.join('')}</tbody></table>
-<script>window.onload=function(){window.print()}</script></body></html>`
-    const win = window.open('', '_blank')
-    if (win) { win.document.write(html); win.document.close() }
+</body></html>`
+    printHtml(html)
   }
 
   const handleExportCSV = () => {
     const csv = buildCsvRows(sorted)
     const filename = `${project.name}${t('cutting.csvSuffix')}.csv`
     try {
-      if ((window as any).electronAPI?.fileExportCsv) {
-        ;(window as any).electronAPI.fileExportCsv(csv, filename)
+      if ((window as any).electronAPI?.fileExport) {
+        ;(window as any).electronAPI.fileExport(csv, filename)
       } else {
         const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
         const url = URL.createObjectURL(blob)
@@ -289,8 +286,8 @@ th{background:#f0f0f0}@media print{@page{size:A4;margin:15mm}}</style></head>
     const dxfContent = exportDxf(allBoards)
     const filename = `${project.name}.dxf`
     try {
-      if ((window as any).electronAPI?.fileExportText) {
-        ;(window as any).electronAPI.fileExportText(dxfContent, filename)
+      if ((window as any).electronAPI?.fileExport) {
+        ;(window as any).electronAPI.fileExport(dxfContent, filename)
       } else {
         const blob = new Blob([dxfContent], { type: 'application/dxf' })
         const url = URL.createObjectURL(blob)
@@ -304,185 +301,144 @@ th{background:#f0f0f0}@media print{@page{size:A4;margin:15mm}}</style></head>
     }
   }
 
+  const empty = sorted.length === 0
+  const num = `${TD_CLASS} text-right font-mono tabular-nums`
+
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={(e) => { if (e.target === e.currentTarget) setShowCuttingList(false) }}>
-      <div className="bg-white rounded-lg shadow-xl w-[960px] max-h-[85vh] overflow-hidden flex flex-col">
-
-        {/* Header */}
-        <div className="p-4 border-b border-gray-200 flex items-center gap-3 shrink-0 flex-wrap">
-          <h2 className="text-base font-bold flex-1">{t('cutting.title')}</h2>
-          {hiddenCount > 0 && (
-            <span className="text-xs font-medium px-2 py-1 rounded bg-amber-50 text-amber-800">
-              {t('cutting.hiddenExcluded', { count: hiddenCount })}
-            </span>
-          )}
-
-          {/* Export toast */}
-          {exportToast && (
-            <span className={`text-xs font-medium px-2 py-1 rounded ${
-              exportToast.startsWith('✓') ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'
-            }`}>
-              {exportToast}
-            </span>
-          )}
-
-          {/* Filters */}
+    <Dialog
+      title={t('cutting.title')}
+      titleId="cutting-list-title"
+      onClose={() => setShowCuttingList(false)}
+      className="w-[1000px]"
+      bodyClassName="flex flex-col"
+      headerExtra={<>
+        {exportToast && (
+          <span role="status" className={`rounded px-2 py-0.5 text-xs font-medium ${
+            exportToast.startsWith('✓') ? 'bg-success-dim/60 text-success-text' : 'bg-danger-dim/60 text-danger-text'
+          }`}>
+            {exportToast}
+          </span>
+        )}
+        {hiddenCount > 0 && (
+          <span className="rounded bg-accent-dim/60 px-2 py-0.5 text-xs font-medium text-accent-text">
+            {t('cutting.hiddenExcluded', { count: hiddenCount })}
+          </span>
+        )}
+      </>}
+      footer={<>
+        <span className="mr-auto text-xs text-chrome-muted">
+          {t('cutting.total')}: <span className="font-mono text-chrome-text">{totalPieces}</span> {t('cutting.pieces')}
+          {totalEdgeBandingMm > 0 && <> · <span className="font-mono text-chrome-text">{(totalEdgeBandingMm / 1000).toFixed(2)}</span> {t('cutting.edgeBandingM')}</>}
+        </span>
+        <Button onClick={handleExportDxf} disabled={empty}>{t('cutting.exportDxf')}</Button>
+        <Button onClick={handleExportCSV} disabled={empty}>{t('cutting.export')}</Button>
+        <Button variant="primary" onClick={handlePrint} disabled={empty}>{lang === 'de' ? 'PDF drucken' : 'Print PDF'}</Button>
+        <Button onClick={() => setShowCuttingList(false)}>{t('ui.close')}</Button>
+      </>}
+    >
+      {/* Filters */}
+      <div className="flex shrink-0 flex-wrap items-center gap-3 border-b border-chrome-border px-4 py-2">
+        <input
+          type="text"
+          placeholder={lang === 'de' ? 'Name / Gruppe filtern…' : 'Filter by name / assembly…'}
+          aria-label={lang === 'de' ? 'Name / Gruppe filtern' : 'Filter by name / assembly'}
+          value={filterText}
+          onChange={(e) => setFilterText(e.target.value)}
+          className={`${FIELD_CLASS} w-52`}
+        />
+        <select
+          value={filterMaterial}
+          onChange={(e) => setFilterMaterial(e.target.value)}
+          aria-label={t('board.material')}
+          className={FIELD_CLASS}
+        >
+          <option value="">{lang === 'de' ? 'Alle Materialien' : 'All materials'}</option>
+          {uniqueMaterials.map((m) => (
+            <option key={m.id} value={m.id}>{m.label}</option>
+          ))}
+        </select>
+        <label className="flex cursor-pointer select-none items-center gap-1.5 text-xs text-chrome-secondary">
           <input
-            type="text"
-            placeholder={lang === 'de' ? 'Name / Gruppe filtern…' : 'Filter by name / assembly…'}
-            value={filterText}
-            onChange={(e) => setFilterText(e.target.value)}
-            className="text-xs border border-gray-300 rounded px-2 py-1 w-44 outline-none focus:border-blue-400"
+            type="checkbox"
+            checked={groupIdentical}
+            onChange={(e) => setGroupIdentical(e.target.checked)}
+            className={CHECK_CLASS}
           />
-          <select
-            value={filterMaterial}
-            onChange={(e) => setFilterMaterial(e.target.value)}
-            className="text-xs border border-gray-300 rounded px-2 py-1 outline-none focus:border-blue-400"
-          >
-            <option value="">{lang === 'de' ? 'Alle Materialien' : 'All materials'}</option>
-            {uniqueMaterials.map((m) => (
-              <option key={m.id} value={m.id}>{m.label}</option>
-            ))}
-          </select>
-          <label className="flex items-center gap-1.5 text-xs text-gray-600 cursor-pointer select-none">
-            <input
-              type="checkbox"
-              checked={groupIdentical}
-              onChange={(e) => setGroupIdentical(e.target.checked)}
-              className="rounded"
-            />
-            {lang === 'de' ? 'Gleiche gruppieren' : 'Group identical'}
-          </label>
-        </div>
+          {lang === 'de' ? 'Gleiche gruppieren' : 'Group identical'}
+        </label>
+        <span className="ml-auto text-[11px] text-chrome-hint">{t('dlg.cutHint')}</span>
+      </div>
 
-        {/* Table */}
-        <div className="flex-1 overflow-y-auto p-4">
-          {sorted.length === 0 ? (
-            <p className="text-sm text-gray-400 italic">{t('cutting.noBoards')}</p>
-          ) : (
-            <table className="w-full text-xs border-collapse">
-              <thead className="sticky top-0 bg-gray-100 z-10">
+      {/* Table */}
+      <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-4">
+        {empty ? (
+          <p className="pt-4 text-sm italic text-chrome-hint">{t('cutting.noBoards')}</p>
+        ) : (
+          <table className="w-full border-collapse text-xs">
+            <thead className="sticky top-0 z-10">
+              <tr>
+                <SortTh col="nr"           label={t('cutting.nr')}       sortCol={sortCol} sortDir={sortDir} onSort={handleSort} align="right" />
+                <SortTh col="assemblyName" label={t('cutting.assembly')} sortCol={sortCol} sortDir={sortDir} onSort={handleSort} />
+                <SortTh col="name"         label={t('board.name')}       sortCol={sortCol} sortDir={sortDir} onSort={handleSort} />
+                <SortTh col="material"     label={t('board.material')}   sortCol={sortCol} sortDir={sortDir} onSort={handleSort} />
+                <SortTh col="length"       label={dimHeaders[0]} sortCol={sortCol} sortDir={sortDir} onSort={handleSort} align="right" title={t('dlg.lengthTitle')} />
+                <SortTh col="width"        label={dimHeaders[1]} sortCol={sortCol} sortDir={sortDir} onSort={handleSort} align="right" title={t('dlg.widthTitle')} />
+                <SortTh col="thickness"    label={dimHeaders[2]} sortCol={sortCol} sortDir={sortDir} onSort={handleSort} align="right" title={t('dlg.thicknessTitle')} />
+                <th className={`${TH_CLASS} text-center`} title={t('dlg.grainTitle')}>{t('cutting.grain')}</th>
+                <th className={`${TH_CLASS} text-center`}>{t('cutting.edgeBanding')}</th>
+                {groupIdentical && <th className={`${TH_CLASS} text-right`}>{t('cutting.qty')}</th>}
+              </tr>
+            </thead>
+            <tbody>
+              {sorted.map((r, i) => (
+                <tr key={i} className="hover:bg-chrome-surface/40">
+                  <td className={`${num} text-chrome-muted`}>{i + 1}</td>
+                  <td className={`${TD_CLASS} text-chrome-secondary`}>{r.assemblyName}</td>
+                  <td className={TD_CLASS}>{r.name}</td>
+                  <td className={`${TD_CLASS} text-chrome-secondary`}>{r.material}</td>
+                  <td className={num}>{r.length}</td>
+                  <td className={num}>{r.width}</td>
+                  <td className={`${num} text-chrome-secondary`}>{r.thickness}</td>
+                  <td className={`${TD_CLASS} text-center`}>
+                    {r.grain
+                      ? <span className="font-medium text-accent">{grainLabel(r.grain)}</span>
+                      : <span className="text-chrome-hint">—</span>}
+                  </td>
+                  <td className={`${TD_CLASS} text-center font-mono`}>
+                    {r.ebLabel
+                      ? <span className="text-info">{r.ebLabel}</span>
+                      : <span className="text-chrome-hint">—</span>}
+                  </td>
+                  {groupIdentical && <td className={`${num} font-bold`}>{r.qty ?? 1}</td>}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+        {fastenerRows.length > 0 && (
+          <section className="mt-5">
+            <h3 className={`${SECTION_LABEL_CLASS} mb-1.5`}>{t('cutting.fasteners')}</h3>
+            <table className="border-collapse text-xs">
+              <thead>
                 <tr>
-                  <SortTh col="nr"           label={t('cutting.nr')}       sortCol={sortCol} sortDir={sortDir} onSort={handleSort} />
-                  <SortTh col="assemblyName" label={t('cutting.assembly')} sortCol={sortCol} sortDir={sortDir} onSort={handleSort} />
-                  <SortTh col="name"         label={t('board.name')}       sortCol={sortCol} sortDir={sortDir} onSort={handleSort} />
-                  <SortTh col="material"     label={t('board.material')}   sortCol={sortCol} sortDir={sortDir} onSort={handleSort} />
-                  <SortTh col="width"        label={`${t('board.width')} (mm)`}  sortCol={sortCol} sortDir={sortDir} onSort={handleSort} />
-                  <SortTh col="height"       label={`${t('board.height')} (mm)`} sortCol={sortCol} sortDir={sortDir} onSort={handleSort} />
-                  <SortTh col="depth"        label={`${t('board.depth')} (mm)`}  sortCol={sortCol} sortDir={sortDir} onSort={handleSort} />
-                  <th className="border border-gray-300 px-2 py-1 text-center">{t('cutting.grain')}</th>
-                  <th className="border border-gray-300 px-2 py-1 text-center">{t('cutting.edgeBanding')}</th>
-                  {groupIdentical && (
-                    <th className="border border-gray-300 px-2 py-1 text-center">
-                      {lang === 'de' ? 'Anz.' : 'Qty'}
-                    </th>
-                  )}
+                  <th className={TH_CLASS}>{t('joints.fastener')}</th>
+                  <th className={TH_CLASS}>{t('cutting.fastenerSize')}</th>
+                  <th className={`${TH_CLASS} text-right`}>{t('cutting.qty')}</th>
                 </tr>
               </thead>
               <tbody>
-                {sorted.map((r, i) => (
-                  <tr key={i} className="hover:bg-blue-50">
-                    <td className="border border-gray-300 px-2 py-1">{i + 1}</td>
-                    <td className="border border-gray-300 px-2 py-1">{r.assemblyName}</td>
-                    <td className="border border-gray-300 px-2 py-1">{r.name}</td>
-                    <td className="border border-gray-300 px-2 py-1">{r.material}</td>
-                    <td className="border border-gray-300 px-2 py-1 text-right font-mono">{r.width}</td>
-                    <td className="border border-gray-300 px-2 py-1 text-right font-mono">{r.height}</td>
-                    <td className="border border-gray-300 px-2 py-1 text-right font-mono">{r.depth}</td>
-                    <td className="border border-gray-300 px-2 py-1 text-center">
-                      {r.grain
-                        ? <span className="text-amber-600 font-medium">{r.grain}</span>
-                        : <span className="text-gray-300">—</span>}
-                    </td>
-                    <td className="border border-gray-300 px-2 py-1 text-center">
-                      {r.ebLabel
-                        ? <span className="text-blue-600">{r.ebLabel}</span>
-                        : <span className="text-gray-300">—</span>}
-                    </td>
-                    {groupIdentical && (
-                      <td className="border border-gray-300 px-2 py-1 text-center font-mono font-bold">
-                        {r.qty ?? 1}
-                      </td>
-                    )}
+                {fastenerRows.map((f) => (
+                  <tr key={`${f.type}-${f.size}`}>
+                    <td className={TD_CLASS}>{t(`joints.f_${f.type}`)}</td>
+                    <td className={`${TD_CLASS} font-mono`}>{f.size}</td>
+                    <td className={`${num} font-bold`}>{f.qty}</td>
                   </tr>
                 ))}
               </tbody>
-              <tfoot>
-                <tr className="bg-gray-50 font-bold">
-                  <td className="border border-gray-300 px-2 py-1" colSpan={4}>
-                    {t('cutting.total')}: {sorted.length} {t('cutting.pieces')}
-                    {groupIdentical && sorted.reduce((s, r) => s + (r.qty ?? 1), 0) !== sorted.length && (
-                      <span className="font-normal text-gray-500 ml-1">
-                        ({sorted.reduce((s, r) => s + (r.qty ?? 1), 0)} {lang === 'de' ? 'Stk.' : 'pcs'} total)
-                      </span>
-                    )}
-                  </td>
-                  <td className="border border-gray-300 px-2 py-1" colSpan={3} />
-                  <td className="border border-gray-300 px-2 py-1" />
-                  <td className="border border-gray-300 px-2 py-1 text-center text-blue-700">
-                    {totalEdgeBandingMm > 0 && `${(totalEdgeBandingMm / 1000).toFixed(2)} ${t('cutting.edgeBandingM')}`}
-                  </td>
-                  {groupIdentical && <td className="border border-gray-300 px-2 py-1" />}
-                </tr>
-              </tfoot>
             </table>
-          )}
-          {fastenerRows.length > 0 && (
-            <div className="mt-4">
-              <h3 className="text-xs font-bold text-gray-600 mb-1">{t('cutting.fasteners')}</h3>
-              <table className="text-xs border-collapse">
-                <thead className="bg-gray-100">
-                  <tr>
-                    <th className="border border-gray-300 px-2 py-1 text-left">{t('joints.fastener')}</th>
-                    <th className="border border-gray-300 px-2 py-1 text-left">{t('cutting.fastenerSize')}</th>
-                    <th className="border border-gray-300 px-2 py-1 text-right">{t('cutting.qty')}</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {fastenerRows.map((f) => (
-                    <tr key={`${f.type}-${f.size}`}>
-                      <td className="border border-gray-300 px-2 py-1">{t(`joints.f_${f.type}`)}</td>
-                      <td className="border border-gray-300 px-2 py-1 font-mono">{f.size}</td>
-                      <td className="border border-gray-300 px-2 py-1 text-right font-mono font-bold">{f.qty}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
-
-        {/* Footer */}
-        <div className="flex items-center justify-end gap-2 p-4 border-t border-gray-200 shrink-0">
-          <button
-            onClick={handlePrint}
-            disabled={sorted.length === 0}
-            className="text-sm px-4 py-1.5 rounded bg-purple-600 text-white hover:bg-purple-700 disabled:opacity-50"
-          >
-            {lang === 'de' ? 'PDF drucken' : 'Print PDF'}
-          </button>
-          <button
-            onClick={handleExportDxf}
-            disabled={sorted.length === 0}
-            className="text-sm px-4 py-1.5 rounded bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50"
-          >
-            {t('cutting.exportDxf')}
-          </button>
-          <button
-            onClick={handleExportCSV}
-            disabled={sorted.length === 0}
-            className="text-sm px-4 py-1.5 rounded bg-green-600 text-white hover:bg-green-700 disabled:opacity-50"
-          >
-            {t('cutting.export')}
-          </button>
-          <button
-            onClick={() => setShowCuttingList(false)}
-            className="text-sm px-4 py-1.5 rounded bg-gray-100 text-gray-700 hover:bg-gray-200"
-          >
-            {t('actions.cancel')}
-          </button>
-        </div>
+          </section>
+        )}
       </div>
-    </div>
+    </Dialog>
   )
 }

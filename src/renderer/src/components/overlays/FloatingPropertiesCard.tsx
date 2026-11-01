@@ -1,3 +1,4 @@
+import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { activeJoints } from '../../utils/activeParts'
 import { assemblyPath } from '../../utils/assemblyTree'
@@ -5,13 +6,228 @@ import { useProjectStore } from '../../store/useProjectStore'
 import { useUIStore } from '../../store/useUIStore'
 import { materials, getMaterialById } from '../../data/materials'
 import { DimInput, Vec3Input } from '../layout/DimensionInputs'
-import type { Board, BoardCutout, Fastener, MaterialCategory, Vec3 } from '../../types/furniture'
+import { openJointEditor } from '../panels/JointDialog'
+import { BoardLoadField } from './BoardLoadField'
+import { boardFace, edgeBandingLengthMm } from '../../utils/boardFace'
+import { worldAligned } from '../../utils/projection'
+import type { Board, BoardCutout, EdgeBanding, Fastener, MaterialCategory, Vec3 } from '../../types/furniture'
 
 /** Dark <option>/<optgroup> styling so native dropdowns are readable on the
  *  glass card (Chromium renders option lists with the OS-default white bg,
  *  which made white-on-white text unreadable). */
 const OPTION_DARK = 'bg-gray-800 text-white'
 const OPTGROUP_DARK = 'bg-gray-800 text-white/50'
+
+interface CommitInputProps extends Omit<React.InputHTMLAttributes<HTMLInputElement>, 'value' | 'onChange' | 'onBlur' | 'onKeyDown' | 'onFocus'> {
+  value: string | number
+  /** Called once with the edited text — on blur or Enter, only if it changed */
+  onCommit: (text: string) => void
+}
+
+/**
+ * Input that edits a local draft and commits it once, on blur or Enter, so
+ * typing a name or a number is one undo step (and one scene update) instead
+ * of one per keystroke. Esc puts the stored value back.
+ */
+function CommitInput({ value, onCommit, ...rest }: CommitInputProps) {
+  const [draft, setDraft] = useState(String(value))
+  const focused = useRef(false)
+  const live = useRef({ draft, value, onCommit })
+  live.current = { draft, value, onCommit }
+
+  // Follow outside changes (undo, drag, …) unless the user is editing
+  useEffect(() => {
+    if (!focused.current) setDraft(String(value))
+  }, [value])
+
+  const commit = (): void => {
+    const { draft: d, value: v, onCommit: fn } = live.current
+    if (d !== String(v)) fn(d)
+  }
+
+  // Unmounted while editing (e.g. another board got selected): keep the edit
+  useEffect(() => () => { if (focused.current) commit() }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  return (
+    <input
+      {...rest}
+      value={draft}
+      onFocus={() => { focused.current = true }}
+      onChange={(e) => setDraft(e.target.value)}
+      onBlur={() => {
+        if (!focused.current) return // Esc already reverted
+        focused.current = false
+        commit()
+        // A rejected edit (e.g. not a number) leaves the stored value: show it again
+        requestAnimationFrame(() => { if (!focused.current) setDraft(String(live.current.value)) })
+      }}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') e.currentTarget.blur()
+        else if (e.key === 'Escape') {
+          e.preventDefault()   // Esc reverts the field; it must not also deselect the board
+          focused.current = false
+          setDraft(String(live.current.value))
+          e.currentTarget.blur()
+        }
+      }}
+    />
+  )
+}
+
+// ── Collapsible sections (open state remembered per viewer) ─────────────────
+
+type SectionId = 'geometry' | 'transform' | 'material' | 'edges' | 'cutouts' | 'joints'
+
+const SECTIONS_KEY = 'abrichten-card-sections'
+const DEFAULT_OPEN: Record<SectionId, boolean> = {
+  geometry: true, transform: false, material: true, edges: true, cutouts: false, joints: true
+}
+
+function loadOpenSections(): Record<SectionId, boolean> {
+  try {
+    const saved: unknown = JSON.parse(localStorage.getItem(SECTIONS_KEY) ?? '{}')
+    if (!saved || typeof saved !== 'object') return DEFAULT_OPEN
+    const valid = Object.entries(saved).filter(([k, v]) => k in DEFAULT_OPEN && typeof v === 'boolean')
+    return { ...DEFAULT_OPEN, ...Object.fromEntries(valid) }
+  } catch {
+    return DEFAULT_OPEN
+  }
+}
+
+function useOpenSections(): [Record<SectionId, boolean>, (id: SectionId) => void] {
+  const [open, setOpen] = useState(loadOpenSections)
+  const toggle = (id: SectionId): void => setOpen((prev) => {
+    const next = { ...prev, [id]: !prev[id] }
+    try { localStorage.setItem(SECTIONS_KEY, JSON.stringify(next)) } catch { /* storage blocked: keep it for this session */ }
+    return next
+  })
+  return [open, toggle]
+}
+
+interface SectionProps {
+  id: SectionId
+  title: string
+  open: boolean
+  onToggle: (id: SectionId) => void
+  /** Shown in the header while collapsed, e.g. the dimensions */
+  summary?: string
+  /** Header button on the right, e.g. "+ new" (shown while collapsed too) */
+  action?: React.ReactNode
+  children: React.ReactNode
+}
+
+function Section({ id, title, open, onToggle, summary, action, children }: SectionProps) {
+  return (
+    <div className="px-3 py-1">
+      <div className={`flex items-center gap-1 ${open ? 'mb-1.5' : ''}`}>
+        <button
+          type="button"
+          onClick={() => onToggle(id)}
+          aria-expanded={open}
+          aria-controls={`card-section-${id}`}
+          className="group flex-1 min-w-0 flex items-center gap-1 text-left rounded outline-none focus-visible:ring-1 focus-visible:ring-action"
+        >
+          <svg aria-hidden viewBox="0 0 8 8" className={`w-2 h-2 shrink-0 text-white/35 group-hover:text-white/60 transition-transform ${open ? 'rotate-90' : ''}`}>
+            <path d="M2.5 1 L5.5 4 L2.5 7" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+          <span className="text-[9px] font-bold text-white/30 group-hover:text-white/60 uppercase tracking-widest shrink-0">{title}</span>
+          {!open && summary && <span className="ml-auto pl-1 text-[9px] text-white/45 truncate">{summary}</span>}
+        </button>
+        {action}
+      </div>
+      {open && <div id={`card-section-${id}`}>{children}</div>}
+    </div>
+  )
+}
+
+const EDGE_KEYS = ['e1', 'e2', 'e3', 'e4'] as const
+
+/**
+ * Edge banding as a face diagram: E1/E2 run along the first face axis (top and
+ * bottom bar), E3/E4 along the second (left and right bar). Each bar toggles.
+ */
+function EdgeBandingPicker({ board, onChange }: { board: Board; onChange: (eb: EdgeBanding) => void }) {
+  const { t } = useTranslation()
+  const face = boardFace(board)
+  const eb = board.edgeBanding ?? {}
+  const len = (k: (typeof EDGE_KEYS)[number]): number => (k === 'e1' || k === 'e2' ? face.u : face.v)
+  const place: Record<(typeof EDGE_KEYS)[number], string> = {
+    e1: 'top-0 left-5 right-5 h-4',
+    e2: 'bottom-0 left-5 right-5 h-4',
+    e3: 'left-0 top-5 bottom-5 w-4 [writing-mode:vertical-rl] rotate-180',
+    e4: 'right-0 top-5 bottom-5 w-4 [writing-mode:vertical-rl]'
+  }
+  return (
+    <div>
+      <div className="relative h-24">
+        <div className="absolute inset-5 rounded-sm border border-white/10 bg-white/5 flex items-center justify-center text-[9px] text-white/40 font-mono">
+          {face.u} × {face.v}
+        </div>
+        {EDGE_KEYS.map((k) => {
+          const on = !!eb[k]
+          const label = `${k.toUpperCase()} · ${len(k)}`
+          return (
+            <button
+              key={k}
+              type="button"
+              aria-pressed={on}
+              title={t('func.edgeTitle', { edge: k.toUpperCase(), len: len(k) })}
+              onClick={() => onChange({ ...eb, [k]: !on })}
+              className={`absolute ${place[k]} flex items-center justify-center rounded-sm text-[9px] font-mono leading-none transition-colors outline-none focus-visible:ring-1 focus-visible:ring-action ${
+                on ? 'bg-accent text-chrome-deep font-bold' : 'bg-white/8 text-white/45 hover:bg-white/15 hover:text-white/80'
+              }`}
+            >
+              {label}
+            </button>
+          )
+        })}
+      </div>
+      <div className="text-[9px] text-white/40 mt-0.5">
+        {t('func.edgesTotal', { len: edgeBandingLengthMm(board) })}
+      </div>
+    </div>
+  )
+}
+
+/** Grain direction: none, or along one of the two face axes (never the thickness). */
+function GrainPicker({ board, hasGrain, onChange }: { board: Board; hasGrain: boolean; onChange: (g: Board['grainDirection']) => void }) {
+  const { t } = useTranslation()
+  const face = boardFace(board)
+  const options = [
+    { value: undefined, label: t('board.grainNone'), title: t('board.grainNone') },
+    ...([[face.uAxis, face.u], [face.vAxis, face.v]] as const).map(([axis, len]) => ({
+      value: axis,
+      label: t('func.grainAlong', { len }),
+      title: t('func.grainAlongTitle', { len, axis: t(`board.${axis}`) })
+    }))
+  ]
+  return (
+    <div>
+      <div className="flex gap-1" role="group" aria-label={t('board.grainDirection')}>
+        {options.map((o) => {
+          const on = board.grainDirection === o.value
+          return (
+            <button
+              key={o.value ?? 'none'}
+              type="button"
+              aria-pressed={on}
+              title={o.title}
+              onClick={() => onChange(o.value)}
+              className={`flex-1 min-w-0 truncate text-[10px] py-1 rounded transition-colors outline-none focus-visible:ring-1 focus-visible:ring-action ${
+                on ? 'bg-action text-action-text' : 'bg-white/8 text-white/60 hover:bg-white/15 hover:text-white'
+              }`}
+            >
+              {o.label}
+            </button>
+          )
+        })}
+      </div>
+      {!hasGrain && (
+        <div className="text-[9px] text-white/40 mt-0.5">{t('func.grainNoMaterialGrain')}</div>
+      )}
+    </div>
+  )
+}
 
 /**
  * Floating glass card anchored to bottom-right of the canvas.
@@ -36,6 +252,8 @@ export function FloatingPropertiesCard() {
   const deselectAll         = useUIStore((s) => s.deselectAll)
   const selectBoard         = useUIStore((s) => s.selectBoard)
   const setShowJointDialog  = useUIStore((s) => s.setShowJointDialog)
+  const showStaticOverlay   = useUIStore((s) => s.showStaticOverlay)
+  const [openSections, toggleSection] = useOpenSections()
 
   if (selectedBoardIds.length === 0 || !selectedAssemblyId) return null
 
@@ -94,7 +312,8 @@ export function FloatingPropertiesCard() {
           <button
             onClick={deselectAll}
             className="text-white/40 hover:text-white/80 text-sm leading-none w-5 h-5 flex items-center justify-center rounded hover:bg-white/10"
-            title="Deselect (Esc)"
+            title={t('ui.deselect')}
+            aria-label={t('ui.deselect')}
           >×</button>
         </div>
 
@@ -209,10 +428,14 @@ export function FloatingPropertiesCard() {
     .map(({ joint, ownerId }) => ({ j: joint, ownerId }))
   const allBoards = assemblies.flatMap((a) => a.boards)
   const fastenerLabel = (f: Fastener) => `${f.quantity}× ${t(`joints.f_${f.type}`)} ${f.diameter}×${f.length}`
+  const edgeCount = Object.values(board.edgeBanding ?? {}).filter(Boolean).length
+
+  const sectionProps = (id: SectionId) => ({ id, open: openSections[id], onToggle: toggleSection })
+  const fmt = (v: number) => String(Math.round(v * 10) / 10)
 
   return (
     <div
-      className="absolute bottom-4 right-4 z-30 w-60 max-h-[72vh] overflow-y-auto rounded-xl border border-white/10 shadow-2xl bg-gray-900/92 backdrop-blur-md text-white flex flex-col"
+      className="absolute bottom-4 right-4 z-30 w-60 max-h-[calc(100%-2rem)] rounded-xl border border-white/10 shadow-2xl bg-gray-900/92 backdrop-blur-md text-white flex flex-col"
       onPointerDown={(e) => e.stopPropagation()}
     >
       {/* Header: color swatch + name + close */}
@@ -221,196 +444,231 @@ export function FloatingPropertiesCard() {
           className="w-3 h-3 rounded-sm shrink-0 border border-white/20"
           style={{ background: board.color }}
         />
-        <input
+        <CommitInput
+          key={board.id}
           type="text"
           value={board.name}
-          onChange={(e) => handleUpdate({ name: e.target.value })}
-          onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
+          onCommit={(name) => updateBoard(assembly.id, board.id, { name })}
           className="flex-1 bg-transparent text-[11px] font-medium text-white outline-none min-w-0 truncate"
           title={lang === 'de' ? 'Name bearbeiten' : 'Edit name'}
+          aria-label={lang === 'de' ? 'Name' : 'Name'}
         />
         <button
           onClick={deselectAll}
           className="text-white/40 hover:text-white/80 text-sm leading-none w-5 h-5 flex items-center justify-center rounded hover:bg-white/10 shrink-0"
-          title="Deselect (Esc)"
+          title={t('ui.deselect')}
+          aria-label={t('ui.deselect')}
         >×</button>
       </div>
 
-      {/* Geometry */}
-      <div className="px-3 pt-2 pb-1">
-        <div className="text-[9px] font-bold text-white/30 uppercase tracking-widest mb-1.5">
-          {lang === 'de' ? 'Geometrie' : 'Geometry'}
-        </div>
-        {/* Wrap DimInput in a dark-styled div; DimInput uses its own gray/white classes */}
-        <div className="[&_input]:bg-white/8 [&_input]:border-white/15 [&_input]:text-white [&_label]:text-white/50 [&_span]:text-white/40">
-          <DimInput
-            label={lang === 'de' ? 'Breite' : 'Width'}
-            value={board.width}
-            field="width"
-            unit={unit}
-            parameters={parameters}
-            lang={lang}
-            onUpdate={handleUpdate}
-          />
-          <DimInput
-            label={lang === 'de' ? 'Höhe' : 'Height'}
-            value={board.height}
-            field="height"
-            unit={unit}
-            parameters={parameters}
-            lang={lang}
-            onUpdate={handleUpdate}
-          />
-          <DimInput
-            label={lang === 'de' ? 'Tiefe' : 'Depth'}
-            value={board.depth}
-            field="depth"
-            unit={unit}
-            parameters={parameters}
-            lang={lang}
-            onUpdate={handleUpdate}
-          />
-        </div>
-      </div>
-
-      {/* Transform: Position + Rotation */}
-      <div className="px-3 py-1">
-        <div className="text-[9px] font-bold text-white/30 uppercase tracking-widest mb-1.5">
-          {lang === 'de' ? 'Position (mm)' : 'Position (mm)'}
-        </div>
-        <div className="[&_input]:bg-white/8 [&_input]:border-white/15 [&_input]:text-white [&_span]:text-white/40">
-          <Vec3Input
-            value={board.position}
-            onChange={(pos) => handleUpdate({ position: pos })}
-          />
-        </div>
-        <div className="text-[9px] font-bold text-white/30 uppercase tracking-widest mb-1.5 mt-2">
-          {lang === 'de' ? 'Rotation (°)' : 'Rotation (°)'}
-        </div>
-        <div className="[&_input]:bg-white/8 [&_input]:border-white/15 [&_input]:text-white [&_span]:text-white/40">
-          <Vec3Input
-            value={board.rotation}
-            onChange={(rot) => handleUpdate({ rotation: rot })}
-            allowDecimals
-          />
-        </div>
-      </div>
-
-      {/* Material */}
-      <div className="px-3 py-1">
-        <div className="text-[9px] font-bold text-white/30 uppercase tracking-widest mb-1.5">
-          {lang === 'de' ? 'Material' : 'Material'}
-        </div>
-        <div className="flex items-center gap-2">
-          <span
-            className="w-3 h-3 rounded-sm shrink-0 border border-white/20"
-            style={{ background: mat?.color ?? board.color ?? '#888' }}
-          />
-          <select
-            value={board.materialId}
-            onChange={(e) => {
-              const m = getMaterialById(e.target.value, customMaterials)
-              if (m) handleUpdate({ materialId: m.id, color: m.color })
-            }}
-            className="flex-1 text-[10px] bg-white/8 border border-white/15 text-white rounded px-1.5 py-1 outline-none"
-          >
-            {customMaterials.length > 0 && (
-              <optgroup label={lang === 'de' ? 'Eigene' : 'Custom'} className={OPTGROUP_DARK}>
-                {customMaterials.map((m) => (
-                  <option key={m.id} value={m.id} className={OPTION_DARK}>{lang === 'de' ? m.name : m.nameEn}</option>
-                ))}
-              </optgroup>
-            )}
-            {categories.map((cat) => (
-              <optgroup key={cat} label={cat} className={OPTGROUP_DARK}>
-                {materials.filter((m) => m.category === cat).map((m) => (
-                  <option key={m.id} value={m.id} className={OPTION_DARK}>{lang === 'de' ? m.name : m.nameEn}</option>
-                ))}
-              </optgroup>
-            ))}
-          </select>
-        </div>
-      </div>
-
-      {/* Cutouts */}
-      <div className="px-3 py-1">
-        <div className="flex items-center justify-between mb-1.5">
-          <div className="text-[9px] font-bold text-white/30 uppercase tracking-widest">
-            {t('board.cutouts')}
+      {/* Scrolls inside the card, so it never covers more than the canvas */}
+      <div className="flex-1 min-h-0 overflow-y-auto py-1">
+        {/* Geometry */}
+        <Section
+          {...sectionProps('geometry')}
+          title={lang === 'de' ? 'Geometrie' : 'Geometry'}
+          summary={`${fmt(board.width)} × ${fmt(board.height)} × ${fmt(board.depth)}`}
+        >
+          {/* Wrap DimInput in a dark-styled div; DimInput uses its own gray/white classes */}
+          <div className="[&_input]:bg-white/8 [&_input]:border-white/15 [&_input]:text-white [&_label]:text-white/50 [&_span]:text-white/40">
+            <DimInput
+              label={lang === 'de' ? 'Breite' : 'Width'}
+              value={board.width}
+              field="width"
+              formula={board.widthFormula}
+              unit={unit}
+              parameters={parameters}
+              lang={lang}
+              onUpdate={handleUpdate}
+            />
+            <DimInput
+              label={lang === 'de' ? 'Höhe' : 'Height'}
+              value={board.height}
+              field="height"
+              formula={board.heightFormula}
+              unit={unit}
+              parameters={parameters}
+              lang={lang}
+              onUpdate={handleUpdate}
+            />
+            <DimInput
+              label={lang === 'de' ? 'Tiefe' : 'Depth'}
+              value={board.depth}
+              field="depth"
+              formula={board.depthFormula}
+              unit={unit}
+              parameters={parameters}
+              lang={lang}
+              onUpdate={handleUpdate}
+            />
           </div>
-          <button
-            onClick={handleAddCutout}
-            className="text-[10px] text-blue-400 hover:text-blue-300 leading-none"
-            title={t('board.addCutout')}
-          >
-            + {t('actions.new')}
-          </button>
-        </div>
-        {cutouts.map((c, idx) => (
-          <div key={c.id} className="flex items-center gap-1 mb-1">
-            <span className="text-[9px] text-white/40 w-3 shrink-0">{idx + 1}</span>
-            {([
-              ['x', c.x, 'X', board.width],
-              ['z', c.z, 'Y', board.depth],
-              ['width', c.width, t('board.width')[0], board.width - c.x],
-              ['depth', c.depth, t('board.depth')[0], board.depth - c.z]
-            ] as const).map(([field, value, label, max]) => (
-              <label key={field} className="flex items-center gap-0.5 flex-1 min-w-0" title={`${label} (mm)`}>
-                <span className="text-[9px] text-white/40">{label}</span>
-                <input
-                  type="number"
-                  min={0}
-                  max={Math.max(0, max)}
-                  value={value}
-                  onChange={(e) => handleCutoutChange(c.id, field, parseFloat(e.target.value))}
-                  className="w-full min-w-0 text-[10px] bg-white/8 border border-white/15 text-white rounded px-1 py-0.5 outline-none"
-                />
-              </label>
-            ))}
+        </Section>
+
+        {/* Transform: Position + Rotation */}
+        <Section
+          {...sectionProps('transform')}
+          title={t('func.transform')}
+          summary={`${fmt(board.position.x)}, ${fmt(board.position.y)}, ${fmt(board.position.z)}`}
+        >
+          <div className="text-[9px] text-white/40 mb-1">{lang === 'de' ? 'Position (mm)' : 'Position (mm)'}</div>
+          <div className="[&_input]:bg-white/8 [&_input]:border-white/15 [&_input]:text-white [&_span]:text-white/40">
+            <Vec3Input
+              value={board.position}
+              onChange={(pos) => handleUpdate({ position: pos })}
+            />
+          </div>
+          <div className="text-[9px] text-white/40 mb-1 mt-2">{lang === 'de' ? 'Rotation (°)' : 'Rotation (°)'}</div>
+          <div className="[&_input]:bg-white/8 [&_input]:border-white/15 [&_input]:text-white [&_span]:text-white/40">
+            <Vec3Input
+              value={board.rotation}
+              onChange={(rot) => handleUpdate({ rotation: rot })}
+              allowDecimals
+            />
+          </div>
+        </Section>
+
+        {/* Material + grain */}
+        <Section
+          {...sectionProps('material')}
+          title={lang === 'de' ? 'Material' : 'Material'}
+          summary={mat ? (lang === 'de' ? mat.name : mat.nameEn) : board.materialId}
+        >
+          <div className="flex items-center gap-2">
+            <span
+              className="w-3 h-3 rounded-sm shrink-0 border border-white/20"
+              style={{ background: mat?.color ?? board.color ?? '#888' }}
+            />
+            <select
+              value={board.materialId}
+              onChange={(e) => {
+                const m = getMaterialById(e.target.value, customMaterials)
+                if (m) handleUpdate({ materialId: m.id, color: m.color })
+              }}
+              className="flex-1 min-w-0 text-[10px] bg-white/8 border border-white/15 text-white rounded px-1.5 py-1 outline-none"
+              aria-label={lang === 'de' ? 'Material' : 'Material'}
+            >
+              {customMaterials.length > 0 && (
+                <optgroup label={lang === 'de' ? 'Eigene' : 'Custom'} className={OPTGROUP_DARK}>
+                  {customMaterials.map((m) => (
+                    <option key={m.id} value={m.id} className={OPTION_DARK}>{lang === 'de' ? m.name : m.nameEn}</option>
+                  ))}
+                </optgroup>
+              )}
+              {categories.map((cat) => (
+                <optgroup key={cat} label={cat} className={OPTGROUP_DARK}>
+                  {materials.filter((m) => m.category === cat).map((m) => (
+                    <option key={m.id} value={m.id} className={OPTION_DARK}>{lang === 'de' ? m.name : m.nameEn}</option>
+                  ))}
+                </optgroup>
+              ))}
+            </select>
+          </div>
+          <div className="text-[9px] text-white/40 mt-2 mb-1">{t('board.grainDirection')}</div>
+          <GrainPicker
+            board={board}
+            hasGrain={mat?.grain ?? false}
+            onChange={(grainDirection) => handleUpdate({ grainDirection })}
+          />
+          {/* Payload on this board for the load simulation (statics mode, lying boards only —
+              the simulation puts payloads on horizontal members) */}
+          {showStaticOverlay && boardFace(worldAligned(board)).thicknessAxis === 'height' && (
+            <div className="mt-2">
+              <BoardLoadField assemblyId={assembly.id} board={board} />
+            </div>
+          )}
+        </Section>
+
+        {/* Edge banding */}
+        <Section
+          {...sectionProps('edges')}
+          title={t('board.edgeBanding')}
+          summary={edgeCount > 0 ? t('func.edgesSummary', { count: edgeCount }) : t('board.grainNone')}
+        >
+          <EdgeBandingPicker board={board} onChange={(edgeBanding) => handleUpdate({ edgeBanding })} />
+        </Section>
+
+        {/* Cutouts */}
+        <Section
+          {...sectionProps('cutouts')}
+          title={t('board.cutouts')}
+          summary={cutouts.length > 0 ? String(cutouts.length) : undefined}
+          action={(
             <button
-              onClick={() => handleRemoveCutout(c.id)}
-              className="text-white/40 hover:text-red-400 text-[11px] leading-none shrink-0"
-              title={t('board.removeCutout')}
-            >✕</button>
-          </div>
-        ))}
+              onClick={() => { handleAddCutout(); if (!openSections.cutouts) toggleSection('cutouts') }}
+              className="text-[10px] text-blue-400 hover:text-blue-300 leading-none shrink-0"
+              title={t('board.addCutout')}
+            >
+              + {t('actions.new')}
+            </button>
+          )}
+        >
+          {cutouts.map((c, idx) => (
+            <div key={c.id} className="flex items-center gap-1 mb-1">
+              <span className="text-[9px] text-white/40 w-3 shrink-0">{idx + 1}</span>
+              {([
+                ['x', c.x, 'X', board.width],
+                ['z', c.z, 'Y', board.depth],
+                ['width', c.width, t('board.width')[0], board.width - c.x],
+                ['depth', c.depth, t('board.depth')[0], board.depth - c.z]
+              ] as const).map(([field, value, label, max]) => (
+                <label key={field} className="flex items-center gap-0.5 flex-1 min-w-0" title={`${label} (mm)`}>
+                  <span className="text-[9px] text-white/40">{label}</span>
+                  <CommitInput
+                    key={`${board.id}-${c.id}-${field}`}
+                    type="number"
+                    min={0}
+                    max={Math.max(0, max)}
+                    value={value}
+                    onCommit={(text) => handleCutoutChange(c.id, field, parseFloat(text))}
+                    className="w-full min-w-0 text-[10px] bg-white/8 border border-white/15 text-white rounded px-1 py-0.5 outline-none"
+                  />
+                </label>
+              ))}
+              <button
+                onClick={() => handleRemoveCutout(c.id)}
+                className="text-white/40 hover:text-red-400 text-[11px] leading-none shrink-0"
+                title={t('board.removeCutout')}
+              >✕</button>
+            </div>
+          ))}
+        </Section>
+
+        {/* Joints touching this board — click one to edit it, ✕ removes it */}
+        {boardJoints.length > 0 && (
+          <Section {...sectionProps('joints')} title={t('joints.list')} summary={String(boardJoints.length)}>
+            {boardJoints.map(({ j, ownerId }) => {
+              const partnerId = j.boardA === board.id ? j.boardB : j.boardA
+              const partner = allBoards.find((b) => b.id === partnerId)
+              const detail = [...j.fasteners.map(fastenerLabel), j.note].filter(Boolean).join(', ')
+              return (
+                <div key={j.id} className="flex items-start gap-1 mb-1 text-[10px]">
+                  <button
+                    type="button"
+                    onClick={() => openJointEditor(ownerId, j.id)}
+                    className="flex-1 min-w-0 text-left text-white/70 rounded px-1 -mx-1 hover:bg-white/10 hover:text-white outline-none focus-visible:ring-1 focus-visible:ring-action"
+                    title={t('func.jointEdit')}
+                  >
+                    <span className="block truncate">{t(`joints.${j.type}`)} · {partner?.name ?? '?'}</span>
+                    {detail && <span className="block truncate text-white/40" title={detail}>{detail}</span>}
+                  </button>
+                  <button
+                    onClick={() => removeJoint(ownerId, j.id)}
+                    className="text-white/40 hover:text-red-400 text-[11px] leading-none shrink-0 pt-0.5"
+                    title={t('joints.delete')}
+                    aria-label={t('joints.delete')}
+                  >✕</button>
+                </div>
+              )
+            })}
+          </Section>
+        )}
+
+        {/* Building group */}
+        {assemblyPicker}
       </div>
-
-      {/* Joints touching this board — the only place a joint can be removed */}
-      {boardJoints.length > 0 && (
-        <div className="px-3 py-1">
-          <div className="text-[9px] font-bold text-white/30 uppercase tracking-widest mb-1.5">
-            {t('joints.list')}
-          </div>
-          {boardJoints.map(({ j, ownerId }) => {
-            const partnerId = j.boardA === board.id ? j.boardB : j.boardA
-            const partner = allBoards.find((b) => b.id === partnerId)
-            const detail = [...j.fasteners.map(fastenerLabel), j.note].filter(Boolean).join(', ')
-            return (
-              <div key={j.id} className="flex items-start gap-1 mb-1 text-[10px]">
-                <span className="flex-1 min-w-0 text-white/70">
-                  <span className="block truncate">{t(`joints.${j.type}`)} · {partner?.name ?? '?'}</span>
-                  {detail && <span className="block truncate text-white/40" title={detail}>{detail}</span>}
-                </span>
-                <button
-                  onClick={() => removeJoint(ownerId, j.id)}
-                  className="text-white/40 hover:text-red-400 text-[11px] leading-none shrink-0"
-                  title={t('joints.delete')}
-                >✕</button>
-              </div>
-            )
-          })}
-        </div>
-      )}
-
-      {/* Building group */}
-      {assemblyPicker}
-
-      {/* Divider */}
-      <div className="h-px bg-white/8 mx-3 my-1" />
 
       {/* Action buttons */}
-      <div className="flex gap-1 px-2 pb-2 shrink-0">
+      <div className="flex gap-1 px-2 py-2 border-t border-white/8 shrink-0">
         <button
           onClick={handleDuplicate}
           title={lang === 'de' ? 'Duplizieren (D)' : 'Duplicate (D)'}

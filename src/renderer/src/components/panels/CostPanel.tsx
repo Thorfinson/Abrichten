@@ -5,6 +5,12 @@ import { useProjectStore } from '../../store/useProjectStore'
 import { useUIStore } from '../../store/useUIStore'
 import { getMaterialById, materials } from '../../data/materials'
 import { hardwareItems } from '../../data/hardware'
+import { resolvePrice, type PriceSource } from '../../data/defaultPrices'
+import { faceAreaSqm } from '../../utils/boardFace'
+import { csvCell, escapeHtml } from '../../utils/textSafety'
+import { printHtml } from '../../utils/printHtml'
+import { getCsvDelimiter } from '../layout/SettingsDialog'
+import { Dialog, Button, FIELD_CLASS, TH_CLASS, TD_CLASS, SECTION_LABEL_CLASS } from '../ui/Dialog'
 
 /** Format a number as currency, locale-aware */
 function formatCurrency(value: number, lang: 'de' | 'en'): string {
@@ -22,6 +28,15 @@ function formatArea(value: number, lang: 'de' | 'en'): string {
   })
 }
 
+/** Small tag telling a guide price ("Richtwert") from the project's own price */
+function PriceTag({ source }: { source: PriceSource }) {
+  const { t } = useTranslation()
+  if (source === 'none') return null
+  return source === 'default'
+    ? <span className="ml-1.5 rounded bg-accent-dim/60 px-1 py-px text-[10px] font-medium text-accent-text" title={t('dlg.guidePriceTitle')}>{t('dlg.guidePrice')}</span>
+    : <span className="ml-1.5 rounded bg-chrome-surface px-1 py-px text-[10px] font-medium text-chrome-secondary">{t('dlg.ownPrice')}</span>
+}
+
 export function CostPanel() {
   const { t, i18n } = useTranslation()
   const lang = i18n.language as 'de' | 'en'
@@ -35,47 +50,58 @@ export function CostPanel() {
   if (!showCostPanel) return null
 
   const cur = t('cost.currency')
-  const prices = project.materialPrices ?? {}
+  // project price first, then the built-in guide value (data/defaultPrices)
+  const priceOf = (id: string) => resolvePrice(id, project.materialPrices)
+  const customMaterials = project.customMaterials ?? []
   const laborHours   = project.laborHours   ?? 0
   const laborRate    = project.laborRate     ?? 0
   const overheadPct  = project.overheadPct  ?? 0
 
   // ── Material cost ────────────────────────────────────────────────────────
-  const usageMap: Record<string, { name: string; areaSqm: number; cost: number }> = {}
+  // Maps, not objects keyed by id: ids come from project files.
+  // Boards with an unknown material (older files) still count, under their raw id.
+  const usageMap = new Map<string, { name: string; areaSqm: number; cost: number }>()
   for (const assembly of activeAssemblies(project)) {
     for (const board of assembly.boards) {
-      const mat = getMaterialById(board.materialId)
-      if (!mat) continue
-      const areaSqm = (board.width * board.depth) / 1_000_000
-      const pricePerSqm = prices[board.materialId] ?? 0
-      const cost = areaSqm * pricePerSqm
-      if (!usageMap[board.materialId]) {
-        usageMap[board.materialId] = { name: lang === 'de' ? mat.name : mat.nameEn, areaSqm: 0, cost: 0 }
+      const mat = getMaterialById(board.materialId, customMaterials)
+      const areaSqm = faceAreaSqm(board)
+      const prev = usageMap.get(board.materialId) ?? {
+        name: mat ? (lang === 'de' ? mat.name : mat.nameEn) : `${board.materialId} (${t('calc.unknownMaterial')})`,
+        areaSqm: 0,
+        cost: 0
       }
-      usageMap[board.materialId].areaSqm += areaSqm
-      usageMap[board.materialId].cost += cost
+      usageMap.set(board.materialId, { ...prev, areaSqm: prev.areaSqm + areaSqm, cost: prev.cost + areaSqm * priceOf(board.materialId).price })
     }
   }
-  const matRows = Object.entries(usageMap)
+  const matRows = [...usageMap.entries()]
   const totalMaterialCost = matRows.reduce((s, [, v]) => s + v.cost, 0)
+  const usesGuidePrices = matRows.some(([id]) => priceOf(id).source === 'default')
+
+  // Price editor: materials in use first, then the other project and built-in
+  // materials (a project material overrides a built-in one with the same id)
+  const allMaterials = [
+    ...customMaterials.map((m) => ({ id: m.id, name: lang === 'de' ? m.name : m.nameEn })),
+    ...materials.filter((m) => !customMaterials.some((c) => c.id === m.id)).map((m) => ({ id: m.id, name: lang === 'de' ? m.name : m.nameEn }))
+  ]
+  const priceEditorRows = [
+    ...matRows.map(([id, v]) => ({ id, name: allMaterials.find((m) => m.id === id)?.name ?? v.name })),
+    ...allMaterials.filter((m) => !usageMap.has(m.id))
+  ]
 
   // ── Hardware cost ────────────────────────────────────────────────────────
-  const hwMap: Record<string, { name: string; qty: number; unitPrice: number; total: number }> = {}
+  const hwMap = new Map<string, { name: string; qty: number; unitPrice: number; total: number }>()
   for (const assembly of activeAssemblies(project)) {
     for (const board of assembly.boards) {
       for (const attached of board.hardware ?? []) {
         const hw = hardwareItems.find((h) => h.id === attached.hardwareId)
           ?? project.customHardware?.find((h) => h.id === attached.hardwareId)   // project-defined hardware counts too
         if (!hw) continue
-        if (!hwMap[hw.id]) {
-          hwMap[hw.id] = { name: lang === 'de' ? hw.name : hw.nameEn, qty: 0, unitPrice: hw.unitPrice, total: 0 }
-        }
-        hwMap[hw.id].qty += attached.quantity
-        hwMap[hw.id].total += attached.quantity * hw.unitPrice
+        const prev = hwMap.get(hw.id) ?? { name: lang === 'de' ? hw.name : hw.nameEn, qty: 0, unitPrice: hw.unitPrice, total: 0 }
+        hwMap.set(hw.id, { ...prev, qty: prev.qty + attached.quantity, total: prev.total + attached.quantity * hw.unitPrice })
       }
     }
   }
-  const hwRows = Object.entries(hwMap)
+  const hwRows = [...hwMap.entries()]
   const totalHardwareCost = hwRows.reduce((s, [, v]) => s + v.total, 0)
 
   // ── Labor & overhead ─────────────────────────────────────────────────────
@@ -85,54 +111,63 @@ export function CostPanel() {
   const grandTotal = baseForOverhead + overheadAmount
 
   const hasData = matRows.length > 0 || hwRows.length > 0
+  const breakdown = [
+    { label: t('cost.materialCost'), value: totalMaterialCost, show: matRows.length > 0 },
+    { label: t('cost.hardwareCost'), value: totalHardwareCost, show: totalHardwareCost > 0 },
+    { label: lang === 'de' ? 'Arbeit' : 'Labor', value: laborSubtotal, show: laborSubtotal > 0 },
+    { label: `Overhead (${(overheadPct * 100).toFixed(0)} %)`, value: overheadAmount, show: overheadAmount > 0 }
+  ].filter((r) => r.show)
+  const money = (v: number) => `${cur}${formatCurrency(v, lang)}`
+  const guideMark = (id: string) => (priceOf(id).source === 'default' ? ' *' : '')
 
   const handlePrint = () => {
-    const matSection = matRows.map(([, v]) =>
-      `<tr><td>${lang === 'de' ? 'Material' : 'Material'}</td><td>${v.name}</td><td>${formatArea(v.areaSqm, lang)} m²</td><td>${cur}${formatCurrency(v.cost, lang)}</td></tr>`
+    const matSection = matRows.map(([id, v]) =>
+      `<tr><td>Material</td><td>${escapeHtml(v.name)}</td><td>${formatArea(v.areaSqm, lang)} m²</td><td>${escapeHtml(money(v.cost))}${guideMark(id)}</td></tr>`
     ).join('')
     const hwSection = hwRows.map(([, v]) =>
-      `<tr><td>${lang === 'de' ? 'Beschlag' : 'Hardware'}</td><td>${v.name}</td><td>${v.qty}</td><td>${cur}${formatCurrency(v.total, lang)}</td></tr>`
+      `<tr><td>${lang === 'de' ? 'Beschlag' : 'Hardware'}</td><td>${escapeHtml(v.name)}</td><td>${escapeHtml(String(v.qty))}</td><td>${escapeHtml(money(v.total))}</td></tr>`
     ).join('')
     const html = `<!DOCTYPE html><html><head><meta charset="utf-8">
-<title>${project.name} - ${lang === 'de' ? 'Kosten' : 'Cost'}</title>
+<title>${escapeHtml(project.name)} - ${lang === 'de' ? 'Kosten' : 'Cost'}</title>
 <style>body{font:12px sans-serif;margin:20px}h1{font-size:14px;margin-bottom:4px}
 table{border-collapse:collapse;width:100%}th,td{border:1px solid #ccc;padding:4px 6px;text-align:left}
-th{background:#f0f0f0}tfoot td{font-weight:bold;background:#e8f0fe}
+th{background:#f0f0f0}tfoot td{font-weight:bold;background:#e8f0fe}p{color:#666;font-size:10px}
 @media print{@page{size:A4;margin:15mm}}</style></head>
-<body><h1>${project.name} — ${lang === 'de' ? 'Kostenkalkulation' : 'Cost Summary'}</h1>
+<body><h1>${escapeHtml(project.name)} — ${lang === 'de' ? 'Kostenkalkulation' : 'Cost Summary'}</h1>
 <table><thead><tr>
 <th>${lang === 'de' ? 'Typ' : 'Type'}</th>
 <th>${lang === 'de' ? 'Name' : 'Name'}</th>
 <th>${lang === 'de' ? 'Menge' : 'Quantity'}</th>
 <th>${lang === 'de' ? 'Kosten' : 'Cost'}</th>
 </tr></thead><tbody>${matSection}${hwSection}</tbody>
-<tfoot><tr><td colspan="3">${lang === 'de' ? 'Gesamt' : 'Total'}</td><td>${cur}${formatCurrency(grandTotal, lang)}</td></tr></tfoot>
-</table><script>window.onload=function(){window.print()}</script></body></html>`
-    const win = window.open('', '_blank')
-    if (win) { win.document.write(html); win.document.close() }
+<tfoot><tr><td colspan="3">${lang === 'de' ? 'Gesamt' : 'Total'}</td><td>${escapeHtml(money(grandTotal))}</td></tr></tfoot>
+</table>${usesGuidePrices ? `<p>* ${escapeHtml(t('dlg.guidePriceNote'))}</p>` : ''}</body></html>`
+    printHtml(html)
   }
 
   const handleExportCsv = () => {
-    const rows: string[] = []
-    rows.push(lang === 'de' ? 'Typ;Name;Menge;Einheitspreis;Gesamt' : 'Type;Name;Quantity;Unit Price;Total')
+    const rows: unknown[][] = []
+    rows.push(lang === 'de' ? ['Typ', 'Name', 'Menge', 'Einheitspreis', 'Gesamt'] : ['Type', 'Name', 'Quantity', 'Unit Price', 'Total'])
     for (const [matId, v] of matRows) {
-      const pricePerSqm = prices[matId] ?? 0
-      rows.push(`${lang === 'de' ? 'Material' : 'Material'};${v.name};${formatArea(v.areaSqm, lang)} m²;${cur}${formatCurrency(pricePerSqm, lang)};${cur}${formatCurrency(v.cost, lang)}`)
+      const p = priceOf(matId)
+      const unit = p.source === 'default' ? `${money(p.price)} (${t('dlg.guidePrice')})` : money(p.price)
+      rows.push(['Material', v.name, `${formatArea(v.areaSqm, lang)} m²`, unit, money(v.cost)])
     }
     for (const [, v] of hwRows) {
-      rows.push(`${lang === 'de' ? 'Beschlag' : 'Hardware'};${v.name};${v.qty};${cur}${formatCurrency(v.unitPrice, lang)};${cur}${formatCurrency(v.total, lang)}`)
+      rows.push([lang === 'de' ? 'Beschlag' : 'Hardware', v.name, v.qty, money(v.unitPrice), money(v.total)])
     }
     if (laborSubtotal > 0) {
-      rows.push(`${lang === 'de' ? 'Arbeit' : 'Labor'};${laborHours}h × ${cur}${formatCurrency(laborRate, lang)};;;${cur}${formatCurrency(laborSubtotal, lang)}`)
+      rows.push([lang === 'de' ? 'Arbeit' : 'Labor', `${laborHours}h × ${money(laborRate)}`, '', '', money(laborSubtotal)])
     }
     if (overheadAmount > 0) {
-      rows.push(`${lang === 'de' ? 'Overhead' : 'Overhead'};${(overheadPct * 100).toFixed(0)}%;;;${cur}${formatCurrency(overheadAmount, lang)}`)
+      rows.push(['Overhead', `${(overheadPct * 100).toFixed(0)}%`, '', '', money(overheadAmount)])
     }
-    rows.push(`;;;;${cur}${formatCurrency(grandTotal, lang)}`)
-    const csv = rows.join('\n')
+    rows.push(['', '', '', '', money(grandTotal)])
+    const sep = getCsvDelimiter()
+    const csv = rows.map((r) => r.map(csvCell).join(sep)).join('\n')
     const filename = `${project.name}_cost.csv`
-    if ((window as any).electronAPI?.fileSave) {
-      ;(window as any).electronAPI.fileSave(csv, filename)
+    if ((window as any).electronAPI?.fileExport) {
+      ;(window as any).electronAPI.fileExport(csv, filename)
     } else {
       const blob = new Blob([csv], { type: 'text/csv' })
       const url = URL.createObjectURL(blob)
@@ -141,241 +176,208 @@ th{background:#f0f0f0}tfoot td{font-weight:bold;background:#e8f0fe}
     }
   }
 
+  const num = `${TD_CLASS} text-right font-mono tabular-nums`
+  const numInput = `${FIELD_CLASS} w-20 text-right`
+
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={(e) => { if (e.target === e.currentTarget) setShowCostPanel(false) }}>
-      <div className="bg-white rounded-lg shadow-xl w-[640px] max-h-[88vh] overflow-hidden flex flex-col">
-
-        {/* Header */}
-        <div className="p-4 border-b border-gray-200 flex items-center justify-between shrink-0">
-          <h2 className="text-sm font-bold text-gray-800">{t('cost.title')}</h2>
-          <div className="flex items-center gap-3">
-            <button
-              onClick={() => setEditingPrices((v) => !v)}
-              className="text-xs text-blue-600 hover:underline"
-            >
-              {editingPrices ? '✓ ' + t('actions.apply') : t('cost.editPrices')}
-            </button>
-            <button onClick={() => setShowCostPanel(false)} className="text-gray-400 hover:text-gray-700 text-lg">×</button>
-          </div>
+    <Dialog
+      title={t('cost.title')}
+      titleId="cost-panel-title"
+      onClose={() => setShowCostPanel(false)}
+      className="w-[680px]"
+      headerExtra={
+        <Button variant="ghost" size="sm" aria-pressed={editingPrices} onClick={() => setEditingPrices((v) => !v)}>
+          {editingPrices ? t('dlg.donePrices') : t('cost.editPrices')}
+        </Button>
+      }
+      footer={<>
+        <div className="mr-auto flex items-baseline gap-3">
+          <span className="text-sm font-semibold text-chrome-secondary">{t('cost.totalCost')}</span>
+          <span className="font-mono text-xl font-bold tabular-nums text-chrome-text" data-testid="cost-total">{money(grandTotal)}</span>
         </div>
-
-        {/* Scrollable body */}
-        <div className="flex-1 overflow-y-auto p-4 space-y-4">
-
-          {/* Price editor */}
-          {editingPrices && (
-            <div className="bg-blue-50 border border-blue-200 rounded p-3">
-              <p className="text-xs text-blue-700 font-medium mb-2">
-                {t('cost.pricePerSqm')} ({cur})
-              </p>
-              <div className="grid grid-cols-2 gap-2">
-                {materials.map((mat) => (
-                  <div key={mat.id} className="flex items-center gap-2">
-                    <span className="text-xs text-gray-600 flex-1 truncate">
-                      {lang === 'de' ? mat.name : mat.nameEn}
-                    </span>
+        <Button onClick={handleExportCsv} disabled={!hasData}>{t('cutting.export')}</Button>
+        <Button variant="primary" onClick={handlePrint} disabled={!hasData}>{lang === 'de' ? 'PDF drucken' : 'Print PDF'}</Button>
+        <Button onClick={() => setShowCostPanel(false)}>{t('ui.close')}</Button>
+      </>}
+    >
+      <div className="space-y-5">
+        {/* Price editor */}
+        {editingPrices && (
+          <section className="rounded border border-chrome-border bg-chrome-deep/60 p-3">
+            <div className="mb-2 flex items-baseline justify-between gap-3">
+              <h3 className={SECTION_LABEL_CLASS}>{t('cost.pricePerSqm')} ({cur})</h3>
+              <span className="text-[11px] text-chrome-hint">
+                <span className="text-accent">{t('dlg.guidePrice')}</span> · {t('dlg.priceEditorHint')}
+              </span>
+            </div>
+            <div className="grid grid-cols-2 gap-x-6 gap-y-1.5">
+              {priceEditorRows.map((mat) => {
+                const p = priceOf(mat.id)
+                return (
+                  <label key={mat.id} className="flex items-center gap-2">
+                    <span className={`flex-1 truncate text-xs ${usageMap.has(mat.id) ? 'text-chrome-text' : 'text-chrome-muted'}`}>{mat.name}</span>
+                    {/* guide values in accent, own prices tagged: the editor stays quiet for the common case */}
+                    {p.source === 'project' && <span className="text-[10px] text-chrome-hint">{t('dlg.ownPrice')}</span>}
                     <input
                       type="number"
-                      defaultValue={prices[mat.id] ?? 0}
+                      min={0}
+                      step="0.5"
+                      key={`${mat.id}:${p.price}:${p.source}`} /* remount so undo shows the restored value */
+                      aria-label={`${t('cost.pricePerSqm')} ${mat.name}`}
+                      defaultValue={p.price || ''}
+                      placeholder="0"
                       onBlur={(e) => {
                         const v = parseFloat(e.target.value)
-                        if (!isNaN(v)) setMaterialPrice(mat.id, v)
+                        // only an actual change becomes an own price; tabbing past keeps the guide value
+                        if (!isNaN(v) && v !== p.price) setMaterialPrice(mat.id, v)
                       }}
                       onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
-                      className="w-20 text-xs text-right border border-gray-300 rounded px-1 py-0.5"
+                      title={p.source === 'default' ? t('dlg.guidePriceTitle') : undefined}
+                      className={`${numInput} ${p.source === 'default' ? 'text-accent!' : ''}`}
                     />
-                  </div>
-                ))}
-              </div>
+                  </label>
+                )
+              })}
             </div>
-          )}
+          </section>
+        )}
 
-          {/* Material costs */}
-          {matRows.length === 0 ? (
-            <p className="text-xs text-gray-400 italic">{t('cutting.noBoards')}</p>
-          ) : (
-            <section>
-              <h3 className="text-xs font-bold text-gray-600 uppercase mb-1">{t('cost.materialCost')}</h3>
-              <table className="w-full text-xs border-collapse">
-                <thead>
-                  <tr className="bg-gray-100">
-                    <th className="border border-gray-200 px-2 py-1 text-left">{t('board.material')}</th>
-                    <th className="border border-gray-200 px-2 py-1 text-right">{t('cost.area')} (m²)</th>
-                    <th className="border border-gray-200 px-2 py-1 text-right">{t('cost.pricePerSqm')}</th>
-                    <th className="border border-gray-200 px-2 py-1 text-right">{t('cost.total')}</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {matRows.map(([matId, v]) => (
-                    <tr key={matId} className="hover:bg-gray-50">
-                      <td className="border border-gray-200 px-2 py-1">{v.name}</td>
-                      <td className="border border-gray-200 px-2 py-1 text-right font-mono">{formatArea(v.areaSqm, lang)}</td>
-                      <td className="border border-gray-200 px-2 py-1 text-right">
-                        {prices[matId]
-                          ? `${cur}${formatCurrency(prices[matId], lang)}`
-                          : <span className="text-gray-400 italic">{t('cost.noPrice')}</span>}
-                      </td>
-                      <td className="border border-gray-200 px-2 py-1 text-right font-medium font-mono">
-                        {v.cost > 0 ? `${cur}${formatCurrency(v.cost, lang)}` : '—'}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-                <tfoot>
-                  <tr className="bg-gray-100 font-bold">
-                    <td className="border border-gray-200 px-2 py-1" colSpan={3}>{t('cost.materialCost')}</td>
-                    <td className="border border-gray-200 px-2 py-1 text-right text-green-700 font-mono">
-                      {cur}{formatCurrency(totalMaterialCost, lang)}
-                    </td>
-                  </tr>
-                </tfoot>
-              </table>
-            </section>
-          )}
-
-          {/* Hardware costs */}
-          {hwRows.length > 0 && (
-            <section>
-              <h3 className="text-xs font-bold text-gray-600 uppercase mb-1">{t('cost.hardwareCost')}</h3>
-              <table className="w-full text-xs border-collapse">
-                <thead>
-                  <tr className="bg-gray-100">
-                    <th className="border border-gray-200 px-2 py-1 text-left">{t('hardware.name')}</th>
-                    <th className="border border-gray-200 px-2 py-1 text-right">{t('cost.quantity')}</th>
-                    <th className="border border-gray-200 px-2 py-1 text-right">{t('hardware.unitPrice')}</th>
-                    <th className="border border-gray-200 px-2 py-1 text-right">{t('cost.total')}</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {hwRows.map(([hwId, v]) => (
-                    <tr key={hwId} className="hover:bg-gray-50">
-                      <td className="border border-gray-200 px-2 py-1">{v.name}</td>
-                      <td className="border border-gray-200 px-2 py-1 text-right font-mono">{v.qty}</td>
-                      <td className="border border-gray-200 px-2 py-1 text-right font-mono">
-                        {cur}{formatCurrency(v.unitPrice, lang)}
-                      </td>
-                      <td className="border border-gray-200 px-2 py-1 text-right font-medium font-mono">
-                        {cur}{formatCurrency(v.total, lang)}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-                <tfoot>
-                  <tr className="bg-gray-100 font-bold">
-                    <td className="border border-gray-200 px-2 py-1" colSpan={3}>{t('cost.hardwareCost')}</td>
-                    <td className="border border-gray-200 px-2 py-1 text-right text-orange-700 font-mono">
-                      {cur}{formatCurrency(totalHardwareCost, lang)}
-                    </td>
-                  </tr>
-                </tfoot>
-              </table>
-            </section>
-          )}
-
-          {/* Labor & overhead */}
+        {/* Material costs */}
+        {matRows.length === 0 ? (
+          <p className="text-xs italic text-chrome-hint">{t('cutting.noBoards')}</p>
+        ) : (
           <section>
-            <h3 className="text-xs font-bold text-gray-600 uppercase mb-2">
-              {lang === 'de' ? 'Arbeitskosten & Overhead' : 'Labor & Overhead'}
-            </h3>
-            <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-xs">
-              <label className="flex items-center gap-2">
-                <span className="text-gray-600 flex-1">{lang === 'de' ? 'Arbeitsstunden' : 'Labor hours'}</span>
-                <input
-                  type="number"
-                  min="0"
-                  step="0.5"
-                  value={laborHours}
-                  onChange={(e) => setLaborDetails(parseFloat(e.target.value) || 0, laborRate, overheadPct)}
-                  className="w-16 text-right border border-gray-300 rounded px-1 py-0.5 text-xs"
-                />
-                <span className="text-gray-400">h</span>
-              </label>
-              <label className="flex items-center gap-2">
-                <span className="text-gray-600 flex-1">{lang === 'de' ? 'Stundensatz' : 'Hourly rate'}</span>
-                <span className="text-gray-400">{cur}</span>
-                <input
-                  type="number"
-                  min="0"
-                  step="1"
-                  value={laborRate}
-                  onChange={(e) => setLaborDetails(laborHours, parseFloat(e.target.value) || 0, overheadPct)}
-                  className="w-16 text-right border border-gray-300 rounded px-1 py-0.5 text-xs"
-                />
-              </label>
-              <label className="flex items-center gap-2 col-span-2">
-                <span className="text-gray-600 flex-1">{lang === 'de' ? 'Overhead-Aufschlag' : 'Overhead markup'}</span>
-                <input
-                  type="number"
-                  min="0"
-                  max="100"
-                  step="1"
-                  value={Math.round(overheadPct * 100)}
-                  onChange={(e) => setLaborDetails(laborHours, laborRate, (parseFloat(e.target.value) || 0) / 100)}
-                  className="w-16 text-right border border-gray-300 rounded px-1 py-0.5 text-xs"
-                />
-                <span className="text-gray-400">%</span>
-              </label>
-            </div>
-            {(laborSubtotal > 0 || overheadAmount > 0) && (
-              <div className="mt-2 text-xs text-gray-600 space-y-0.5">
-                {laborSubtotal > 0 && (
-                  <div className="flex justify-between">
-                    <span>{lang === 'de' ? 'Arbeit' : 'Labor'}</span>
-                    <span className="font-mono">{cur}{formatCurrency(laborSubtotal, lang)}</span>
-                  </div>
-                )}
-                {overheadAmount > 0 && (
-                  <div className="flex justify-between">
-                    <span>Overhead ({(overheadPct * 100).toFixed(0)}%)</span>
-                    <span className="font-mono">{cur}{formatCurrency(overheadAmount, lang)}</span>
-                  </div>
-                )}
-              </div>
+            <h3 className={`${SECTION_LABEL_CLASS} mb-1.5`}>{t('cost.materialCost')}</h3>
+            <table className="w-full border-collapse text-xs">
+              <thead>
+                <tr>
+                  <th className={TH_CLASS}>{t('board.material')}</th>
+                  <th className={`${TH_CLASS} text-right`}>{t('cost.area')} (m²)</th>
+                  <th className={`${TH_CLASS} text-right`}>{t('cost.pricePerSqm')}</th>
+                  <th className={`${TH_CLASS} text-right`}>{t('cost.total')}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {matRows.map(([matId, v]) => {
+                  const p = priceOf(matId)
+                  return (
+                    <tr key={matId} className="hover:bg-chrome-surface/40">
+                      <td className={TD_CLASS}>{v.name}</td>
+                      <td className={num}>{formatArea(v.areaSqm, lang)}</td>
+                      <td className={`${TD_CLASS} text-right`}>
+                        {p.price
+                          ? <><span className="font-mono tabular-nums">{money(p.price)}</span><PriceTag source={p.source} /></>
+                          : <span className="italic text-chrome-hint">{t('cost.noPrice')}</span>}
+                      </td>
+                      <td className={`${num} font-medium`}>{v.cost > 0 ? money(v.cost) : '—'}</td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+              <tfoot>
+                <tr className="font-semibold">
+                  <td className="px-2 py-1.5" colSpan={3}>{t('cost.materialCost')}</td>
+                  <td className="px-2 py-1.5 text-right font-mono tabular-nums">{money(totalMaterialCost)}</td>
+                </tr>
+              </tfoot>
+            </table>
+            {usesGuidePrices && (
+              <p className="mt-1.5 text-[11px] text-chrome-muted">{t('dlg.guidePriceNote')}</p>
             )}
           </section>
-        </div>
+        )}
 
-        {/* Sticky grand total footer */}
-        <div className="border-t border-gray-300 bg-blue-50 shrink-0">
-          {hasData && (
-            <div className="px-4 py-2 flex items-center gap-4 text-xs text-gray-600 border-b border-gray-200">
-              <span className="flex-1">{lang === 'de' ? 'Material' : 'Material'}: {cur}{formatCurrency(totalMaterialCost, lang)}</span>
-              {totalHardwareCost > 0 && <span>{lang === 'de' ? 'Beschläge' : 'Hardware'}: {cur}{formatCurrency(totalHardwareCost, lang)}</span>}
-              {laborSubtotal > 0 && <span>{lang === 'de' ? 'Arbeit' : 'Labor'}: {cur}{formatCurrency(laborSubtotal, lang)}</span>}
-            </div>
-          )}
-          <div className="px-4 py-3 flex items-center justify-between">
-            <span className="text-sm font-bold text-blue-900">{t('cost.totalCost')}</span>
-            <span className="text-xl font-bold text-blue-700 font-mono">
-              {cur}{formatCurrency(grandTotal, lang)}
-            </span>
+        {/* Hardware costs */}
+        {hwRows.length > 0 && (
+          <section>
+            <h3 className={`${SECTION_LABEL_CLASS} mb-1.5`}>{t('cost.hardwareCost')}</h3>
+            <table className="w-full border-collapse text-xs">
+              <thead>
+                <tr>
+                  <th className={TH_CLASS}>{t('hardware.name')}</th>
+                  <th className={`${TH_CLASS} text-right`}>{t('cost.quantity')}</th>
+                  <th className={`${TH_CLASS} text-right`}>{t('hardware.unitPrice')}</th>
+                  <th className={`${TH_CLASS} text-right`}>{t('cost.total')}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {hwRows.map(([hwId, v]) => (
+                  <tr key={hwId} className="hover:bg-chrome-surface/40">
+                    <td className={TD_CLASS}>{v.name}</td>
+                    <td className={num}>{v.qty}</td>
+                    <td className={num}>{money(v.unitPrice)}</td>
+                    <td className={`${num} font-medium`}>{money(v.total)}</td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot>
+                <tr className="font-semibold">
+                  <td className="px-2 py-1.5" colSpan={3}>{t('cost.hardwareCost')}</td>
+                  <td className="px-2 py-1.5 text-right font-mono tabular-nums">{money(totalHardwareCost)}</td>
+                </tr>
+              </tfoot>
+            </table>
+          </section>
+        )}
+
+        {/* Labor & overhead */}
+        <section>
+          <h3 className={`${SECTION_LABEL_CLASS} mb-2`}>
+            {lang === 'de' ? 'Arbeitskosten & Overhead' : 'Labor & Overhead'}
+          </h3>
+          <div className="grid grid-cols-3 gap-x-5 gap-y-2 text-xs">
+            <label className="flex items-center gap-2">
+              <span className="flex-1 text-chrome-secondary">{lang === 'de' ? 'Arbeitsstunden' : 'Labor hours'}</span>
+              <input
+                type="number"
+                min="0"
+                step="0.5"
+                value={laborHours}
+                onChange={(e) => setLaborDetails(parseFloat(e.target.value) || 0, laborRate, overheadPct)}
+                className={`${FIELD_CLASS} w-16 text-right`}
+              />
+              <span className="text-chrome-hint">h</span>
+            </label>
+            <label className="flex items-center gap-2">
+              <span className="flex-1 text-chrome-secondary">{lang === 'de' ? 'Stundensatz' : 'Hourly rate'}</span>
+              <input
+                type="number"
+                min="0"
+                step="1"
+                value={laborRate}
+                onChange={(e) => setLaborDetails(laborHours, parseFloat(e.target.value) || 0, overheadPct)}
+                className={`${FIELD_CLASS} w-16 text-right`}
+              />
+              <span className="text-chrome-hint">{cur}/h</span>
+            </label>
+            <label className="flex items-center gap-2">
+              <span className="flex-1 text-chrome-secondary">{lang === 'de' ? 'Aufschlag' : 'Markup'}</span>
+              <input
+                type="number"
+                min="0"
+                max="100"
+                step="1"
+                value={Math.round(overheadPct * 100)}
+                onChange={(e) => setLaborDetails(laborHours, laborRate, (parseFloat(e.target.value) || 0) / 100)}
+                className={`${FIELD_CLASS} w-16 text-right`}
+              />
+              <span className="text-chrome-hint">%</span>
+            </label>
           </div>
-          <div className="px-4 pb-3 flex justify-end gap-2">
-            {hasData && (
-              <>
-                <button
-                  onClick={handlePrint}
-                  className="text-xs px-3 py-1.5 rounded bg-purple-600 text-white hover:bg-purple-700"
-                >
-                  {lang === 'de' ? 'PDF drucken' : 'Print PDF'}
-                </button>
-                <button
-                  onClick={handleExportCsv}
-                  className="text-xs px-3 py-1.5 rounded bg-green-600 text-white hover:bg-green-700"
-                >
-                  {t('actions.export')} CSV
-                </button>
-              </>
-            )}
-            <button
-              onClick={() => setShowCostPanel(false)}
-              className="text-xs px-3 py-1.5 rounded bg-gray-100 text-gray-700 hover:bg-gray-200"
-            >
-              {t('actions.cancel')}
-            </button>
-          </div>
-        </div>
+        </section>
+
+        {/* Breakdown — only when the total is made of more than the material */}
+        {breakdown.length > 1 && (
+          <section className="rounded border border-chrome-border bg-chrome-deep/60 px-3 py-2 text-xs">
+            {breakdown.map((r) => (
+              <div key={r.label} className="flex justify-between py-0.5 text-chrome-secondary">
+                <span>{r.label}</span>
+                <span className="font-mono tabular-nums text-chrome-text">{money(r.value)}</span>
+              </div>
+            ))}
+          </section>
+        )}
       </div>
-    </div>
+    </Dialog>
   )
 }

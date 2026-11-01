@@ -2,11 +2,11 @@ import { useState, useCallback } from 'react'
 import { useUIStore } from '../store/useUIStore'
 import { useProjectStore } from '../store/useProjectStore'
 import { polygonArea } from '../utils/geometry'
-import type { MeasurementPoint, AreaMeasurement } from '../types/measurement'
+import type { MeasurementPoint, AreaMeasurement, ViewMode } from '../types/measurement'
 
 type AreaState = 'idle' | 'placing' | 'complete'
 
-export function useArea() {
+export function useArea(view?: ViewMode) {
   const [state, setState] = useState<AreaState>('idle')
   const [points, setPoints] = useState<MeasurementPoint[]>([])
 
@@ -36,13 +36,14 @@ export function useArea() {
     setPoints(allPoints)
 
     const area = polygonArea(allPoints)
-    const measurement: AreaMeasurement = {
+    const measurement: AreaMeasurement & { view?: ViewMode } = {
       type: 'area',
       points: allPoints,
-      area
+      area,
+      view
     }
     addMeasurement(measurement)
-  }, [points, addMeasurement])
+  }, [points, addMeasurement, view])
 
   const reset = useCallback(() => {
     setState('idle')

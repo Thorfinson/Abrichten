@@ -37,6 +37,17 @@ export interface BoardCutout {
   depth: number  // mm along depth axis
 }
 
+/** A load placed on a board's top face: a w × d patch at x/z from the board's
+ *  min corner in its width/depth plane (like cutouts), carrying kg. */
+export interface PlacedLoad {
+  id: string
+  x: number   // mm along the width axis
+  z: number   // mm along the depth axis
+  kg: number
+  w: number   // mm along the width axis
+  d: number   // mm along the depth axis
+}
+
 export interface Board {
   id: string
   name: string
@@ -51,6 +62,9 @@ export interface Board {
   edgeBanding?: EdgeBanding
   cutouts?: BoardCutout[]
   hardware?: AttachedHardware[]
+  /** Payload in kg on this board for the load simulation; missing = the global payload per shelf */
+  loadKg?: number  /** Loads placed on the top face for the load simulation (a box of books, a TV) */
+  loads?: PlacedLoad[]
   // Formula strings for parametric dimensions (raw expression, e.g. "H - 40")
   widthFormula?: string
   heightFormula?: string

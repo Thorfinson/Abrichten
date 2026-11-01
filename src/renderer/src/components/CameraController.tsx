@@ -1,9 +1,10 @@
 import { useEffect, useRef, useMemo } from 'react'
 import { useThree, useFrame } from '@react-three/fiber'
 import * as THREE from 'three'
-import { useUIStore } from '../store/useUIStore'
+import { useUIStore, useCanvasView } from '../store/useUIStore'
 import { useProjectStore } from '../store/useProjectStore'
 import type { ViewMode } from '../types/measurement'
+import { fitBounds } from './layout/layoutRules'
 
 /**
  * Orthographic camera configuration per 2D view.
@@ -24,15 +25,19 @@ const INITIAL_ORTHO_ZOOM = 2
 /** Ortho zoom in screen px per mm: 0.01 shows 100 m across a 1000 px view, 300 shows 3 mm. */
 const ORTHO_ZOOM_MIN = 0.01
 const ORTHO_ZOOM_MAX = 300
+/** Fit view: room around the model for dimension lines (mm) … */
+const FIT_PAD_MM = 60
+/** … and for the tool strip, HUD and cards floating over the canvas (px per side) */
+const FIT_MARGIN_X_PX = 72
+const FIT_MARGIN_Y_PX = 48
 
 /**
  * Manages camera switching based on activeView.
  * Orthographic cameras for front/side/top, perspective for 3D.
  * Handles zoom (scroll) and pan (right-click drag) for ortho views.
  */
-export function CameraController({ orbitRef, forceView }: { orbitRef?: React.RefObject<any>; forceView?: ViewMode }) {
-  const storeView = useUIStore((s) => s.activeView)
-  const activeView = forceView ?? storeView
+export function CameraController({ orbitRef }: { orbitRef?: React.RefObject<any> }) {
+  const activeView = useCanvasView()
   const fitViewTrigger = useUIStore((s) => s.fitViewTrigger)
   const { set, size, camera: defaultCamera, gl } = useThree()
   const perspCameraRef = useRef<THREE.PerspectiveCamera | null>(null)
@@ -123,67 +128,84 @@ export function CameraController({ orbitRef, forceView }: { orbitRef?: React.Ref
     cam.updateProjectionMatrix()
   })
 
-  // Fit-to-view: triggered by UIStore.fitViewTrigger increment
-  useEffect(() => {
-    if (fitViewTrigger === 0) return
-
-    const allBoards = useProjectStore.getState().project.assemblies
+  // Fit-to-view: triggered by UIStore.fitViewTrigger increment — by F, the
+  // palette and every project load (App). Also runs when this controller
+  // mounts after a trigger (layout switch), so a new quadrant starts framed.
+  // An empty project frames the first metre from the origin.
+  const fitBoundsNow = () => fitBounds(
+    useProjectStore.getState().project.assemblies
       .filter((a) => a.visible !== false)
       .flatMap((a) => a.boards)
+  )
 
-    if (allBoards.length === 0) return
-
-    let minX = Infinity, minY = Infinity, minZ = Infinity
-    let maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity
-    for (const b of allBoards) {
-      minX = Math.min(minX, b.position.x)
-      maxX = Math.max(maxX, b.position.x + b.width)
-      minY = Math.min(minY, b.position.y)
-      maxY = Math.max(maxY, b.position.y + b.height)
-      minZ = Math.min(minZ, b.position.z)
-      maxZ = Math.max(maxZ, b.position.z + b.depth)
-    }
-
+  /** Frames the model with the orbit camera; false while OrbitControls don't drive it yet. */
+  const fit3d = (): boolean => {
+    const controls = orbitRef?.current
+    if (!controls || controls.object !== perspCameraRef.current) return false
+    const { minX, maxX, minY, maxY, minZ, maxZ } = fitBoundsNow()
     const centerX = (minX + maxX) / 2
     const centerY = (minY + maxY) / 2
     const centerZ = (minZ + maxZ) / 2
-    const pad = 100
+    const spanMax = Math.max(maxX - minX, maxY - minY, maxZ - minZ)
+    const radius = spanMax / 2 + FIT_PAD_MM
+    const camDist = Math.max(500, radius * 2.5)
+    controls.target.set(centerX, centerY, centerZ)
+    controls.object.position.set(
+      centerX + camDist * 0.6,
+      centerY + camDist * 0.5,
+      centerZ + camDist * 0.8
+    )
+    controls.update()
+    return true
+  }
 
-    if (activeView !== '3d') {
-      let spanA: number, spanB: number, tX: number, tY: number, tZ: number
-      if (activeView === 'front') {
-        spanA = maxX - minX + pad * 2; spanB = maxY - minY + pad * 2
-        tX = centerX; tY = centerY; tZ = 0
-      } else if (activeView === 'side') {
-        spanA = maxZ - minZ + pad * 2; spanB = maxY - minY + pad * 2
-        tX = 0; tY = centerY; tZ = centerZ
-      } else {
-        spanA = maxX - minX + pad * 2; spanB = maxZ - minZ + pad * 2
-        tX = centerX; tY = 0; tZ = centerZ
-      }
-      const currentSize = sizeRef.current
-      const newZoom = Math.max(ORTHO_ZOOM_MIN, Math.min(ORTHO_ZOOM_MAX,
-        Math.min(currentSize.width / spanA, currentSize.height / spanB)
-      ))
-      const vs = viewState.current[activeView]
-      vs.target.set(tX, tY, tZ)
-      vs.zoom = newZoom
-      const cam = orthoCameras[activeView]
-      if (cam) {
-        cam.zoom = newZoom
-        cam.updateProjectionMatrix()
-      }
-    } else if (orbitRef?.current) {
-      const spanMax = Math.max(maxX - minX, maxY - minY, maxZ - minZ)
-      const radius = spanMax / 2 + pad
-      const camDist = Math.max(500, radius * 2.5)
-      orbitRef.current.target.set(centerX, centerY, centerZ)
-      orbitRef.current.object.position.set(
-        centerX + camDist * 0.6,
-        centerY + camDist * 0.5,
-        centerZ + camDist * 0.8
-      )
-      orbitRef.current.update()
+  // A 3D fit requested in the same tick as the switch to 3D (e.g. a project
+  // load that also picks the 3D view) finds OrbitControls still bound to the
+  // previous ortho camera; it waits here until they drive the orbit camera.
+  const pendingFit3d = useRef(false)
+  useFrame(() => {
+    if (pendingFit3d.current && activeView === '3d' && fit3d()) pendingFit3d.current = false
+  })
+
+  useEffect(() => {
+    if (fitViewTrigger === 0) return
+
+    if (activeView === '3d') {
+      pendingFit3d.current = !fit3d()
+      return
+    }
+    pendingFit3d.current = false
+
+    const { minX, maxX, minY, maxY, minZ, maxZ } = fitBoundsNow()
+    const centerX = (minX + maxX) / 2
+    const centerY = (minY + maxY) / 2
+    const centerZ = (minZ + maxZ) / 2
+    const pad = FIT_PAD_MM
+
+    let spanA: number, spanB: number, tX: number, tY: number, tZ: number
+    if (activeView === 'front') {
+      spanA = maxX - minX + pad * 2; spanB = maxY - minY + pad * 2
+      tX = centerX; tY = centerY; tZ = 0
+    } else if (activeView === 'side') {
+      spanA = maxZ - minZ + pad * 2; spanB = maxY - minY + pad * 2
+      tX = 0; tY = centerY; tZ = centerZ
+    } else {
+      spanA = maxX - minX + pad * 2; spanB = maxZ - minZ + pad * 2
+      tX = centerX; tY = 0; tZ = centerZ
+    }
+    const currentSize = sizeRef.current
+    const usableW = Math.max(currentSize.width - 2 * FIT_MARGIN_X_PX, currentSize.width * 0.5)
+    const usableH = Math.max(currentSize.height - 2 * FIT_MARGIN_Y_PX, currentSize.height * 0.5)
+    const newZoom = Math.max(ORTHO_ZOOM_MIN, Math.min(ORTHO_ZOOM_MAX,
+      Math.min(usableW / spanA, usableH / spanB)
+    ))
+    const vs = viewState.current[activeView]
+    vs.target.set(tX, tY, tZ)
+    vs.zoom = newZoom
+    const cam = orthoCameras[activeView]
+    if (cam) {
+      cam.zoom = newZoom
+      cam.updateProjectionMatrix()
     }
   }, [fitViewTrigger]) // eslint-disable-line react-hooks/exhaustive-deps
 

@@ -4,6 +4,35 @@ import { Html } from '@react-three/drei'
 import { useProjectStore } from '../../store/useProjectStore'
 import { useUIStore } from '../../store/useUIStore'
 import { detectCollisions3D } from '../../utils/collision'
+import { CANVAS, HTML_Z_RANGE, sceneLabelStyle } from '../canvasTheme'
+
+/** One red overlap box. The box geometry is memoized (and disposed) so the
+ *  edges aren't rebuilt — and a BoxGeometry leaked — on every render. */
+function CollisionBox({ cx, cy, cz, sx, sy, sz }: { cx: number; cy: number; cz: number; sx: number; sy: number; sz: number }) {
+  const box = useMemo(() => new THREE.BoxGeometry(sx, sy, sz), [sx, sy, sz])
+  useEffect(() => () => box.dispose(), [box])
+
+  return (
+    <group position={[cx, cy, cz]}>
+      <mesh geometry={box}>
+        <meshBasicMaterial
+          color={0xef4444}
+          transparent
+          opacity={0.3}
+          depthWrite={false}
+        />
+      </mesh>
+      <lineSegments>
+        <edgesGeometry args={[box]} />
+        <lineBasicMaterial color={0xef4444} />
+      </lineSegments>
+      {/* Warning indicator */}
+      <Html position={[0, sy / 2 + 10, 0]} center style={{ pointerEvents: 'none' }} zIndexRange={HTML_Z_RANGE}>
+        <span style={{ ...sceneLabelStyle(CANVAS.collision, 12), fontWeight: 'bold' }}>!</span>
+      </Html>
+    </group>
+  )
+}
 
 /**
  * 3D collision overlay — renders a red box at the AABB intersection
@@ -17,59 +46,36 @@ export function CollisionOverlay3D() {
   const collisions = useMemo(() => {
     if (!showCollisionOverlay) return []
 
-    const allBoards = project.assemblies
-      .filter((a) => a.visible !== false)
-      .flatMap((a) => a.boards)
+    const visible = project.assemblies.filter((a) => a.visible !== false)
 
-    return detectCollisions3D(allBoards)
+    // joints let a back panel sit in its dado/rabbet without counting as a collision
+    return detectCollisions3D(visible.flatMap((a) => a.boards), visible.flatMap((a) => a.joints))
   }, [showCollisionOverlay, project.assemblies])
 
+  // Publish the pairs whenever they change (not just their count — a drag can
+  // swap one colliding pair for another), without churning the store while
+  // a drag keeps the same pairs.
+  const pairsKey = collisions.map((c) => `${c.boardIdA}|${c.boardIdB}`).join(',')
   useEffect(() => {
     setCollisionPairs(collisions.map((c) => ({ boardIdA: c.boardIdA, boardIdB: c.boardIdB })))
     return () => setCollisionPairs([])
-  }, [collisions.length])
+  }, [pairsKey]) // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!showCollisionOverlay || collisions.length === 0) return null
 
   return (
     <>
-      {collisions.map(({ boardIdA, boardIdB, overlapAABB }, idx) => {
-        const cx = (overlapAABB.minX + overlapAABB.maxX) / 2
-        const cy = (overlapAABB.minY + overlapAABB.maxY) / 2
-        const cz = (overlapAABB.minZ + overlapAABB.maxZ) / 2
-        const sx = overlapAABB.maxX - overlapAABB.minX
-        const sy = overlapAABB.maxY - overlapAABB.minY
-        const sz = overlapAABB.maxZ - overlapAABB.minZ
-
-        return (
-          <group key={`collision-${boardIdA}-${boardIdB}-${idx}`}>
-            <mesh position={[cx, cy, cz]}>
-              <boxGeometry args={[sx, sy, sz]} />
-              <meshBasicMaterial
-                color={0xef4444}
-                transparent
-                opacity={0.3}
-                depthWrite={false}
-              />
-            </mesh>
-            <lineSegments position={[cx, cy, cz]}>
-              <edgesGeometry args={[new THREE.BoxGeometry(sx, sy, sz)]} />
-              <lineBasicMaterial color={0xef4444} />
-            </lineSegments>
-            {/* Warning indicator */}
-            <Html position={[cx, cy + sy / 2 + 10, cz]} center style={{ pointerEvents: 'none' }} zIndexRange={[100, 0]}>
-              <span style={{
-                fontSize: '12px',
-                fontWeight: 'bold',
-                color: '#ef4444',
-                background: 'rgba(255,255,255,0.85)',
-                padding: '0 4px',
-                borderRadius: '2px'
-              }}>!</span>
-            </Html>
-          </group>
-        )
-      })}
+      {collisions.map(({ boardIdA, boardIdB, overlapAABB }, idx) => (
+        <CollisionBox
+          key={`collision-${boardIdA}-${boardIdB}-${idx}`}
+          cx={(overlapAABB.minX + overlapAABB.maxX) / 2}
+          cy={(overlapAABB.minY + overlapAABB.maxY) / 2}
+          cz={(overlapAABB.minZ + overlapAABB.maxZ) / 2}
+          sx={overlapAABB.maxX - overlapAABB.minX}
+          sy={overlapAABB.maxY - overlapAABB.minY}
+          sz={overlapAABB.maxZ - overlapAABB.minZ}
+        />
+      ))}
     </>
   )
 }

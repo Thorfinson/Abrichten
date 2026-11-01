@@ -1,16 +1,27 @@
+import { useCallback, useRef } from 'react'
 import { Html } from '@react-three/drei'
+import { useTranslation } from 'react-i18next'
+import * as THREE from 'three'
 import { useProjectStore } from '../../store/useProjectStore'
-import { useUIStore } from '../../store/useUIStore'
+import { useUIStore, useCanvasView } from '../../store/useUIStore'
 import type { Vec3 } from '../../types/furniture'
+import { HTML_Z_RANGE } from '../canvasTheme'
+import { Icon } from '../layout/Icon'
+import { clampCentre } from '../layout/layoutRules'
+
+/** Lift above the board's top centre so the pill clears the TC gizmo (~70 px) */
+const LIFT_PX = 80
+
+const projected = new THREE.Vector3()
 
 /**
  * Floating label tag rendered above the selected board in 3D view.
  * Shows the board name and a quick delete button directly in 3D space.
  * Only active in perspective (3D) view mode.
  */
-export function SelectionToolbar3D({ forceView }: { forceView?: 'front' | 'side' | 'top' | '3d' } = {}) {
-  const storeView        = useUIStore((s) => s.activeView)
-  const activeView       = forceView ?? storeView
+export function SelectionToolbar3D() {
+  const { t } = useTranslation()
+  const activeView       = useCanvasView()
   const selectedBoardIds = useUIStore((s) => s.selectedBoardIds)
   const selectedAssemblyId = useUIStore((s) => s.selectedAssemblyId)
   const deselectAll      = useUIStore((s) => s.deselectAll)
@@ -22,6 +33,21 @@ export function SelectionToolbar3D({ forceView }: { forceView?: 'front' | 'side'
   const updateBoard    = useProjectStore((s) => s.updateBoard)
   const selectBoard    = useUIStore((s) => s.selectBoard)
 
+  // Screen position of the pill: projected board top, lifted, then clamped so
+  // the whole pill stays inside this canvas (a quad quadrant clips otherwise).
+  const pillRef = useRef<HTMLDivElement>(null)
+  const calculatePosition = useCallback(
+    (el: THREE.Object3D, camera: THREE.Camera, size: { width: number; height: number }) => {
+      projected.setFromMatrixPosition(el.matrixWorld).project(camera)
+      const x = ((projected.x + 1) / 2) * size.width
+      const y = ((1 - projected.y) / 2) * size.height - LIFT_PX
+      const pill = pillRef.current
+      const box = { width: pill?.offsetWidth ?? 0, height: pill?.offsetHeight ?? 0 }
+      return clampCentre(x, y, box, size)
+    },
+    []
+  )
+
   // Only show for single selection in 3D perspective view
   if (activeView !== '3d') return null
   if (selectedBoardIds.length !== 1 || !selectedAssemblyId) return null
@@ -30,9 +56,7 @@ export function SelectionToolbar3D({ forceView }: { forceView?: 'front' | 'side'
   const board = assembly?.boards.find((b) => b.id === selectedBoardIds[0])
   if (!board) return null
 
-  // Position: top-centre of the board bounding box. We also apply a pixel-
-  // stable CSS offset below so the toolbar sits clearly above the TC gizmo
-  // regardless of zoom (the gizmo auto-scales to ~80 px on screen).
+  // Anchor: top-centre of the board bounding box
   const px = board.position.x + board.width / 2
   const py = board.position.y + board.height
   const pz = board.position.z + board.depth / 2
@@ -55,56 +79,54 @@ export function SelectionToolbar3D({ forceView }: { forceView?: 'front' | 'side'
     updateBoard(selectedAssemblyId, board.id, { rotation: rot })
   }
 
+  const iconBtn = 'w-6 h-6 flex items-center justify-center rounded-full transition-colors'
+
   return (
-    <Html position={[px, py, pz]} center zIndexRange={[100, 0]}>
+    <Html position={[px, py, pz]} center zIndexRange={HTML_Z_RANGE} calculatePosition={calculatePosition}>
       <div
-        className="flex items-center gap-1 px-2 py-1 rounded-full border border-white/20 bg-gray-900/90 backdrop-blur-sm shadow-lg text-white whitespace-nowrap"
-        style={{
-          pointerEvents: 'auto',
-          userSelect: 'none',
-          // Shift up by ~80 px (above TC gizmo which auto-scales to ~70 px)
-          transform: 'translateY(-80px)'
-        }}
+        ref={pillRef}
+        className="flex items-center gap-0.5 pl-2.5 pr-1 py-0.5 rounded-full border border-chrome-border bg-chrome-deep/95 shadow-lg text-chrome-text whitespace-nowrap"
+        style={{ pointerEvents: 'auto', userSelect: 'none' }}
         onPointerDown={(e) => e.stopPropagation()}
       >
         {/* Colour swatch */}
         <span
-          className="w-2 h-2 rounded-full shrink-0"
+          className="w-2 h-2 rounded-full shrink-0 mr-1"
           style={{ background: board.color }}
         />
         {/* Board name */}
-        <span className="text-[11px] font-medium max-w-[100px] truncate opacity-90">
+        <span className="text-[11px] font-medium max-w-[120px] truncate">
           {board.name}
         </span>
         {/* Divider */}
-        <span className="w-px h-3 bg-white/20 mx-0.5" />
-        {/* Duplicate */}
+        <span className="w-px h-3.5 bg-chrome-divider mx-1" />
         <button
           onClick={handleDuplicate}
-          title="Duplicate"
-          className="w-5 h-5 flex items-center justify-center rounded-full hover:bg-white/15 transition-colors text-[11px] opacity-60 hover:opacity-100"
+          title={t('ui.duplicate')}
+          aria-label={t('ui.duplicate')}
+          className={`${iconBtn} text-chrome-muted hover:text-chrome-text hover:bg-chrome-surface`}
         >
-          ⧉
+          <Icon name="copy" className="w-3.5 h-3.5" />
         </button>
-        {/* Rotate 90° */}
         <button
           onClick={handleRotate90}
-          title="Rotate 90°"
-          className="w-5 h-5 flex items-center justify-center rounded-full hover:bg-white/15 transition-colors text-[11px] opacity-60 hover:opacity-100"
+          title={t('ui.rotate90')}
+          aria-label={t('ui.rotate90')}
+          className={`${iconBtn} text-chrome-muted hover:text-chrome-text hover:bg-chrome-surface`}
         >
-          ↻
+          <Icon name="rotate" className="w-3.5 h-3.5" />
         </button>
         {/* Transform mode badge */}
-        <span className="font-mono text-[9px] px-1 rounded bg-white/10 text-white/50 leading-4">
+        <span className="font-mono text-[9px] px-1 mx-0.5 rounded bg-chrome-surface text-chrome-muted leading-4">
           {transformMode === 'translate' ? 'G' : transformMode === 'rotate' ? 'R' : 'T'}
         </span>
-        {/* Delete */}
         <button
           onClick={handleDelete}
-          title="Delete"
-          className="w-5 h-5 flex items-center justify-center rounded-full hover:bg-red-500/30 transition-colors text-[11px] text-red-400 opacity-60 hover:opacity-100"
+          title={t('ui.delete')}
+          aria-label={t('ui.delete')}
+          className={`${iconBtn} text-danger/80 hover:text-danger-text hover:bg-danger-dim`}
         >
-          ×
+          <Icon name="trash" className="w-3.5 h-3.5" />
         </button>
       </div>
     </Html>

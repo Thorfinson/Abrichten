@@ -3,11 +3,11 @@ import { useUIStore } from '../store/useUIStore'
 import { useProjectStore } from '../store/useProjectStore'
 import { distance } from '../utils/geometry'
 import { formatValue } from '../utils/units'
-import type { MeasurementPoint, DistanceMeasurement } from '../types/measurement'
+import type { MeasurementPoint, DistanceMeasurement, Measurement, ViewMode } from '../types/measurement'
 
 type MeasureState = 'idle' | 'first_placed' | 'complete'
 
-export function useMeasure() {
+export function useMeasure(view?: ViewMode) {
   const [state, setState] = useState<MeasureState>('idle')
   const [pointA, setPointA] = useState<MeasurementPoint | null>(null)
   const [pointB, setPointB] = useState<MeasurementPoint | null>(null)
@@ -29,15 +29,16 @@ export function useMeasure() {
       setState('complete')
 
       const d = distance(pointA, point)
-      const measurement: DistanceMeasurement = {
+      const measurement: DistanceMeasurement & { view?: ViewMode } = {
         type: 'distance',
         pointA,
         pointB: point,
-        distance: d
+        distance: d,
+        view
       }
       addMeasurement(measurement)
     }
-  }, [state, pointA, addMeasurement])
+  }, [state, pointA, addMeasurement, view])
 
   const reset = useCallback(() => {
     setState('idle')

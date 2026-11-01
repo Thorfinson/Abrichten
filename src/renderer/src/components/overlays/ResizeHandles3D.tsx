@@ -3,13 +3,15 @@ import { useThree, useFrame } from '@react-three/fiber'
 import { Html } from '@react-three/drei'
 import * as THREE from 'three'
 import { useProjectStore } from '../../store/useProjectStore'
-import { useUIStore } from '../../store/useUIStore'
+import { useUIStore, useCanvasView } from '../../store/useUIStore'
 import { snapToGrid } from '../../utils/geometry'
+import { dimDirection, faceCentre, resizeFromFace } from '../../utils/projection'
 import { prioritizeRaycast } from '../../utils/raycastPriority'
 import { computeWorldSizeForPixels } from '../../utils/screenSize'
 import { beginDragHistory, endDragHistory } from '../../utils/dragHistory'
 import { beginTransform, endTransform } from '../../utils/transformLock'
 import type { Board } from '../../types/furniture'
+import { HTML_Z_RANGE } from '../canvasTheme'
 
 // 6 face-anchored resize cubes (3 axes × 2 directions) — Blender-style.
 // Dragging a cube moves that single face outward/inward while the opposite
@@ -37,13 +39,10 @@ const FACES: FaceDef[] = [
   { axis: 'z', sign:  1 }, { axis: 'z', sign: -1 }
 ]
 
+/** Centre of the board face the cube moves; `face.axis` is the board's own (rotated) axis. */
 function faceCenter(board: Board, face: FaceDef): [number, number, number] {
-  const cx = board.position.x + board.width / 2
-  const cy = board.position.y + board.height / 2
-  const cz = board.position.z + board.depth / 2
-  if (face.axis === 'x') return [board.position.x + (face.sign > 0 ? board.width : 0), cy, cz]
-  if (face.axis === 'y') return [cx, board.position.y + (face.sign > 0 ? board.height : 0), cz]
-  return [cx, cy, board.position.z + (face.sign > 0 ? board.depth : 0)]
+  const c = faceCentre(board, AXIS_TO_DIM[face.axis], face.sign)
+  return [c.x, c.y, c.z]
 }
 
 interface CubeProps {
@@ -64,15 +63,16 @@ function ResizeCube({ face, board, assemblyId }: CubeProps): JSX.Element {
 
   const drag = useRef<{
     active: boolean
-    startAxisWorld: number
-    startDim: number
-    startPos: number
+    startWorld: THREE.Vector3
+    /** World direction the face moves in (the dimension's rotated axis) */
+    dir: THREE.Vector3
+    startBoard: Board | null
     plane: THREE.Plane
   }>({
     active: false,
-    startAxisWorld: 0,
-    startDim: 0,
-    startPos: 0,
+    startWorld: new THREE.Vector3(),
+    dir: new THREE.Vector3(),
+    startBoard: null,
     plane: new THREE.Plane()
   })
 
@@ -116,22 +116,20 @@ function ResizeCube({ face, board, assemblyId }: CubeProps): JSX.Element {
     const onMove = (e: PointerEvent): void => {
       if (!drag.current.active) return
       const live = liveRef.current
+      const start = drag.current.startBoard
       const w = intersectAt(e.clientX, e.clientY)
-      if (!w) return
-      const rawDelta = (w[live.face.axis] - drag.current.startAxisWorld) * live.face.sign
-      let newDim = drag.current.startDim + rawDelta
+      if (!w || !start) return
+      const dim = AXIS_TO_DIM[live.face.axis]
+      const rawDelta = w.sub(drag.current.startWorld).dot(drag.current.dir) * live.face.sign
+      let newDim = start[dim] + rawDelta
       newDim = live.snapEnabled ? snapToGrid(newDim, live.snapSize) : Math.round(newDim)
       newDim = Math.max(1, newDim)
       setLabel(`${newDim}mm`)
-      const updates: Partial<Board> = { [AXIS_TO_DIM[live.face.axis]]: newDim }
-      if (live.face.sign < 0) {
-        const dimDelta = newDim - drag.current.startDim
-        updates.position = {
-          ...live.board.position,
-          [live.face.axis]: drag.current.startPos - dimDelta
-        }
-      }
-      live.updateBoard(live.assemblyId, live.board.id, updates)
+      // the opposite face stays put, also on rotated boards
+      live.updateBoard(live.assemblyId, live.board.id, {
+        [dim]: newDim,
+        position: resizeFromFace(start, dim, live.face.sign, newDim)
+      })
     }
 
     const onUp = (): void => {
@@ -148,9 +146,11 @@ function ResizeCube({ face, board, assemblyId }: CubeProps): JSX.Element {
     return () => {
       canvas.removeEventListener('pointermove', onMove)
       canvas.removeEventListener('pointerup', onUp)
-      // No drag-abort here: this cleanup only fires on true unmount because
-      // deps are stable. If we cleared drag.current.active in a deps-change
-      // teardown, every store update would kill the active drag.
+      // Deps are stable, so this only runs on true unmount (never on a store
+      // update, which would kill every drag). Unmounted mid-drag (board
+      // deleted, view switched …) the pointerup never arrives: end the drag
+      // here, keeping the resize made so far as one undo step.
+      onUp()
     }
   }, [gl, camera, raycaster])
 
@@ -161,14 +161,18 @@ function ResizeCube({ face, board, assemblyId }: CubeProps): JSX.Element {
       camForward.negate(),
       new THREE.Vector3(...position)
     )
-    drag.current.startDim = board[AXIS_TO_DIM[face.axis]]
-    drag.current.startPos = board.position[face.axis]
+    const d = dimDirection(board, AXIS_TO_DIM[face.axis])
+    drag.current.dir.set(d.x, d.y, d.z)
+    drag.current.startBoard = board
     drag.current.active = true
     const start = intersectAt(clientX, clientY)
-    drag.current.startAxisWorld = start
-      ? start[face.axis]
-      : position[face.axis === 'x' ? 0 : face.axis === 'y' ? 1 : 2]
-    beginTransform()
+    drag.current.startWorld.copy(start ?? new THREE.Vector3(...position))
+    // Esc cancels: drop the drag state; the caller restores the pre-drag project
+    beginTransform(() => {
+      drag.current.active = false
+      setLabel(null)
+      gl.domElement.style.cursor = 'default'
+    })
     beginDragHistory()
     gl.domElement.setPointerCapture(pointerId)
     gl.domElement.style.cursor = 'grabbing'
@@ -179,7 +183,7 @@ function ResizeCube({ face, board, assemblyId }: CubeProps): JSX.Element {
   return (
     <>
       {label && (
-        <Html position={labelPos} center style={{ pointerEvents: 'none' }} zIndexRange={[100, 0]}>
+        <Html position={labelPos} center style={{ pointerEvents: 'none' }} zIndexRange={HTML_Z_RANGE}>
           <div style={{
             background: color, color: '#fff', fontSize: '10px',
             fontFamily: 'monospace', padding: '2px 6px', borderRadius: '4px',
@@ -248,7 +252,7 @@ function ResizeCube({ face, board, assemblyId }: CubeProps): JSX.Element {
 export function ResizeHandles3D(): JSX.Element | null {
   const project          = useProjectStore((s) => s.project)
   const selectedBoardIds = useUIStore((s) => s.selectedBoardIds)
-  const activeView       = useUIStore((s) => s.activeView)
+  const activeView       = useCanvasView()
   const activeTool       = useUIStore((s) => s.activeTool)
   const transformMode    = useUIStore((s) => s.transformMode)
 

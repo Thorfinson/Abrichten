@@ -7,6 +7,11 @@ html, body, #root {
   overflow: hidden;
 }
 
+/* Dark app throughout: native scrollbars, spinners and pickers follow it */
+html {
+  color-scheme: dark;
+}
+
 /* Ensure all interactive elements are not treated as drag areas */
 button, input, select, textarea, a, [role="button"] {
   -webkit-app-region: no-drag;
@@ -60,4 +65,10 @@ button, input, select, textarea, a, [role="button"] {
   --color-ai:               #a855f7;  /* purple-500 */
   --color-ai-dim:           #3b0764;  /* purple-950 background tint */
   --color-ai-text:          #e9d5ff;  /* purple-200 text on AI bg */
+
+  /* Canvas — the 3D/ortho viewport. A notch lighter than the chrome so the
+     model area reads as the workspace; the three.js side mirrors these
+     values in components/canvasTheme.ts. */
+  --color-canvas:           #222226;  /* viewport background            */
+  --color-canvas-label:     rgba(24, 24, 27, 0.88); /* scene label pill  */
 }

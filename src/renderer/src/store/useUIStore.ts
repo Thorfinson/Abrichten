@@ -1,3 +1,4 @@
+import { createContext, useContext } from 'react'
 import { create } from 'zustand'
 import type { ToolMode, ViewMode, Measurement } from '../types/measurement'
 import { useProjectStore } from './useProjectStore'
@@ -11,7 +12,7 @@ interface ContextMenuState {
   assemblyId: string
 }
 
-interface UIState {
+export interface UIState {
   activeView: ViewMode
   activeTool: ToolMode
   selectedBoardIds: string[]
@@ -60,11 +61,8 @@ interface UIState {
   // Collision grace
   collisionGraceMm: number
   // Static warnings
-  staticWarningCount: number
   // Onboarding
   hasSeenWelcome: boolean
-  tooltipsEnabled: boolean
-  seenTipIds: string[]
   // Export status
   exportStatus: string | null
   // Joint creation dialog
@@ -115,10 +113,7 @@ interface UIState {
   setShowMaterialsPanel: (show: boolean) => void
   setViewLayout: (layout: 'single' | 'quad') => void
   setCollisionGraceMm: (mm: number) => void
-  setStaticWarningCount: (n: number) => void
   setHasSeenWelcome: () => void
-  setTooltipsEnabled: (v: boolean) => void
-  markTipSeen: (id: string) => void
   setExportStatus: (msg: string | null) => void
   setShowJointDialog: (show: boolean) => void
   toggleAssemblyDims: () => void
@@ -129,9 +124,39 @@ interface UIState {
   setShowShortcutsOverlay: (show: boolean) => void
   showGrid: boolean
   toggleGrid: () => void
+  /** The shortcut HUD is folded to its overlay row — the user's choice, remembered */
+  hudCollapsed: boolean
+  setHudCollapsed: (collapsed: boolean) => void
+  /** Close the topmost open modal (see topModal) */
+  closeTopModal: () => void
 }
 
-export const useUIStore = create<UIState>((set) => ({
+/** Modal panel flags, topmost first (z-index order) so Esc closes the one on top. */
+const MODAL_FLAGS = [
+  'showShortcutsOverlay', 'showCommandPalette', 'showJointDialog', 'settingsOpen',
+  'showCuttingList', 'showParametersPanel', 'showHardwarePanel', 'showNestingPanel',
+  'showCostPanel', 'showBoringPanel', 'showTolerancePanel', 'showShopDrawingsPanel',
+  'showKorpusPanel', 'showDrawerCalcPanel', 'showHingeCalcPanel', 'showStaticSummary',
+  'showMeasurementPanel', 'showMaterialsPanel', 'showPanelHub'
+] as const satisfies readonly (keyof UIState)[]
+
+export type ModalId = (typeof MODAL_FLAGS)[number] | 'contextMenu' | 'welcome'
+
+/** The topmost open modal — context menu, dialog, panel or the welcome screen — or null. */
+export function topModal(s: UIState): ModalId | null {
+  if (s.contextMenu) return 'contextMenu'
+  const flag = MODAL_FLAGS.find((f) => s[f])
+  if (flag) return flag
+  return s.hasSeenWelcome ? null : 'welcome'
+}
+
+const HUD_COLLAPSED_KEY = 'abrichten-hud-collapsed'
+
+function storedFlag(key: string): boolean {
+  try { return typeof localStorage !== 'undefined' && localStorage.getItem(key) === '1' } catch { return false }
+}
+
+export const useUIStore = create<UIState>((set, get) => ({
   activeView: 'front',
   activeTool: 'select',
   selectedBoardIds: [],
@@ -141,7 +166,8 @@ export const useUIStore = create<UIState>((set) => ({
   panY: 0,
   measurements: [],
   showStaticOverlay: false,
-  showJointMarkers: true,
+  // Off by default: in real projects the joint badges cover the model
+  showJointMarkers: false,
   showCollisionOverlay: false,
   settingsOpen: false,
   transformMode: 'translate',
@@ -178,10 +204,7 @@ export const useUIStore = create<UIState>((set) => ({
   showMaterialsPanel: false,
   viewLayout: 'single',
   collisionGraceMm: 0.5,
-  staticWarningCount: 0,
   hasSeenWelcome: typeof localStorage !== 'undefined' && !!localStorage.getItem('abrichten-welcomed'),
-  tooltipsEnabled: false,
-  seenTipIds: (() => { try { return JSON.parse(localStorage.getItem('abrichten-seen-tips') ?? '[]') } catch { return [] } })(),
   exportStatus: null,
   showJointDialog: false,
   showAssemblyDims: false,
@@ -189,6 +212,7 @@ export const useUIStore = create<UIState>((set) => ({
   showAssemblyDrawer: false,
   showShortcutsOverlay: false,
   showGrid: true,
+  hudCollapsed: storedFlag(HUD_COLLAPSED_KEY),
 
   setActiveView: (view) => set({ activeView: view }),
   setActiveTool: (tool) => set({ activeTool: tool }),
@@ -259,20 +283,14 @@ export const useUIStore = create<UIState>((set) => ({
   setShowMaterialsPanel: (show) => set({ showMaterialsPanel: show }),
   setViewLayout: (layout) => set({ viewLayout: layout }),
   setCollisionGraceMm: (mm) => set({ collisionGraceMm: Math.max(0, mm) }),
-  setStaticWarningCount: (n) => set({ staticWarningCount: n }),
   setHasSeenWelcome: () => {
     localStorage.setItem('abrichten-welcomed', '1')
     set({ hasSeenWelcome: true })
   },
-  setTooltipsEnabled: (v) => set({ tooltipsEnabled: v }),
-  markTipSeen: (id) => set((s) => {
-    const ids = [...s.seenTipIds, id]
-    localStorage.setItem('abrichten-seen-tips', JSON.stringify(ids))
-    return { seenTipIds: ids }
-  }),
   setExportStatus: (msg) => {
     set({ exportStatus: msg })
-    if (msg) setTimeout(() => set({ exportStatus: null }), 3000)
+    // long messages (e.g. a failed auto-save restore) stay readable; a newer toast is never cut short
+    if (msg) setTimeout(() => { if (get().exportStatus === msg) set({ exportStatus: null }) }, Math.max(3000, msg.length * 60))
   },
   setShowJointDialog: (show) => set({ showJointDialog: show }),
   toggleAssemblyDims: () => set((s) => ({ showAssemblyDims: !s.showAssemblyDims })),
@@ -280,7 +298,30 @@ export const useUIStore = create<UIState>((set) => ({
   setShowAssemblyDrawer: (show) => set({ showAssemblyDrawer: show }),
   setShowShortcutsOverlay: (show) => set({ showShortcutsOverlay: show }),
   toggleGrid: () => set((s) => ({ showGrid: !s.showGrid })),
+  setHudCollapsed: (collapsed) => {
+    try { localStorage.setItem(HUD_COLLAPSED_KEY, collapsed ? '1' : '0') } catch { /* session only */ }
+    set({ hudCollapsed: collapsed })
+  },
+  closeTopModal: () => {
+    const top = topModal(get())
+    if (top === 'contextMenu') set({ contextMenu: null })
+    else if (top === 'welcome') get().setHasSeenWelcome()
+    else if (top) set({ [top]: false })
+  },
 }))
+
+/**
+ * View of the canvas a component renders in. QuadLayout gives every quadrant
+ * its own view; null means "follow the store" (single layout).
+ */
+export const CanvasViewContext = createContext<ViewMode | null>(null)
+
+/** View of the enclosing canvas — the quadrant's view in quad layout, else the store's activeView. */
+export function useCanvasView(): ViewMode {
+  const forced = useContext(CanvasViewContext)
+  const storeView = useUIStore((s) => s.activeView)
+  return forced ?? storeView
+}
 
 
 declare global { interface Window { __uiStore?: unknown } }

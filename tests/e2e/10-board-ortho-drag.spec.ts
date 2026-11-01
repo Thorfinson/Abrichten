@@ -21,7 +21,7 @@ test.describe('Direct board drag in ortho view', () => {
     const centrePixel = await projectToCanvas(page, centre)
 
     // Click 120 px right and 80 px above the centre — comfortably inside this
-    // 564 × 702 panel (so we land on its mesh) and far from any gizmo handle.
+    // 564 × 684 panel (so we land on its mesh) and far from any gizmo handle.
     const start = { x: centrePixel.x + 120, y: centrePixel.y - 80 }
     const end = { x: start.x + 180, y: start.y - 100 }
 

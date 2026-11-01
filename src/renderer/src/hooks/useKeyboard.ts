@@ -1,19 +1,70 @@
-import { useEffect } from 'react'
-import { useUIStore } from '../store/useUIStore'
+import { useEffect, useRef } from 'react'
+import { useUIStore, topModal } from '../store/useUIStore'
 import { useProjectStore } from '../store/useProjectStore'
 import type { ToolMode } from '../types/measurement'
-import { openProjectFile } from '../services/projectFile'
-import i18n from '../i18n'
+import { openProjectFile, saveProjectFile, confirmDiscardChanges } from '../services/projectFile'
+import { isDragActive, cancelTransform } from '../utils/transformLock'
+import { cancelDragHistory } from '../utils/dragHistory'
+
+/** A dialog the UI store doesn't track (e.g. the assembly drawer's joint
+ *  dialog) is open — every modal in the app sets aria-modal. */
+function domModalOpen(): boolean {
+  return document.querySelector('[aria-modal="true"]') !== null
+}
 
 export function useKeyboard() {
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
+      // Already handled by the focused component (palette input, context menu, drawer …).
+      // A field whose Esc cancels its own edit must preventDefault, or Esc below also
+      // closes the dialog around it / deselects the board.
+      if (e.defaultPrevented) return
+
+      // Esc during a gizmo / board drag cancels it and restores the pre-drag state
+      if (e.key === 'Escape' && isDragActive()) {
+        e.preventDefault()
+        cancelTransform()
+        cancelDragHistory()
+        return
+      }
+      // Every other shortcut waits for the drag to end: switching mode, tool or
+      // view, deleting or undoing would pull the dragged object out from under it
+      if (isDragActive()) return
+
+      const ui = useUIStore.getState()
+      const proj = useProjectStore.getState()
+      const modal = topModal(ui)
+
+      // Esc closes the topmost modal — also from a text field inside it
+      // (fields that handle Esc themselves, like the palette's, prevent default)
+      if (e.key === 'Escape' && modal) {
+        e.preventDefault()
+        ui.closeTopModal()
+        return
+      }
+
       // Don't intercept when user is typing in an input/textarea
       const tag = (e.target as HTMLElement)?.tagName
       if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return
 
-      const ui = useUIStore.getState()
-      const proj = useProjectStore.getState()
+      // Ctrl+S: save project — also while a modal is open (it changes nothing on screen)
+      if (e.ctrlKey && e.key === 's') {
+        e.preventDefault()
+        void saveProjectFile()
+        return
+      }
+
+      // A modal is open: ? closes the shortcut overlay (Esc see above), and
+      // every other global shortcut is off until it is closed — arrows scroll
+      // its list instead of nudging boards, Del doesn't delete the selection
+      // behind it, Ctrl+O doesn't swap the project under it.
+      if (modal || domModalOpen()) {
+        if (e.key === '?' && modal === 'showShortcutsOverlay') {
+          e.preventDefault()
+          ui.closeTopModal()
+        }
+        return
+      }
 
       // View switching: Alt+1/2/3/4
       if (e.altKey && ['1', '2', '3', '4'].includes(e.key)) {
@@ -60,6 +111,22 @@ export function useKeyboard() {
         ui.deselectAll()
         ui.setActiveTool('select')
         ui.clearMeasurements()
+        return
+      }
+
+      // Shift+F10 / context-menu key: the board context menu for the selection,
+      // opened over the middle of the canvas
+      if ((e.key === 'F10' && e.shiftKey) || e.key === 'ContextMenu') {
+        if (ui.selectedBoardIds.length > 0 && ui.selectedAssemblyId) {
+          e.preventDefault()
+          const rect = document.querySelector('canvas')?.getBoundingClientRect()
+          ui.setContextMenu({
+            x: rect ? Math.round(rect.left + rect.width / 2) : Math.round(window.innerWidth / 2),
+            y: rect ? Math.round(rect.top + rect.height / 2) : Math.round(window.innerHeight / 2),
+            boardId: ui.selectedBoardIds[0],
+            assemblyId: ui.selectedAssemblyId
+          })
+        }
         return
       }
 
@@ -141,7 +208,7 @@ export function useKeyboard() {
         return
       }
 
-      // Zoom: + / -
+      // + / -: size of the dimension labels (the camera zooms with the wheel / F)
       if (e.key === '+' || e.key === '=') {
         e.preventDefault()
         ui.setZoom(ui.zoom * 1.1)
@@ -177,14 +244,13 @@ export function useKeyboard() {
       // Ctrl+O: open project (with save-before-open guard)
       if (e.ctrlKey && e.key === 'o') {
         e.preventDefault()
-        const hasBoards = proj.project.assemblies.some((a) => a.boards.length > 0)
-        if (hasBoards && !window.confirm(i18n.t('actions.confirmOpen'))) return
+        if (!confirmDiscardChanges('open')) return
         void openProjectFile()
         return
       }
 
-      // Ctrl+D: duplicate selected boards
-      if (e.ctrlKey && e.key === 'd') {
+      // D / Ctrl+D: duplicate selected boards
+      if ((e.key === 'd' || e.key === 'D') && !e.altKey && !e.metaKey) {
         e.preventDefault()
         if (ui.selectedBoardIds.length > 0 && ui.selectedAssemblyId) {
           if (ui.selectedBoardIds.length === 1) {
@@ -225,18 +291,52 @@ export function useKeyboard() {
         ui.setShowShortcutsOverlay(!ui.showShortcutsOverlay)
         return
       }
-
-      // Ctrl+S: save project
-      if (e.ctrlKey && e.key === 's') {
-        e.preventDefault()
-        const data = JSON.stringify(proj.project, null, 2)
-        window.electronAPI?.fileSave(data, `${proj.project.name}.abrichten.json`)
-          ?.catch((err) => console.error('Failed to save file:', err))
-        return
-      }
     }
 
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
   }, [])
+}
+
+const FOCUSABLE = 'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+
+/**
+ * Focus handling for a modal dialog: moves focus into the dialog when it opens
+ * (onto the dialog itself unless a child already took it, e.g. via autoFocus),
+ * keeps Tab / Shift+Tab inside it, and hands focus back to whatever had it
+ * when the dialog closes. Put the returned ref on the element carrying
+ * role="dialog" and give that element tabIndex={-1}.
+ */
+export function useDialogFocus<T extends HTMLElement>(open: boolean): React.RefObject<T | null> {
+  const ref = useRef<T>(null)
+  useEffect(() => {
+    const el = ref.current
+    if (!open || !el) return
+    const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null
+    if (!el.contains(document.activeElement)) el.focus()
+
+    const onKeyDown = (e: KeyboardEvent): void => {
+      if (e.key !== 'Tab') return
+      const active = document.activeElement
+      // Focus sits in another (stacked) dialog — that one traps it
+      if (active?.closest('[aria-modal="true"]') && !el.contains(active)) return
+      const items = [...el.querySelectorAll<HTMLElement>(FOCUSABLE)].filter((n) => n.offsetParent !== null)
+      if (items.length === 0) { e.preventDefault(); el.focus(); return }
+      const first = items[0]
+      const last = items[items.length - 1]
+      if (!el.contains(active) || (e.shiftKey && (active === first || active === el))) {
+        e.preventDefault()
+        ;(e.shiftKey ? last : first).focus()
+      } else if (!e.shiftKey && active === last) {
+        e.preventDefault()
+        first.focus()
+      }
+    }
+    document.addEventListener('keydown', onKeyDown)
+    return () => {
+      document.removeEventListener('keydown', onKeyDown)
+      if (previous?.isConnected) previous.focus()
+    }
+  }, [open])
+  return ref
 }

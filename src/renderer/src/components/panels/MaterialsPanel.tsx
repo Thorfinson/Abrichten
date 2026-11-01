@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useProjectStore } from '../../store/useProjectStore'
 import { useUIStore } from '../../store/useUIStore'
+import { Dialog, Button, FIELD_CLASS, LABEL_CLASS, SECTION_LABEL_CLASS, CHECK_CLASS } from '../ui/Dialog'
 import { materials as builtinMaterials } from '../../data/materials'
 import type { Material, MaterialCategory } from '../../types/furniture'
 
@@ -60,7 +61,7 @@ function parseThicknesses(raw: string): number[] {
 }
 
 export function MaterialsPanel() {
-  const { i18n } = useTranslation()
+  const { t, i18n } = useTranslation()
   const lang = i18n.language as 'de' | 'en'
 
   const showMaterialsPanel = useUIStore((s) => s.showMaterialsPanel)
@@ -141,34 +142,37 @@ export function MaterialsPanel() {
 
   const setF = (key: keyof FormState, val: any) => setForm((f) => ({ ...f, [key]: val }))
 
+  const formOpen = isCreating || editingId !== null
+  const field = `${FIELD_CLASS} w-full`
+
   const MaterialForm = (
-    <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg flex flex-col gap-2">
+    <div className="flex flex-col gap-2.5 rounded border border-action/50 bg-chrome-deep/60 p-3">
       <div className="grid grid-cols-2 gap-2">
-        <div>
-          <label className="text-xs text-gray-500 block mb-0.5">{lang === 'de' ? 'Name (DE)' : 'Name'}</label>
+        <label>
+          <span className={LABEL_CLASS}>{lang === 'de' ? 'Name (DE)' : 'Name'}</span>
           <input
-            className="w-full text-xs border border-gray-300 rounded px-2 py-1 bg-white"
+            className={field}
             value={form.name}
             onChange={(e) => setF('name', e.target.value)}
-            placeholder={lang === 'de' ? 'z.B. Spanplatte Spezial' : 'e.g. Special Particleboard'}
+            placeholder={lang === 'de' ? 'z. B. Spanplatte Spezial' : 'e.g. Special Particleboard'}
           />
-        </div>
-        <div>
-          <label className="text-xs text-gray-500 block mb-0.5">Name (EN)</label>
+        </label>
+        <label>
+          <span className={LABEL_CLASS}>Name (EN)</span>
           <input
-            className="w-full text-xs border border-gray-300 rounded px-2 py-1 bg-white"
+            className={field}
             value={form.nameEn}
             onChange={(e) => setF('nameEn', e.target.value)}
             placeholder="e.g. Special Particleboard"
           />
-        </div>
+        </label>
       </div>
 
       <div className="grid grid-cols-3 gap-2">
-        <div>
-          <label className="text-xs text-gray-500 block mb-0.5">{lang === 'de' ? 'Kategorie' : 'Category'}</label>
+        <label>
+          <span className={LABEL_CLASS}>{lang === 'de' ? 'Kategorie' : 'Category'}</span>
           <select
-            className="w-full text-xs border border-gray-300 rounded px-2 py-1 bg-white"
+            className={field}
             value={form.category}
             onChange={(e) => setF('category', e.target.value as MaterialCategory)}
           >
@@ -176,31 +180,33 @@ export function MaterialsPanel() {
               <option key={c} value={c}>{CATEGORY_LABELS[c][lang]}</option>
             ))}
           </select>
-        </div>
+        </label>
         <div>
-          <label className="text-xs text-gray-500 block mb-0.5">{lang === 'de' ? 'Farbe' : 'Color'}</label>
+          <span className={LABEL_CLASS}>{lang === 'de' ? 'Farbe' : 'Color'}</span>
           <div className="flex items-center gap-1">
             <input
               type="color"
               value={form.color}
+              aria-label={lang === 'de' ? 'Farbe' : 'Color'}
               onChange={(e) => setF('color', e.target.value)}
-              className="w-8 h-7 border border-gray-300 rounded cursor-pointer p-0.5"
+              className="h-7 w-8 cursor-pointer rounded border border-chrome-border bg-chrome-deep p-0.5"
             />
             <input
-              className="flex-1 text-xs border border-gray-300 rounded px-1 py-1 bg-white font-mono"
+              className={`${FIELD_CLASS} min-w-0 flex-1 font-mono`}
               value={form.color}
+              aria-label={lang === 'de' ? 'Farbe (Hex)' : 'Color (hex)'}
               onChange={(e) => setF('color', e.target.value)}
               maxLength={7}
             />
           </div>
         </div>
-        <div className="flex items-end pb-1">
-          <label className="flex items-center gap-1.5 text-xs text-gray-600 cursor-pointer">
+        <div className="flex items-end pb-1.5">
+          <label className="flex cursor-pointer items-center gap-1.5 text-xs text-chrome-secondary">
             <input
               type="checkbox"
               checked={form.grain}
               onChange={(e) => setF('grain', e.target.checked)}
-              className="w-3 h-3"
+              className={CHECK_CLASS}
             />
             {lang === 'de' ? 'Maserung' : 'Grain'}
           </label>
@@ -208,164 +214,132 @@ export function MaterialsPanel() {
       </div>
 
       <div className="grid grid-cols-3 gap-2">
-        <div>
-          <label className="text-xs text-gray-500 block mb-0.5">{lang === 'de' ? 'Dichte (kg/m³)' : 'Density (kg/m³)'}</label>
-          <input
-            type="number"
-            className="w-full text-xs border border-gray-300 rounded px-2 py-1 bg-white"
-            value={form.density}
-            onChange={(e) => setF('density', e.target.value)}
-          />
-        </div>
-        <div>
-          <label className="text-xs text-gray-500 block mb-0.5">E-Modul (N/mm²)</label>
-          <input
-            type="number"
-            className="w-full text-xs border border-gray-300 rounded px-2 py-1 bg-white"
-            value={form.eModul}
-            onChange={(e) => setF('eModul', e.target.value)}
-          />
-        </div>
-        <div>
-          <label className="text-xs text-gray-500 block mb-0.5">{lang === 'de' ? 'Biegefestigkeit' : 'Bending Str.'} (N/mm²)</label>
-          <input
-            type="number"
-            className="w-full text-xs border border-gray-300 rounded px-2 py-1 bg-white"
-            value={form.bendingStrength}
-            onChange={(e) => setF('bendingStrength', e.target.value)}
-          />
-        </div>
+        <label>
+          <span className={LABEL_CLASS}>{lang === 'de' ? 'Dichte (kg/m³)' : 'Density (kg/m³)'}</span>
+          <input type="number" className={field} value={form.density} onChange={(e) => setF('density', e.target.value)} />
+        </label>
+        <label>
+          <span className={LABEL_CLASS}>E-Modul (N/mm²)</span>
+          <input type="number" className={field} value={form.eModul} onChange={(e) => setF('eModul', e.target.value)} />
+        </label>
+        <label>
+          <span className={LABEL_CLASS}>{lang === 'de' ? 'Biegefestigkeit' : 'Bending Str.'} (N/mm²)</span>
+          <input type="number" className={field} value={form.bendingStrength} onChange={(e) => setF('bendingStrength', e.target.value)} />
+        </label>
       </div>
 
-      <div>
-        <label className="text-xs text-gray-500 block mb-0.5">
+      <label>
+        <span className={LABEL_CLASS}>
           {lang === 'de' ? 'Standard-Dicken (mm, kommagetrennt)' : 'Default Thicknesses (mm, comma-separated)'}
-        </label>
+        </span>
         <input
-          className="w-full text-xs border border-gray-300 rounded px-2 py-1 bg-white"
+          className={field}
           value={form.thicknesses}
           onChange={(e) => setF('thicknesses', e.target.value)}
           placeholder="18, 22, 25"
         />
-      </div>
+      </label>
 
-      {error && <p className="text-xs text-red-600">{error}</p>}
+      {error && <p role="alert" className="text-xs text-danger">{error}</p>}
 
       <div className="flex justify-end gap-2 pt-1">
-        <button onClick={cancelForm} className="text-xs px-3 py-1 rounded bg-gray-100 text-gray-600 hover:bg-gray-200">
-          {lang === 'de' ? 'Abbrechen' : 'Cancel'}
-        </button>
-        <button
-          onClick={editingId ? handleUpdate : handleCreate}
-          className="text-xs px-3 py-1 rounded bg-blue-600 text-white hover:bg-blue-700"
-        >
+        <Button size="sm" onClick={cancelForm}>{lang === 'de' ? 'Abbrechen' : 'Cancel'}</Button>
+        <Button size="sm" variant="primary" onClick={editingId ? handleUpdate : handleCreate}>
           {editingId
             ? (lang === 'de' ? 'Speichern' : 'Save')
             : (lang === 'de' ? 'Hinzufügen' : 'Add')}
-        </button>
+        </Button>
       </div>
     </div>
   )
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={(e) => { if (e.target === e.currentTarget) setShowMaterialsPanel(false) }}>
-      <div className="bg-white rounded-lg shadow-xl w-[680px] max-h-[85vh] overflow-hidden flex flex-col">
+    <Dialog
+      title={lang === 'de' ? 'Materialien' : 'Materials'}
+      titleId="materials-title"
+      onClose={handleClose}
+      className="w-[700px]"
+      headerExtra={
+        // the main action until a form is open; then the form's Save is
+        <Button size="sm" variant={formOpen ? 'secondary' : 'primary'} onClick={startCreate} disabled={isCreating}>
+          + {lang === 'de' ? 'Neues Material' : 'New Material'}
+        </Button>
+      }
+      footer={<>
+        <span className="mr-auto text-xs text-chrome-muted">
+          {customMaterials.length} {lang === 'de' ? 'eigene' : 'custom'} · {builtinMaterials.length} {lang === 'de' ? 'Standard' : 'built-in'}
+        </span>
+        <Button onClick={handleClose}>{t('ui.close')}</Button>
+      </>}
+    >
+      <div className="flex flex-col gap-5">
+        {/* Create form */}
+        {isCreating && MaterialForm}
 
-        {/* Header */}
-        <div className="p-4 border-b border-gray-200 flex items-center justify-between shrink-0">
-          <h2 className="text-sm font-bold text-gray-800">
-            {lang === 'de' ? 'Materialien' : 'Materials'}
-          </h2>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={startCreate}
-              disabled={isCreating}
-              className="text-xs px-3 py-1 rounded bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50"
-            >
-              + {lang === 'de' ? 'Neues Material' : 'New Material'}
-            </button>
-            <button onClick={handleClose} className="text-gray-400 hover:text-gray-700 text-lg leading-none">×</button>
-          </div>
-        </div>
-
-        <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-4">
-          {/* Create form */}
-          {isCreating && MaterialForm}
-
-          {/* Custom materials */}
-          {customMaterials.length > 0 && (
-            <div>
-              <h3 className="text-xs font-semibold text-gray-600 uppercase tracking-wide mb-2">
-                {lang === 'de' ? 'Eigene Materialien' : 'Custom Materials'}
-              </h3>
-              <div className="flex flex-col gap-1">
-                {customMaterials.map((mat) => (
-                  <div key={mat.id}>
-                    {editingId === mat.id ? (
-                      MaterialForm
-                    ) : (
-                      <div className="flex items-center gap-2 p-2 rounded border border-blue-200 bg-blue-50 hover:bg-blue-100">
-                        <div
-                          className="w-5 h-5 rounded shrink-0 border border-gray-300"
-                          style={{ background: mat.color }}
-                        />
-                        <div className="flex-1 min-w-0">
-                          <span className="text-xs font-medium text-gray-800">{lang === 'de' ? mat.name : mat.nameEn}</span>
-                          <span className="text-xs text-gray-500 ml-2">{CATEGORY_LABELS[mat.category][lang]}</span>
-                          <span className="text-xs text-gray-400 ml-2">{mat.defaultThickness.join(', ')}mm</span>
-                        </div>
-                        <button
-                          onClick={() => startEdit(mat)}
-                          className="text-xs text-blue-600 hover:text-blue-800 px-1"
-                          title={lang === 'de' ? 'Bearbeiten' : 'Edit'}
-                        >✎</button>
-                        <button
-                          onClick={() => removeCustomMaterial(mat.id)}
-                          className="text-xs text-gray-400 hover:text-red-500 px-1"
-                          title={lang === 'de' ? 'Löschen' : 'Delete'}
-                        >×</button>
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Built-in materials (read-only) */}
-          <div>
-            <h3 className="text-xs font-semibold text-gray-600 uppercase tracking-wide mb-2">
-              {lang === 'de' ? 'Standard-Materialien' : 'Built-in Materials'} ({builtinMaterials.length})
+        {/* Custom materials */}
+        {customMaterials.length > 0 && (
+          <section>
+            <h3 className={`${SECTION_LABEL_CLASS} mb-2`}>
+              {lang === 'de' ? 'Eigene Materialien' : 'Custom Materials'}
             </h3>
-            <div className="flex flex-col gap-0.5">
-              {builtinMaterials.map((mat) => (
-                <div key={mat.id} className="flex items-center gap-2 px-2 py-1 rounded hover:bg-gray-50">
-                  <div
-                    className="w-4 h-4 rounded shrink-0 border border-gray-200"
-                    style={{ background: mat.color }}
-                  />
-                  <span className="text-xs text-gray-700 flex-1">{lang === 'de' ? mat.name : mat.nameEn}</span>
-                  <span className="text-xs text-gray-400">{CATEGORY_LABELS[mat.category][lang]}</span>
-                  <span className="text-xs text-gray-300">{mat.defaultThickness.join(', ')}mm</span>
+            <div className="flex flex-col gap-1">
+              {customMaterials.map((mat) => (
+                <div key={mat.id}>
+                  {editingId === mat.id ? (
+                    MaterialForm
+                  ) : (
+                    <div className="flex items-center gap-2 rounded border border-chrome-border bg-chrome-surface/40 px-2 py-1.5">
+                      <div
+                        className="h-5 w-5 shrink-0 rounded border border-chrome-divider"
+                        style={{ background: mat.color }}
+                      />
+                      <div className="min-w-0 flex-1 text-xs">
+                        <span className="font-medium text-chrome-text">{lang === 'de' ? mat.name : mat.nameEn}</span>
+                        <span className="ml-2 text-chrome-muted">{CATEGORY_LABELS[mat.category][lang]}</span>
+                        <span className="ml-2 font-mono text-chrome-hint">{mat.defaultThickness.join(', ')} mm</span>
+                      </div>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => startEdit(mat)}
+                        title={lang === 'de' ? 'Bearbeiten' : 'Edit'}
+                        aria-label={lang === 'de' ? 'Bearbeiten' : 'Edit'}
+                      >✎</Button>
+                      <Button
+                        variant="danger"
+                        size="sm"
+                        onClick={() => removeCustomMaterial(mat.id)}
+                        title={lang === 'de' ? 'Löschen' : 'Delete'}
+                        aria-label={lang === 'de' ? 'Löschen' : 'Delete'}
+                      >×</Button>
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
-          </div>
-        </div>
+          </section>
+        )}
 
-        {/* Footer */}
-        <div className="p-3 border-t border-gray-100 flex justify-between items-center shrink-0">
-          <span className="text-xs text-gray-400">
-            {customMaterials.length} {lang === 'de' ? 'eigene' : 'custom'} · {builtinMaterials.length} {lang === 'de' ? 'Standard' : 'built-in'}
-          </span>
-          <button
-            onClick={handleClose}
-            className="text-sm px-4 py-1.5 rounded bg-gray-100 text-gray-700 hover:bg-gray-200"
-          >
-            {lang === 'de' ? 'Schließen' : 'Close'}
-          </button>
-        </div>
+        {/* Built-in materials (read-only) */}
+        <section>
+          <h3 className={`${SECTION_LABEL_CLASS} mb-2`}>
+            {lang === 'de' ? 'Standard-Materialien' : 'Built-in Materials'} ({builtinMaterials.length})
+          </h3>
+          <div className="flex flex-col">
+            {builtinMaterials.map((mat) => (
+              <div key={mat.id} className="grid grid-cols-[0.875rem_minmax(0,1fr)_6rem_17.5rem] items-center gap-2 border-b border-chrome-border px-1 py-1 text-xs">
+                <div
+                  className="h-3.5 w-3.5 shrink-0 rounded-sm border border-chrome-divider"
+                  style={{ background: mat.color }}
+                />
+                <span className="truncate text-chrome-text">{lang === 'de' ? mat.name : mat.nameEn}</span>
+                <span className="text-chrome-muted">{CATEGORY_LABELS[mat.category][lang]}</span>
+                <span className="whitespace-nowrap text-right font-mono text-chrome-hint">{mat.defaultThickness.join(', ')} mm</span>
+              </div>
+            ))}
+          </div>
+        </section>
       </div>
-    </div>
+    </Dialog>
   )
 }

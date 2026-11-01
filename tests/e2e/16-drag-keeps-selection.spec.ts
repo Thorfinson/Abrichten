@@ -10,7 +10,7 @@ import {
  * also run the MarqueeSelect rubber-band invisibly — on pointerup every board
  * inside the drag rectangle got selected, replacing the dragged board's
  * selection. Fixed by stopping the NATIVE pointerdown propagation in
- * Board3D / TranslateHandles3D / FaceHandles3D / ResizeHandles3D /
+ * Board3D / TranslateHandles3D / ResizeHandles3D /
  * RotationHandle3D so the marquee never starts.
  */
 test.describe('Ortho drag keeps selection on the dragged board', () => {

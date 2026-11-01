@@ -1,37 +1,71 @@
+import type { ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useProjectStore } from '../../store/useProjectStore'
 import { useUIStore } from '../../store/useUIStore'
+import { SNAP_SIZES } from './layoutRules'
+import { SwitchTrack } from './Switch'
+import { Icon, type IconName } from './Icon'
 
-// ── Save toast (floating pill, above status bar) ──────────────────────────────
+// ── Toast (floating pill above the status bar) — export results and messages ──
 
 export function SaveToast() {
-  const saveStatus   = useUIStore((s) => s.saveStatus)
   const exportStatus = useUIStore((s) => s.exportStatus)
-  const { i18n } = useTranslation()
-  const lang = i18n.language as 'de' | 'en'
-
-  const msg = exportStatus
-    ?? (saveStatus === 'saved' ? '✓ Saved' : saveStatus === 'error' ? `⚠ ${lang === 'de' ? 'Speichern fehlgeschlagen' : 'Save failed'}` : null)
-
-  if (!msg) return null
+  if (!exportStatus) return null
 
   return (
-    <div className={`fixed bottom-8 left-1/2 -translate-x-1/2 z-40
-      bg-chrome-deep border border-chrome-border rounded-full
-      px-3 py-1 text-[11px] font-mono shadow-lg pointer-events-none
-      ${saveStatus === 'error' ? 'text-danger' : 'text-success'}`}>
-      {msg}
+    <div
+      role="status"
+      className="fixed top-20 left-1/2 -translate-x-1/2 z-40
+        bg-chrome-deep border border-chrome-border rounded-full
+        px-3 py-1 text-[11px] text-chrome-text shadow-lg pointer-events-none"
+    >
+      {exportStatus}
     </div>
   )
 }
 
 // ── Status bar ────────────────────────────────────────────────────────────────
 
-export function StatusBar() {
-  const { i18n } = useTranslation()
-  const lang = i18n.language as 'de' | 'en'
+const UNITS = ['mm', 'cm', 'm'] as const
 
-  const project        = useProjectStore((s) => s.project)
+function Divider() {
+  return <div className="w-px h-4 bg-chrome-border shrink-0" />
+}
+
+/** Labelled on/off switch for the status bar */
+function StatusSwitch({ on, onClick, label, title, icon }: {
+  on: boolean; onClick: () => void; label: string; title: string; icon: IconName
+}) {
+  return (
+    <button
+      role="switch"
+      aria-checked={on}
+      onClick={onClick}
+      title={title}
+      className={`h-6 flex items-center gap-1.5 px-1.5 rounded transition-colors hover:bg-chrome-surface ${
+        on ? 'text-chrome-text' : 'text-chrome-muted hover:text-chrome-secondary'
+      }`}
+    >
+      <Icon name={icon} className={`w-3.5 h-3.5 ${on ? 'text-accent' : ''}`} />
+      <span className="text-[11px] font-medium">{label}</span>
+      <SwitchTrack on={on} />
+    </button>
+  )
+}
+
+interface StatusBarProps {
+  /**
+   * Unsaved-changes slot: true shows the "unsaved changes" marker. Wire it to
+   * the project store's dirty tracking (`project !== savedProject`); leave it
+   * undefined until then.
+   */
+  unsaved?: boolean
+}
+
+export function StatusBar({ unsaved }: StatusBarProps = {}) {
+  const { t } = useTranslation()
+
+  const displayUnit    = useProjectStore((s) => s.project.displayUnit)
   const setDisplayUnit = useProjectStore((s) => s.setDisplayUnit)
 
   const snapEnabled = useUIStore((s) => s.snapEnabled)
@@ -40,94 +74,109 @@ export function StatusBar() {
   const setSnapSize = useUIStore((s) => s.setSnapSize)
   const showGrid    = useUIStore((s) => s.showGrid)
   const toggleGrid  = useUIStore((s) => s.toggleGrid)
+  const saveStatus  = useUIStore((s) => s.saveStatus)
 
   const hoveredWorldPos = useUIStore((s) => s.hoveredWorldPos)
   const activeView      = useUIStore((s) => s.activeView)
 
-  // Snap size cycling
-  const SNAP_SIZES = [1, 5, 10, 25, 50, 100]
-  const cycleSnap = (dir: 1 | -1) => {
-    const idx = SNAP_SIZES.indexOf(snapSize)
-    const next = SNAP_SIZES[(idx + dir + SNAP_SIZES.length) % SNAP_SIZES.length]
-    setSnapSize(next)
-    if (!snapEnabled) toggleSnap()
-  }
-
-  // Unit cycling
-  const UNITS = ['mm', 'cm', 'm'] as const
-  const cycleUnit = () => {
-    const idx = UNITS.indexOf(project.displayUnit)
-    setDisplayUnit(UNITS[(idx + 1) % UNITS.length])
-  }
+  // Any other size (set elsewhere) stays selectable
+  const sizes: number[] = (SNAP_SIZES as readonly number[]).includes(snapSize)
+    ? [...SNAP_SIZES]
+    : [...SNAP_SIZES, snapSize].sort((a, b) => a - b)
 
   return (
-    <div className="h-6 bg-chrome-deep border-t border-chrome-border flex items-center px-3 gap-3 shrink-0 select-none">
-
-      {/* Snap stepper */}
-      <div className={`flex items-center rounded border transition-colors ${
-        snapEnabled ? 'border-accent' : 'border-chrome-border'
-      }`}>
-        <button
-          onClick={() => cycleSnap(-1)}
-          className={`w-5 h-4 flex items-center justify-center text-[11px] leading-none rounded-l transition-colors ${
-            snapEnabled
-              ? 'text-accent-text hover:bg-accent-dim'
-              : 'text-chrome-muted hover:text-chrome-secondary hover:bg-chrome-surface'
-          }`}
-        >−</button>
-        <button
+    <footer
+      aria-label={t('layout.status.label')}
+      className="h-7 bg-chrome-deep border-t border-chrome-border text-chrome-secondary flex items-center px-2 gap-2 shrink-0 select-none"
+    >
+      {/* Snap: on/off + grid size. Picking a size also turns snapping on. */}
+      <div className="flex items-center gap-1">
+        <StatusSwitch
+          on={snapEnabled}
           onClick={toggleSnap}
-          title={lang === 'de' ? 'Raster ein/aus (S)' : 'Toggle snap (S)'}
-          className={`px-1.5 h-4 font-mono text-[10px] leading-none transition-colors ${
-            snapEnabled
-              ? 'text-accent-text bg-accent-dim'
-              : 'text-chrome-secondary hover:text-chrome-text'
+          label={t('layout.status.snap')}
+          title={t('layout.status.snapTitle')}
+          icon="magnet"
+        />
+        <select
+          value={snapSize}
+          onChange={(e) => {
+            setSnapSize(Number(e.target.value))
+            if (!snapEnabled) toggleSnap()
+          }}
+          aria-label={t('layout.status.snapSize')}
+          title={t('layout.status.snapSize')}
+          className={`h-5 pl-1 pr-0.5 rounded border border-chrome-border bg-chrome-bg font-mono text-[11px] outline-none focus-visible:border-action-hover ${
+            snapEnabled ? 'text-chrome-text' : 'text-chrome-muted'
           }`}
         >
-          {snapSize}mm
-        </button>
-        <button
-          onClick={() => cycleSnap(1)}
-          className={`w-5 h-4 flex items-center justify-center text-[11px] leading-none rounded-r transition-colors ${
-            snapEnabled
-              ? 'text-accent-text hover:bg-accent-dim'
-              : 'text-chrome-muted hover:text-chrome-secondary hover:bg-chrome-surface'
-          }`}
-        >+</button>
+          {sizes.map((s) => (
+            <option key={s} value={s} className="bg-chrome-bg text-chrome-text">{s} mm</option>
+          ))}
+        </select>
       </div>
 
-      {/* Grid toggle */}
-      <button
+      <Divider />
+
+      <StatusSwitch
+        on={showGrid}
         onClick={toggleGrid}
-        title={lang === 'de' ? 'Raster anzeigen (Alt+G)' : 'Toggle grid (Alt+G)'}
-        className={`h-4 w-5 flex items-center justify-center rounded text-[11px] transition-colors ${
-          showGrid
-            ? 'text-accent-text bg-accent-dim'
-            : 'text-chrome-muted hover:text-chrome-secondary hover:bg-chrome-surface'
-        }`}
-      >⊞</button>
+        label={t('layout.status.grid')}
+        title={t('layout.status.gridTitle')}
+        icon="grid"
+      />
 
-      {/* Unit cycler */}
-      <button
-        onClick={cycleUnit}
-        title={lang === 'de' ? 'Einheit wechseln' : 'Cycle unit'}
-        className="h-4 px-1.5 rounded font-mono text-[10px] text-chrome-secondary hover:text-chrome-text hover:bg-chrome-surface transition-colors flex items-center gap-0.5"
-      >
-        {project.displayUnit}
-        <span className="text-chrome-hint text-[8px]">▸</span>
-      </button>
+      <Divider />
 
-      {/* Separator */}
-      <div className="w-px h-3 bg-chrome-divider shrink-0" />
+      {/* Display unit */}
+      <div className="flex items-center gap-1.5">
+        <span id="status-unit-label" className="text-[11px] text-chrome-muted">{t('layout.status.unit')}</span>
+        <div role="radiogroup" aria-labelledby="status-unit-label" className="flex rounded border border-chrome-border overflow-hidden">
+          {UNITS.map((u) => (
+            <button
+              key={u}
+              role="radio"
+              aria-checked={displayUnit === u}
+              onClick={() => setDisplayUnit(u)}
+              className={`h-5 px-2 font-mono text-[11px] transition-colors ${
+                displayUnit === u
+                  ? 'bg-chrome-surface text-chrome-text'
+                  : 'text-chrome-muted hover:text-chrome-text hover:bg-chrome-bg'
+              }`}
+            >
+              {t(`units.${u}`)}
+            </button>
+          ))}
+        </div>
+      </div>
 
-      {/* World position readout */}
-      {hoveredWorldPos && (
-        <span className="font-mono text-[10px] text-chrome-hint">
-          X{Math.round(hoveredWorldPos.x)}&thinsp;Y{Math.round(hoveredWorldPos.y)}
-          {activeView !== 'top' && <>&thinsp;Z{Math.round(hoveredWorldPos.z)}</>}
-        </span>
-      )}
+      <Divider />
 
-    </div>
+      {/* World position under the cursor */}
+      <span className="font-mono text-[11px] text-chrome-muted tabular-nums whitespace-nowrap" title={t('layout.status.cursor')}>
+        {hoveredWorldPos ? (
+          <>
+            X {Math.round(hoveredWorldPos.x)}&ensp;Y {Math.round(hoveredWorldPos.y)}
+            {activeView !== 'top' && <>&ensp;Z {Math.round(hoveredWorldPos.z)}</>}
+          </>
+        ) : '—'}
+      </span>
+
+      {/* Right side: unsaved-changes slot, then the auto-save state */}
+      <div className="ml-auto flex items-center gap-3 text-[11px]" aria-live="polite">
+        {unsaved && (
+          <span className="flex items-center gap-1.5 text-accent" title={t('layout.status.unsavedTitle')}>
+            <span className="w-1.5 h-1.5 rounded-full bg-accent" aria-hidden="true" />
+            {t('layout.status.unsaved')}
+          </span>
+        )}
+        {saveStatus === 'saved' && (
+          <span className="text-success" title={t('layout.status.savedTitle')}>{t('layout.status.saved')}</span>
+        )}
+        {saveStatus === 'error' && (
+          <span className="text-danger" title={t('layout.status.saveFailedTitle')}>{t('layout.status.saveFailed')}</span>
+        )}
+      </div>
+    </footer>
   )
 }

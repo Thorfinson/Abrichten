@@ -3,7 +3,10 @@ import type { Board } from '../types/furniture'
 
 export interface BoardAction {
   name: string
+  /** Validated boards, ready for addBoardsBatch. */
   boards: Omit<Board, 'id'>[]
+  /** Boards the model sent that could not be used, one reason each (see parseSketchResponse). */
+  skipped: string[]
 }
 
 /**
@@ -57,18 +60,18 @@ function tryParseBoards(jsonStr: string): BoardAction | null {
     // First try direct JSON.parse for clean JSON
     const obj = JSON.parse(jsonStr)
     if (obj.boards && Array.isArray(obj.boards) && obj.boards.length > 0) {
-      // Use parseSketchResponse for material mapping and validation
+      // parseSketchResponse maps materials and validates every board like a project file
       const parsed = parseSketchResponse(jsonStr)
-      if (parsed.boards.length > 0) {
-        return { name: parsed.name, boards: parsed.boards }
+      if (parsed.boards.length > 0 || parsed.skipped.length > 0) {
+        return { name: parsed.name, boards: parsed.boards, skipped: parsed.skipped }
       }
     }
   } catch {
     // Try parseSketchResponse which has its own JSON extraction logic
     try {
       const parsed = parseSketchResponse(jsonStr)
-      if (parsed.boards.length > 0) {
-        return { name: parsed.name, boards: parsed.boards }
+      if (parsed.boards.length > 0 || parsed.skipped.length > 0) {
+        return { name: parsed.name, boards: parsed.boards, skipped: parsed.skipped }
       }
     } catch {
       // Not valid board JSON

@@ -1,5 +1,12 @@
 import type { Board } from '../types/furniture'
 import { clampCutouts } from './geometry'
+import { boardFace } from './boardFace'
+
+/** DXF is line based (group code, value): CR, LF or other control characters in a
+ *  value would start new groups, e.g. extra entities or an early `0 EOF`. */
+function dxfText(s: string): string {
+  return s.replace(/[\u0000-\u001f\u007f]/g, ' ')
+}
 
 /**
  * Generates a DXF file (R12/AC1009) with proper machining layers.
@@ -11,7 +18,8 @@ import { clampCutouts } from './geometry'
  *   GRAIN     – grain direction indicator (not cut)
  *   TEXT      – part labels (not cut)
  *
- * Boards are laid out in a row separated by a 50 mm gap.
+ * Each board is drawn as its face (boardFace: the two dimensions besides the
+ * thickness). Boards are laid out in a row separated by a 50 mm gap.
  */
 export function exportDxf(boards: Board[]): string {
   const lines: string[] = []
@@ -52,8 +60,9 @@ export function exportDxf(boards: Board[]): string {
   let offsetX = 0
 
   for (const board of boards) {
-    const w = board.width
-    const d = board.depth
+    const face = boardFace(board)
+    const w = face.u
+    const d = face.v
     const x0 = offsetX
     const y0 = 0
 
@@ -72,7 +81,9 @@ export function exportDxf(boards: Board[]): string {
     lines.push('0', 'SEQEND')
 
     // ── Cutouts (CUTOUT layer) — through-thickness openings ──────────────
-    for (const c of clampCutouts(board)) {
+    // Cutouts run through the height axis, so they pierce the face only when the
+    // height is the thickness; then the face is width × depth, as the cutout x/z.
+    for (const c of face.thicknessAxis === 'height' ? clampCutouts(board) : []) {
       lines.push('0', 'POLYLINE', '8', 'CUTOUT', '66', '1', '70', '1')
       const cc: [number, number][] = [
         [x0 + c.x,           y0 + c.z],
@@ -108,9 +119,10 @@ export function exportDxf(boards: Board[]): string {
       const cy = y0 + d / 2
       const len = Math.min(w, d) * 0.3
       let x1 = cx, y1 = cy, x2 = cx, y2 = cy
-      if (board.grainDirection === 'width')  { x1 = cx - len; x2 = cx + len }
-      if (board.grainDirection === 'depth')  { y1 = cy - len; y2 = cy + len }
-      if (board.grainDirection === 'height') {
+      if (board.grainDirection === face.uAxis)      { x1 = cx - len; x2 = cx + len }
+      else if (board.grainDirection === face.vAxis) { y1 = cy - len; y2 = cy + len }
+      else {
+        // grain along the thickness: diagonal marker
         x1 = cx - len * 0.7; y1 = cy - len * 0.7
         x2 = cx + len * 0.7; y2 = cy + len * 0.7
       }
@@ -123,7 +135,7 @@ export function exportDxf(boards: Board[]): string {
     lines.push('0', 'TEXT', '8', 'TEXT')
     lines.push('10', (x0 + 4).toFixed(3), '20', (y0 + 4).toFixed(3), '30', '0.0')
     lines.push('40', '8')
-    lines.push('1', `${board.name}  ${w}x${d}x${board.height}mm`)
+    lines.push('1', dxfText(`${board.name}  ${w}x${d}x${face.thickness}mm`))
 
     offsetX += w + GAP
   }

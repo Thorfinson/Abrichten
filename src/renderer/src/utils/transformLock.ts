@@ -18,16 +18,37 @@ const GRACE_MS = 250
 
 let dragging = false
 let lastDragEnd = -Infinity
+let cancelActive: (() => void) | null = null
 
-export function beginTransform(): void {
+/** Start a drag. `onCancel` lets the dragging handle drop its own drag state when Esc cancels. */
+export function beginTransform(onCancel?: () => void): void {
   dragging = true
+  cancelActive = onCancel ?? null
 }
 
 export function endTransform(): void {
   dragging = false
+  cancelActive = null
   lastDragEnd = performance.now()
 }
 
+/** True during a drag and for a short grace window after it (see above). */
 export function isTransforming(): boolean {
   return dragging || performance.now() - lastDragEnd < GRACE_MS
+}
+
+/** True only while a drag is actually in progress (no grace window). */
+export function isDragActive(): boolean {
+  return dragging
+}
+
+/** Esc during a drag: let the dragging handle reset itself, then end the drag.
+ *  Returns false when no drag is in progress. */
+export function cancelTransform(): boolean {
+  if (!dragging) return false
+  const onCancel = cancelActive
+  cancelActive = null
+  onCancel?.()
+  endTransform()
+  return true
 }

@@ -1,293 +1,442 @@
-import { useMemo, useState, useEffect } from 'react'
-import { Html } from '@react-three/drei'
+import { useEffect, useMemo } from 'react'
+import { Billboard, Html } from '@react-three/drei'
+import { useThree, type ThreeEvent } from '@react-three/fiber'
 import * as THREE from 'three'
 import { useTranslation } from 'react-i18next'
-import { useProjectStore } from '../../store/useProjectStore'
+import type { TFunction } from 'i18next'
 import { useUIStore } from '../../store/useUIStore'
-import { calculateStatic, type StaticRating } from '../../services/static-calc'
-import { getMaterialById } from '../../data/materials'
-import type { Board, Assembly } from '../../types/furniture'
+import { useProjectStore } from '../../store/useProjectStore'
+import { useStaticSimulation, useStaticStore, modelFieldMax, DEFORMATION_SCALE, type StaticResultType, type StaticScaleMode } from '../../store/useStaticStore'
+import { faceToWorld, worldToFace, type BoardStatic } from '../../services/static-sim'
+import { utilisationRgb, utilisationCss, UNSUPPORTED_COLOR, NEUTRAL_COLOR, SUPPORT_COLOR, JOINT_COLOR } from '../../services/static-calc'
+import { MAX_LOADS_PER_BOARD } from '../../utils/validateProject'
+import { HTML_Z_RANGE } from '../canvasTheme'
+import type { Board } from '../../types/furniture'
+import {
+  fieldGeometry, contourGeometry, boxCentre, frameOf, nodeNear, nodeWorld, place, displacement, type Rgba, type Vec
+} from './staticFieldGeometry'
 
-const OVERLAY_COLORS: Record<StaticRating, number> = {
-  ok: 0x22c55e,
-  warning: 0xeab308,
-  critical: 0xef4444
-}
-
-const OVERLAY_OPACITY: Record<StaticRating, number> = {
-  ok: 0.12,
-  warning: 0.18,
-  critical: 0.22
-}
-
-const BORDER_COLORS: Record<StaticRating, string> = {
-  ok: '#22c55e',
-  warning: '#eab308',
-  critical: '#ef4444'
-}
-
+/** The heat map sits this far outside the board; polygonOffset does the rest against z-fighting. */
+const INFLATE_MM = 0.3
+/** Contour lines lie this far above the heat map. */
+const CONTOUR_LIFT_MM = 0.6
+/** Contour levels: 25 / 50 / 75 / 100 % of the scale. */
+export const CONTOUR_LEVELS = [0.25, 0.5, 0.75, 1] as const
 /**
- * Find all boards that support a given board from below.
- * Returns boards that overlap horizontally and touch or are just below vertically (within 5mm).
+ * Opacity follows the value: parts that carry little stay see-through, so the stressed
+ * ones stand out and parts behind them stay visible.
  */
-function findSupportBoards(target: Board, allBoards: Board[]): Board[] {
-  const sMinX = target.position.x
-  const sMaxX = target.position.x + target.width
-  const sMinZ = target.position.z
-  const sMaxZ = target.position.z + target.depth
-  const sBottomY = target.position.y
+const MIN_ALPHA = 0.62
+const SOLID_FROM = 0.5
+const UNSUPPORTED_ALPHA = 0.75
+const NEUTRAL_ALPHA = 0.22
+/** Outline crease angle: the box edges, not the element edges. */
+const EDGE_ANGLE_DEG = 25
+const BREAK_COLOR = '#ef4444'
+const WARNING_COLOR = '#f59e0b'
+const SELECTED_COLOR = '#3b82f6'
+const HOTSPOT_COLOR = '#fafafa'
+const HOTSPOT_HALO = '#18181b'
+/** Support markers: this share of the board's longest side, within these limits (mm). */
+const SUPPORT_SHARE = 0.012
+const SUPPORT_MIN_MM = 5
+const SUPPORT_MAX_MM = 14
+const LOAD_COLOR = '#f4f4f5'
+const CONTOUR_COLOR = '#09090b'
+/** Drawn after the boards, so the heat map tints them. */
+const HEAT_RENDER_ORDER = 2
+const MARKER_RENDER_ORDER = 10
+/** A placed load is a patch of this size (mm), as large as fits on a smaller board. */
+export const LOAD_PATCH_MM = 100
+/** Load arrow: head and shaft length, mm. */
+const ARROW_HEAD_MM = 24
+const ARROW_SHAFT_MM = 110
+/** The label stands this far (px) above its hot-spot ring. */
+const LABEL_CLEARANCE_PX = 26
+/** A click that moved further than this (px) was a drag, not a placement. */
+const CLICK_SLOP_PX = 4
+/** Overlay meshes take no pointer events unless a load is being placed: picking and dragging stay with the boards. */
+const noRaycast = (): void => {}
 
-  const supports: Board[] = []
-  for (const b of allBoards) {
-    if (b.id === target.id) continue
-    const bTopY = b.position.y + b.height
-    // Must be near the bottom of the target (within 5mm tolerance)
-    if (Math.abs(bTopY - sBottomY) > 5) continue
-    // Must overlap horizontally in X and Z
-    const bMinX = b.position.x
-    const bMaxX = b.position.x + b.width
-    const bMinZ = b.position.z
-    const bMaxZ = b.position.z + b.depth
-    const overlapX = Math.min(sMaxX, bMaxX) - Math.max(sMinX, bMinX)
-    const overlapZ = Math.min(sMaxZ, bMaxZ) - Math.max(sMinZ, bMinZ)
-    if (overlapX > 0 && overlapZ > 0) supports.push(b)
+const heatAlpha = (v: number): number => MIN_ALPHA + (1 - MIN_ALPHA) * Math.min(1, Math.max(0, v) / SOLID_FROM)
+const fmt = (v: number, lang: string, digits = 1): string => v.toLocaleString(lang, { maximumFractionDigits: digits })
+const isRated = (r: BoardStatic): boolean => r.status !== 'unsupported' && r.status !== 'wallHung'
+const isLying = (r: BoardStatic): boolean => r.field.axes[1] === 'z'
+/** Critical by its deflection, not its stress: the deflection is what to point at. */
+const sagGoverns = (r: BoardStatic): boolean => r.status === 'critical' && r.uMax < 1
+
+function heatRgba(v: number): Rgba {
+  const [r, g, b] = utilisationRgb(v)
+  const c = new THREE.Color().setRGB(r, g, b, THREE.SRGBColorSpace)
+  return { r: c.r, g: c.g, b: c.b, a: heatAlpha(v) }
+}
+
+/** Label text of a board, or null when it gets none (ok and not selected). */
+export function staticLabel(r: BoardStatic, selected: boolean, mode: StaticResultType, t: TFunction, lang: string): string | null {
+  if (r.status === 'unsupported') return selected ? t('sim.unsupported') : null   // purple + legend say it; labels would pile up
+  if (r.status === 'wallHung') return selected ? t('sim.wallHung') : null
+  if (r.status !== 'warning' && r.status !== 'critical' && !selected) return null
+  const u = Math.round(r.uMax * 100)
+  const sag = { d: fmt(r.deflectionMm, lang), allow: fmt(r.allowableDeflectionMm, lang) }
+  if (mode === 'deflection') return r.allowableDeflectionMm > 0 ? t('sim.labelSag', sag) : t('sim.labelMax', { u: Math.round(r.sagMax * 100) })
+  if (r.uMax >= 1) return r.governing === 'buckling' ? t('sim.labelBuckling', { u }) : t('sim.labelBreak', { u })
+  if (sagGoverns(r)) return t('sim.labelSag', sag)
+  return r.status === 'warning' && r.sagMax > r.uMax ? t('sim.labelMaxSag', { u, ...sag }) : t('sim.labelMax', { u })
+}
+
+/** Colour of a board's outline and label accent. */
+function accentColor(r: BoardStatic): string {
+  if (r.status === 'unsupported') return UNSUPPORTED_COLOR
+  if (r.status === 'wallHung') return NEUTRAL_COLOR
+  if (r.status === 'critical') return BREAK_COLOR
+  if (r.status === 'warning') return WARNING_COLOR
+  return utilisationCss(r.uMax)
+}
+
+/** Places a load (one undo step) where a lying board's top was clicked. */
+function placeLoad(boardId: string, point: THREE.Vector3, kg: number): void {
+  const { project, updateBoard } = useProjectStore.getState()
+  for (const assembly of project.assemblies) {
+    const board = assembly.boards.find((b) => b.id === boardId)
+    if (!board) continue
+    const local = worldToFace(board, { x: point.x, z: point.z })
+    if (!local || (board.loads?.length ?? 0) >= MAX_LOADS_PER_BOARD) return
+    const w = Math.min(LOAD_PATCH_MM, board.width), d = Math.min(LOAD_PATCH_MM, board.depth)
+    const clamp = (v: number, hi: number): number => Math.round(Math.min(hi, Math.max(0, v)))
+    const load = { id: crypto.randomUUID(), x: clamp(local.x - w / 2, board.width - w), z: clamp(local.z - d / 2, board.depth - d), kg, w, d }
+    updateBoard(assembly.id, board.id, { loads: [...(board.loads ?? []), load] })
+    return
   }
-  return supports
+}
+
+/** Ring at the hot spot, always facing the camera and drawn over everything. */
+function HotSpot({ boardId, position, radius, breaks }: { boardId: string; position: Vec; radius: number; breaks: boolean }) {
+  const ring = useMemo(() => new THREE.RingGeometry(radius * 0.62, radius, 40), [radius])
+  const halo = useMemo(() => new THREE.RingGeometry(radius * 0.5, radius * 1.14, 40), [radius])
+  const dot = useMemo(() => new THREE.CircleGeometry(radius * 0.2, 20), [radius])
+  useEffect(() => () => { ring.dispose(); halo.dispose(); dot.dispose() }, [ring, halo, dot])
+  const color = breaks ? BREAK_COLOR : HOTSPOT_COLOR
+  return (
+    <Billboard position={position} userData={{ staticHotspot: boardId }}>
+      <mesh geometry={halo} renderOrder={MARKER_RENDER_ORDER} raycast={noRaycast}>
+        <meshBasicMaterial color={HOTSPOT_HALO} transparent opacity={0.55} depthTest={false} depthWrite={false} />
+      </mesh>
+      <mesh geometry={ring} renderOrder={MARKER_RENDER_ORDER + 1} raycast={noRaycast}>
+        <meshBasicMaterial color={color} transparent depthTest={false} depthWrite={false} />
+      </mesh>
+      <mesh geometry={dot} renderOrder={MARKER_RENDER_ORDER + 1} raycast={noRaycast}>
+        <meshBasicMaterial color={color} transparent depthTest={false} depthWrite={false} />
+      </mesh>
+    </Billboard>
+  )
 }
 
 /**
- * Calculate the weight of a board in kg from its volume and material density.
- * Volume: width × height × depth (mm³) → convert to m³ (÷ 1e9)
- * Weight: volume_m³ × density_kg/m³
+ * The supported nodes of the selected board in their final contact state: a small cone
+ * under each, pointing at the board (the usual support symbol), drawn over everything.
  */
-function boardWeightKg(board: Board): number {
-  const mat = getMaterialById(board.materialId)
-  if (!mat) return 0
-  const volumeM3 = (board.width * board.height * board.depth) / 1e9
-  return volumeM3 * mat.density
+function Supports({ r, scale }: { r: BoardStatic; scale: number }) {
+  const span = Math.max(r.box.x1 - r.box.x0, r.box.y1 - r.box.y0, r.box.z1 - r.box.z0)
+  const size = Math.min(SUPPORT_MAX_MM, Math.max(SUPPORT_MIN_MM, SUPPORT_SHARE * span))
+  return (
+    <>
+      <SupportMarkers r={r} scale={scale} size={size} kind={1} />
+      <SupportMarkers r={r} scale={scale} size={size} kind={2} />
+    </>
+  )
 }
 
-/**
- * Find all stone boards sitting on top of a given support board.
- * Returns the total load in kg from those stones.
- */
-function stoneLoadOnSupport(support: Board, allBoards: Board[]): number {
-  const bTopY = support.position.y + support.height
-  const bMinX = support.position.x
-  const bMaxX = support.position.x + support.width
-  const bMinZ = support.position.z
-  const bMaxZ = support.position.z + support.depth
-
-  let totalLoad = 0
-  for (const s of allBoards) {
-    if (s.id === support.id) continue
-    const sMat = getMaterialById(s.materialId)
-    if (!sMat || sMat.category !== 'stone') continue
-    // Stone must sit on top of this support (within 5mm)
-    if (Math.abs(s.position.y - bTopY) > 5) continue
-
-    const sMinX = s.position.x
-    const sMaxX = s.position.x + s.width
-    const sMinZ = s.position.z
-    const sMaxZ = s.position.z + s.depth
-    const overlapX = Math.min(sMaxX, bMaxX) - Math.max(sMinX, bMinX)
-    const overlapZ = Math.min(sMaxZ, bMaxZ) - Math.max(sMinZ, bMinZ)
-    if (overlapX <= 0 || overlapZ <= 0) continue
-
-    // Proportion of stone weight on this support = overlap area / stone total area
-    const stoneArea = s.width * s.depth
-    const overlapArea = overlapX * overlapZ
-    const fraction = stoneArea > 0 ? overlapArea / stoneArea : 0
-    const stoneWeight = boardWeightKg(s)
-    totalLoad += stoneWeight * fraction
-  }
-  return totalLoad
+/** One kind of support marker: 1 resting contacts (cones), 2 joints (squares). */
+function SupportMarkers({ r, scale, size, kind }: { r: BoardStatic; scale: number; size: number; kind: 1 | 2 }) {
+  const points = useMemo(() => {
+    const f = frameOf(r), fld = r.field, na = fld.a.length
+    const out: Vec[] = []
+    if (r.model === 'none') return out
+    for (let n = 0; n < fld.held.length; n++) {
+      if (fld.held[n] !== kind) continue
+      const [da, db, dc] = displacement(r, f, n, scale)
+      const a = fld.a[n % na] + da, b = fld.b[Math.floor(n / na)] + db
+      // below the bottom face of a lying board, below the node of a standing one
+      out.push(f.C === 'y' ? place(f, a, b, f.c0 - size + dc) : place(f, a, b - size, (f.c0 + f.c1) / 2))
+    }
+    return out
+  }, [r, scale, size])
+  const geometry = useMemo(
+    () => (kind === 1 ? new THREE.ConeGeometry(size * 0.6, size * 1.6, 12) : new THREE.BoxGeometry(size, size, size)),
+    [size, kind]
+  )
+  const mesh = useMemo(() => {
+    const material = new THREE.MeshBasicMaterial({ color: kind === 1 ? SUPPORT_COLOR : JOINT_COLOR, transparent: true, depthTest: false, depthWrite: false })
+    const m = new THREE.InstancedMesh(geometry, material, Math.max(1, points.length))
+    const mat = new THREE.Matrix4()
+    points.forEach((p, k) => m.setMatrixAt(k, mat.makeTranslation(p[0], p[1], p[2])))
+    m.count = points.length
+    m.renderOrder = MARKER_RENDER_ORDER
+    m.raycast = noRaycast
+    m.userData = { staticSupports: r.boardId, kind: kind === 1 ? 'contact' : 'joint', count: points.length }
+    return m
+  }, [geometry, points, r.boardId, kind])
+  useEffect(() => () => { (mesh.material as THREE.Material).dispose(); mesh.dispose() }, [mesh])
+  useEffect(() => () => geometry.dispose(), [geometry])
+  return <primitive object={mesh} />
 }
 
-function StaticBox({ board, allBoards, userLoadKg }: { board: Board; allBoards: Board[]; userLoadKg: number }) {
+interface BoardHeatProps {
+  result: BoardStatic
+  scale: number
+  mode: StaticResultType
+  /** Upper end of the colour range; null = the board's own maximum */
+  rangeTop: number | null
+  contours: boolean
+  selected: boolean
+  placing: boolean
+  placeKg: number
+  material: THREE.Material
+}
+
+/** Values divided by `top`, the upper end of the colour range (unchanged for 1 or nothing to scale by). */
+function toRange(values: ArrayLike<number>, top: number): ArrayLike<number> {
+  if (!(top > 0) || top === 1) return values
+  const out = new Float32Array(values.length)
+  for (let i = 0; i < values.length; i++) out[i] = values[i] / top
+  return out
+}
+
+function BoardHeat({ result: r, scale, mode, rangeTop, contours, selected, placing, placeKg, material }: BoardHeatProps) {
   const { t, i18n } = useTranslation()
-  const lang = i18n.language as 'de' | 'en'
-  const material = getMaterialById(board.materialId)
-  const [hovered, setHovered] = useState(false)
-
-  const analysis = useMemo(() => {
-    if (!material) return null
-
-    const isStone = material.category === 'stone'
-
-    if (isStone) {
-      // Standing stone (tiles, sink walls: thickness axis horizontal) is glued, not a slab
-      if (Math.min(board.width, board.depth) < board.height) {
-        return { rating: 'ok' as StaticRating, annotation: null, weight: boardWeightKg(board) }
-      }
-      // Stone: check if supported, calculate weight for display
-      const supports = findSupportBoards(board, allBoards)
-      const weight = boardWeightKg(board)
-      if (supports.length > 0) {
-        // Has support → OK
-        return { rating: 'ok' as StaticRating, annotation: null, weight }
-      }
-      // No support
-      return {
-        rating: 'critical' as StaticRating,
-        annotation: `${t('static.supportRequired')} (${weight.toFixed(1)} kg)`,
-        weight
-      }
+  const rated = isRated(r)
+  const raw = mode === 'stress' ? r.field.u : r.field.sag
+  // Colour range 0 … rangeTop (model / board maximum, or 1 = absolute); null = this board's own maximum
+  const values = useMemo(() => {
+    let top = rangeTop
+    if (top === null) { top = 0; for (let i = 0; i < raw.length; i++) if (raw[i] > top) top = raw[i] }
+    return toRange(raw, top)
+  }, [raw, rangeTop])
+  const geometry = useMemo(() => {
+    if (!rated) {
+      const flat = new THREE.Color(r.status === 'unsupported' ? UNSUPPORTED_COLOR : NEUTRAL_COLOR)
+      const a = r.status === 'unsupported' ? UNSUPPORTED_ALPHA : NEUTRAL_ALPHA
+      return fieldGeometry(r, { values: new Float32Array(r.field.u.length), scale: 0, inflate: INFLATE_MM, color: () => ({ r: flat.r, g: flat.g, b: flat.b, a }) })
     }
+    return fieldGeometry(r, { values, scale, inflate: INFLATE_MM, color: heatRgba })
+  }, [r, scale, rated, values])
+  const outline = useMemo(() => new THREE.EdgesGeometry(geometry, EDGE_ANGLE_DEG), [geometry])
+  const lines = useMemo(
+    () => (rated && contours && r.model !== 'none' ? contourGeometry(r, values, CONTOUR_LEVELS, scale, INFLATE_MM + CONTOUR_LIFT_MM) : null),
+    [r, rated, contours, values, scale]
+  )
+  useEffect(() => () => geometry.dispose(), [geometry])
+  useEffect(() => () => outline.dispose(), [outline])
+  useEffect(() => () => lines?.dispose(), [lines])
 
-    // Non-stone: calculate structural load
-    // Base load = stone weight sitting on top + user-configured load
-    const stoneLoad = stoneLoadOnSupport(board, allBoards)
-    const totalLoadKg = stoneLoad + userLoadKg
+  const centre = boxCentre(r)
+  const label = staticLabel(r, selected, mode, t, i18n.language)
+  const accent = accentColor(r)
+  // the hot spot: the maximum of what the map shows (where a board critical by its sag sags most)
+  const showHot = rated && label !== null && r.model !== 'none'
+  const target = mode === 'deflection' || sagGoverns(r) ? r.sagAt : r.maxAt
+  const hotNode = nodeNear(r, target)
+  const hotPos = nodeWorld(r, hotNode, scale, isLying(r) ? 'hi' : 'mid')
+  const span = Math.max(r.box.x1 - r.box.x0, r.box.z1 - r.box.z0, r.box.y1 - r.box.y0)
+  const radius = Math.min(28, Math.max(9, 0.035 * span))
+  const breaks = mode === 'stress' && r.uMax >= 1
+  const labelPos: Vec = label && !showHot ? [centre[0], r.box.y1 + 14, centre[2]] : hotPos
 
-    // Beam model applies to horizontal members only: span is the longer horizontal
-    // axis, the section is breadth (shorter horizontal axis) × height. Posts and
-    // standing panels (height is the largest dimension) carry load in-plane and are
-    // not rated as beams.
-    if (board.height >= Math.max(board.width, board.depth)) {
-      return { rating: 'ok' as StaticRating, annotation: null, weight: 0 }
+  const pick = placing ? THREE.Mesh.prototype.raycast : noRaycast
+  const onPointerDown = placing
+    ? (e: ThreeEvent<PointerEvent>) => { e.stopPropagation(); e.nativeEvent.stopPropagation() }
+    : undefined
+  const onClick = placing
+    ? (e: ThreeEvent<MouseEvent>) => {
+      e.stopPropagation()
+      if (e.delta > CLICK_SLOP_PX || !isLying(r) || !e.face || e.face.normal.y < 0.5) return
+      placeLoad(r.boardId, e.point, placeKg)
     }
-    // Members lying on the floor or resting on another member along (almost) their
-    // whole length are continuously supported: nothing to rate as a beam.
-    if (board.position.y <= 0.01) return { rating: 'ok' as StaticRating, annotation: null, weight: 0 }
-    const spanAxis: 'x' | 'z' = board.width >= board.depth ? 'x' : 'z'
-    const spanLen = Math.max(board.width, board.depth)
-    const continuous = findSupportBoards(board, allBoards).some((s) => {
-      const lo = Math.max(s.position[spanAxis], board.position[spanAxis])
-      const hi = Math.min(s.position[spanAxis] + (spanAxis === 'x' ? s.width : s.depth), board.position[spanAxis] + spanLen)
-      return hi - lo >= 0.9 * spanLen
-    })
-    if (continuous) return { rating: 'ok' as StaticRating, annotation: null, weight: 0 }
-    const span = Math.max(board.width, board.depth)
-    const breadth = Math.min(board.width, board.depth)
-    const result = calculateStatic(span, breadth, board.height, totalLoadKg, material)
-
-    if (result.rating === 'ok') {
-      return { rating: 'ok' as StaticRating, annotation: null, weight: 0 }
-    }
-
-    const loadInfo = stoneLoad > 0
-      ? ` (${stoneLoad.toFixed(1)}kg Stein + ${userLoadKg}kg)`
-      : ''
-    const annotation = `Min. ${result.minThicknessMm}mm (akt. ${result.currentThicknessMm}mm)${loadInfo}`
-    return { rating: result.rating, annotation, weight: 0 }
-  }, [material, board, allBoards, userLoadKg])
-
-  if (!material || !analysis) return null
-  // Show ok rating too (subtle green), skip glass/metal
-  if (material.category === 'glass' || material.category === 'metal') return null
-
-  const center: [number, number, number] = [
-    board.position.x + board.width / 2,
-    board.position.y + board.height / 2,
-    board.position.z + board.depth / 2
-  ]
-
-  const rotation: [number, number, number] = [
-    (board.rotation.x * Math.PI) / 180,
-    (board.rotation.y * Math.PI) / 180,
-    (board.rotation.z * Math.PI) / 180
-  ]
-
-  const pad = 1
-  const color = OVERLAY_COLORS[analysis.rating]
-  const opacity = analysis.rating === 'ok' ? 0.07 : OVERLAY_OPACITY[analysis.rating]
-  const borderColor = BORDER_COLORS[analysis.rating]
-
-  // Build tooltip detail text
-  const tooltipLines: string[] = []
-  tooltipLines.push(board.name)
-  if (analysis.annotation) tooltipLines.push(analysis.annotation)
-  tooltipLines.push(`${lang === 'de' ? 'Bewertung' : 'Rating'}: ${analysis.rating.toUpperCase()}`)
+    : undefined
 
   return (
-    <group position={center} rotation={rotation}>
-      {/* Semi-transparent overlay box — also serves as hover target */}
+    <>
       <mesh
-        onPointerEnter={() => setHovered(true)}
-        onPointerLeave={() => setHovered(false)}
-      >
-        <boxGeometry args={[board.width + pad, board.height + pad, board.depth + pad]} />
-        <meshBasicMaterial color={color} transparent opacity={opacity} depthWrite={false} />
-      </mesh>
-      {/* Edge outline (only for warning/critical) */}
-      {analysis.rating !== 'ok' && (
-        <lineSegments>
-          <edgesGeometry args={[new THREE.BoxGeometry(board.width + pad, board.height + pad, board.depth + pad)]} />
-          <lineBasicMaterial color={color} />
+        geometry={geometry}
+        material={material}
+        position={centre}
+        renderOrder={HEAT_RENDER_ORDER}
+        raycast={pick}
+        onPointerDown={onPointerDown}
+        onClick={onClick}
+        userData={{ staticBoardId: r.boardId, status: r.status, mode }}
+      />
+      <lineSegments geometry={outline} position={centre} renderOrder={HEAT_RENDER_ORDER} raycast={noRaycast}>
+        <lineBasicMaterial color={selected ? SELECTED_COLOR : accent} transparent opacity={rated ? 0.95 : 0.6} depthWrite={false} />
+      </lineSegments>
+      {lines && (
+        <lineSegments geometry={lines} position={centre} renderOrder={HEAT_RENDER_ORDER + 1} raycast={noRaycast} userData={{ staticContours: r.boardId }}>
+          <lineBasicMaterial color={CONTOUR_COLOR} transparent opacity={0.5} depthWrite={false} />
         </lineSegments>
       )}
-      {/* Hover tooltip */}
-      {hovered && (
-        <Html
-          position={[0, board.height / 2 + 20, 0]}
-          center
-          style={{ pointerEvents: 'none', whiteSpace: 'nowrap' }}
-          zIndexRange={[100, 0]}
-        >
-          <div style={{
-            background: 'rgba(15,15,20,0.92)',
-            color: '#e5e7eb',
-            fontSize: '11px',
-            padding: '6px 10px',
-            borderRadius: '4px',
-            borderLeft: `3px solid ${borderColor}`,
-            boxShadow: '0 4px 16px rgba(0,0,0,0.4)',
-            lineHeight: '1.6'
-          }}>
-            {tooltipLines.map((l, i) => (
-              <div key={i} style={{ fontWeight: i === 0 ? 600 : 400, color: i === 0 ? borderColor : undefined }}>
-                {l}
-              </div>
-            ))}
+      {showHot && <HotSpot boardId={r.boardId} position={hotPos} radius={radius} breaks={breaks} />}
+      {selected && rated && <Supports r={r} scale={scale} />}
+      {label && (
+        <Html position={labelPos} zIndexRange={HTML_Z_RANGE} style={{ pointerEvents: 'none', whiteSpace: 'nowrap' }}>
+          <div
+            data-testid="static-label"
+            data-board-id={r.boardId}
+            style={{
+              transform: `translate(-50%, calc(-100% - ${showHot ? LABEL_CLEARANCE_PX : 0}px))`,
+              background: 'rgba(24,24,27,0.92)',
+              color: breaks ? '#fecaca' : '#f4f4f5',
+              borderLeft: `3px solid ${accent}`,
+              borderRadius: 4,
+              padding: '2px 7px',
+              fontSize: 11,
+              fontWeight: 600,
+              lineHeight: '16px',
+              boxShadow: '0 2px 10px rgba(0,0,0,0.45)',
+              userSelect: 'none'
+            }}
+          >
+            {label}
           </div>
         </Html>
       )}
-      {/* Annotation label (always visible for warning/critical) */}
-      {analysis.annotation && !hovered && (
-        <Html
-          position={[0, -(board.height / 2 + 15), 0]}
-          center
-          style={{ pointerEvents: 'none', whiteSpace: 'nowrap' }}
-          zIndexRange={[100, 0]}
+    </>
+  )
+}
+
+/** One placed load: a downward arrow onto its patch, with its weight. */
+function LoadArrow({ board, load, r, scale }: { board: Board; load: NonNullable<Board['loads']>[number]; r: BoardStatic; scale: number }) {
+  const { t } = useTranslation()
+  const corners = useMemo(() => {
+    const map = faceToWorld(board)
+    if (!map) return null
+    return [[load.x, load.z], [load.x + load.w, load.z], [load.x + load.w, load.z + load.d], [load.x, load.z + load.d]].map(([px, pz]) => map(px, pz))
+  }, [board, load.x, load.z, load.w, load.d])
+  const outline = useMemo(() => {
+    if (!corners) return null
+    const cx = corners.reduce((s, p) => s + p.x, 0) / 4, cz = corners.reduce((s, p) => s + p.z, 0) / 4
+    return new THREE.BufferGeometry().setFromPoints(corners.map((p) => new THREE.Vector3(p.x - cx, 0.8, p.z - cz)))
+  }, [corners])
+  useEffect(() => () => outline?.dispose(), [outline])
+  if (!corners || !outline) return null
+  const cx = corners.reduce((s, p) => s + p.x, 0) / 4, cz = corners.reduce((s, p) => s + p.z, 0) / 4
+  const dy = isLying(r) ? displacement(r, frameOf(r), nodeNear(r, { x: cx, y: r.box.y1, z: cz }), scale)[2] : 0
+  return (
+    <group position={[cx, r.box.y1 + INFLATE_MM + dy, cz]} userData={{ staticLoadArrow: load.id, boardId: board.id, kg: load.kg }}>
+      <mesh position={[0, ARROW_HEAD_MM / 2, 0]} rotation={[Math.PI, 0, 0]} renderOrder={MARKER_RENDER_ORDER} raycast={noRaycast}>
+        <coneGeometry args={[7, ARROW_HEAD_MM, 18]} />
+        <meshBasicMaterial color={LOAD_COLOR} transparent depthTest={false} depthWrite={false} />
+      </mesh>
+      <mesh position={[0, ARROW_HEAD_MM + ARROW_SHAFT_MM / 2, 0]} renderOrder={MARKER_RENDER_ORDER} raycast={noRaycast}>
+        <cylinderGeometry args={[1.8, 1.8, ARROW_SHAFT_MM, 8]} />
+        <meshBasicMaterial color={LOAD_COLOR} transparent depthTest={false} depthWrite={false} />
+      </mesh>
+      <lineLoop geometry={outline} renderOrder={MARKER_RENDER_ORDER} raycast={noRaycast}>
+        <lineBasicMaterial color={LOAD_COLOR} transparent depthTest={false} depthWrite={false} />
+      </lineLoop>
+      <Html position={[0, ARROW_HEAD_MM + ARROW_SHAFT_MM + 4, 0]} zIndexRange={HTML_Z_RANGE} style={{ pointerEvents: 'none', whiteSpace: 'nowrap' }}>
+        <div
+          data-testid="static-load-label"
+          data-board-id={board.id}
+          style={{
+            transform: 'translate(-50%, -100%)',
+            background: 'rgba(244,244,245,0.95)', color: '#18181b', borderRadius: 3,
+            padding: '0 5px', fontSize: 10, fontWeight: 700, lineHeight: '15px', userSelect: 'none'
+          }}
         >
-          <span style={{
-            fontSize: '10px',
-            fontWeight: 'bold',
-            color: borderColor,
-            background: 'rgba(255,255,255,0.85)',
-            padding: '1px 4px',
-            borderRadius: '2px'
-          }}>
-            {analysis.annotation}
-          </span>
-        </Html>
-      )}
+          {t('sim.loadArrow', { kg: load.kg })}
+        </div>
+      </Html>
+    </group>
+  )
+}
+
+/** Arrows for every load placed on a visible board. */
+function PlacedLoads({ results, scale }: { results: Map<string, BoardStatic>; scale: number }) {
+  const assemblies = useProjectStore((s) => s.project.assemblies)
+  return (
+    <>
+      {assemblies.filter((a) => a.visible !== false).flatMap((a) => a.boards.flatMap((b) => {
+        const r = results.get(b.id)
+        // only lying boards carry placed loads (services/static-sim.ts ownLoads)
+        if (!r || !b.loads?.length || !isLying(r)) return []
+        return b.loads.map((l) => <LoadArrow key={l.id} board={b} load={l} r={r} scale={scale} />)
+      }))}
+    </>
+  )
+}
+
+/** Esc (or switching statics off) leaves the "Last setzen" mode; the canvas shows a crosshair meanwhile. */
+function usePlacementMode(placing: boolean): void {
+  const gl = useThree((s) => s.gl)
+  useEffect(() => {
+    if (!placing) return
+    const canvas = gl.domElement
+    const before = canvas.style.cursor
+    canvas.style.cursor = 'crosshair'
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key !== 'Escape') return
+      e.preventDefault()   // handled: the global Esc (deselect) must not run as well
+      useStaticStore.getState().setPlacingLoad(false)
+    }
+    window.addEventListener('keydown', onKey, true)
+    return () => { window.removeEventListener('keydown', onKey, true); canvas.style.cursor = before }
+  }, [placing, gl])
+  useEffect(() => () => useStaticStore.getState().setPlacingLoad(false), [])
+}
+
+/** Heat map of the load simulation, drawn on the boards. */
+function StaticHeatMap() {
+  const sim = useStaticSimulation()
+  const showDeformation = useStaticStore((s) => s.showDeformation)
+  const mode = useStaticStore((s) => s.resultType)
+  const contours = useStaticStore((s) => s.showContours)
+  const scaleMode = useStaticStore((s) => s.scaleMode)
+  const placing = useStaticStore((s) => s.placingLoad)
+  const placeKg = useStaticStore((s) => s.placeKg)
+  const selectedBoardIds = useUIStore((s) => s.selectedBoardIds)
+  usePlacementMode(placing)
+  // One material for all boards: colour and opacity come per vertex
+  const material = useMemo(() => new THREE.MeshLambertMaterial({
+    vertexColors: true,
+    transparent: true,
+    depthWrite: false,
+    polygonOffset: true,
+    polygonOffsetFactor: -1,
+    polygonOffsetUnits: -4
+  }), [])
+  useEffect(() => () => material.dispose(), [material])
+
+  const scale = showDeformation ? DEFORMATION_SCALE : 0
+  const modelMax = useMemo(() => modelFieldMax(sim, mode), [sim, mode])
+  const rangeTop = scaleMode === 'absolute' ? 1 : scaleMode === 'model' ? modelMax : null
+  return (
+    <group name="static-heatmap" userData={{ simulationMs: sim.durationMs, solved: sim.solved }}>
+      {[...sim.results.values()].map((r) => (
+        <BoardHeat
+          key={r.boardId}
+          result={r}
+          scale={scale}
+          mode={mode}
+          rangeTop={rangeTop}
+          contours={contours}
+          selected={selectedBoardIds.includes(r.boardId)}
+          placing={placing}
+          placeKg={placeKg}
+          material={material}
+        />
+      ))}
+      <PlacedLoads results={sim.results} scale={scale} />
     </group>
   )
 }
 
 /**
- * 3D static analysis overlay — renders a colored box over each board
- * based on its structural rating (ok/warning/critical).
+ * Static overlay: the 2D load simulation as an FE-style field on the boards (stress or
+ * deflection), contour lines, a ring and label at the maximum of each board that needs
+ * attention, the supports of the selected board, placed loads as arrows, optionally
+ * the deformed shape.
  */
 export function StaticOverlay3D() {
-  const project = useProjectStore((s) => s.project)
   const showStaticOverlay = useUIStore((s) => s.showStaticOverlay)
-  const userLoadKg = useUIStore((s) => s.staticLoadKg)
-
-  if (!showStaticOverlay) return null
-
-  // Collect all boards from visible assemblies for support detection
-  const allBoards = project.assemblies
-    .filter((assembly) => assembly.visible !== false)
-    .flatMap((assembly) => assembly.boards)
-
-  return (
-    <>
-      {allBoards.map((board) => (
-        <StaticBox key={`static-${board.id}`} board={board} allBoards={allBoards} userLoadKg={userLoadKg} />
-      ))}
-    </>
-  )
+  return showStaticOverlay ? <StaticHeatMap /> : null
 }

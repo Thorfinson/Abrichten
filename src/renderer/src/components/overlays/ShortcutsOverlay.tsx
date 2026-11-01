@@ -1,11 +1,11 @@
-import { useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useUIStore } from '../../store/useUIStore'
+import { useDialogFocus } from '../../hooks/useKeyboard'
 
 function ShortcutRow({ keys, label }: { keys: string; label: string }) {
   return (
-    <div className="flex items-center gap-2 py-1">
-      <kbd className="font-mono text-[10px] bg-chrome-surface border border-chrome-border px-1.5 py-0.5 rounded text-chrome-muted shrink-0 min-w-[56px] text-center">
+    <div className="flex items-center gap-2 py-[3px]">
+      <kbd className="font-mono text-[10px] bg-chrome-surface border border-chrome-border px-1.5 py-0.5 rounded text-chrome-secondary shrink-0 min-w-[64px] text-center">
         {keys}
       </kbd>
       <span className="text-xs text-chrome-secondary">{label}</span>
@@ -15,7 +15,7 @@ function ShortcutRow({ keys, label }: { keys: string; label: string }) {
 
 function GroupHeader({ label }: { label: string }) {
   return (
-    <div className="text-[9px] font-bold text-chrome-muted uppercase tracking-widest mt-3 mb-1 first:mt-0">
+    <div className="text-[10px] font-bold text-chrome-muted uppercase tracking-widest mt-3 mb-1 first:mt-0">
       {label}
     </div>
   )
@@ -23,83 +23,95 @@ function GroupHeader({ label }: { label: string }) {
 
 /**
  * Full-screen shortcut reference overlay. Toggled by the `?` key.
+ * Every entry mirrors a handler in hooks/useKeyboard.ts (Ctrl+K: CommandPalette).
  */
 export function ShortcutsOverlay() {
-  const { i18n } = useTranslation()
+  const { t, i18n } = useTranslation()
   const lang = i18n.language as 'de' | 'en'
+  const de = lang === 'de'
 
   const show    = useUIStore((s) => s.showShortcutsOverlay)
   const setShow = useUIStore((s) => s.setShowShortcutsOverlay)
-
-  // Close on Escape
-  useEffect(() => {
-    if (!show) return
-    const handler = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') { e.preventDefault(); setShow(false) }
-    }
-    window.addEventListener('keydown', handler)
-    return () => window.removeEventListener('keydown', handler)
-  }, [show, setShow])
+  // Esc and ? close it via the global keyboard handler (useKeyboard)
+  const dialogRef = useDialogFocus<HTMLDivElement>(show)
 
   if (!show) return null
 
+  const del = de ? 'Entf' : 'Del'
+
   return (
-    <div
-      className="fixed inset-0 z-[500] flex items-center justify-center"
-    >
+    <div className="fixed inset-0 z-[500] flex items-center justify-center p-4">
       {/* Backdrop */}
       <div
-        className="absolute inset-0 bg-black/60 backdrop-blur-[2px]"
+        className="absolute inset-0 bg-black/60"
         onMouseDown={() => setShow(false)}
       />
 
       {/* Dialog */}
-      <div className="relative w-full max-w-[580px] bg-chrome-deep border border-chrome-border rounded-xl shadow-2xl p-6">
-        <h2 className="text-sm font-semibold text-chrome-text mb-4">
-          {lang === 'de' ? 'Tastaturkürzel' : 'Keyboard Shortcuts'}
+      <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="shortcuts-title"
+        tabIndex={-1}
+        className="relative w-full max-w-[880px] max-h-full overflow-y-auto bg-chrome-bg text-chrome-text border border-chrome-border rounded-lg shadow-2xl px-6 py-5 outline-none"
+      >
+        <h2 id="shortcuts-title" className="text-sm font-semibold text-chrome-text mb-4">
+          {de ? 'Tastaturkürzel' : 'Keyboard Shortcuts'}
         </h2>
 
-        <div className="grid grid-cols-2 gap-x-8">
-          {/* Left column */}
+        <div className="grid grid-cols-3 gap-x-8">
           <div>
-            <GroupHeader label={lang === 'de' ? 'Allgemein' : 'General'} />
-            <ShortcutRow keys="F"          label={lang === 'de' ? 'Ansicht einpassen' : 'Fit view'} />
-            <ShortcutRow keys="S"          label={lang === 'de' ? 'Raster ein/aus'    : 'Toggle snap'} />
-            <ShortcutRow keys="B"          label={lang === 'de' ? 'Baumansicht'       : 'Assembly tree'} />
-            <ShortcutRow keys="Ctrl+K"     label={lang === 'de' ? 'Befehlspalette'    : 'Command palette'} />
-            <ShortcutRow keys="?"          label={lang === 'de' ? 'Dieses Fenster'    : 'This overlay'} />
-            <ShortcutRow keys="Esc"        label={lang === 'de' ? 'Aufheben / Abbruch': 'Deselect / cancel'} />
+            <GroupHeader label={de ? 'Allgemein' : 'General'} />
+            <ShortcutRow keys="F"          label={de ? 'Ansicht einpassen' : 'Fit view'} />
+            <ShortcutRow keys="S"          label={de ? 'Einrasten (Snap) ein/aus' : 'Snapping on/off'} />
+            <ShortcutRow keys="Alt+G"      label={de ? 'Raster ein/aus' : 'Grid on/off'} />
+            <ShortcutRow keys="B"          label={de ? 'Baugruppen-Leiste' : 'Assembly tree'} />
+            <ShortcutRow keys="Ctrl+K"     label={de ? 'Befehlspalette' : 'Command palette'} />
+            <ShortcutRow keys="?"          label={de ? 'Dieses Fenster' : 'This overlay'} />
+            <ShortcutRow keys="Esc"        label={de ? 'Aufheben / Abbrechen' : 'Deselect / cancel'} />
+            <ShortcutRow keys="+ / −"      label={t('ui.labelSize')} />
 
-            <GroupHeader label={lang === 'de' ? 'Datei' : 'File'} />
-            <ShortcutRow keys="Ctrl+O"     label={lang === 'de' ? 'Projekt öffnen'    : 'Open project'} />
-            <ShortcutRow keys="Ctrl+S"     label={lang === 'de' ? 'Speichern'         : 'Save'} />
-            <ShortcutRow keys="Ctrl+Z"     label={lang === 'de' ? 'Rückgängig'        : 'Undo'} />
-            <ShortcutRow keys="Ctrl+⇧+Z"   label={lang === 'de' ? 'Wiederholen'       : 'Redo'} />
+            <GroupHeader label={de ? 'Datei' : 'File'} />
+            <ShortcutRow keys="Ctrl+O"     label={de ? 'Projekt öffnen' : 'Open project'} />
+            <ShortcutRow keys="Ctrl+S"     label={de ? 'Speichern' : 'Save'} />
+            <ShortcutRow keys="Ctrl+Z"     label={de ? 'Rückgängig' : 'Undo'} />
+            <ShortcutRow keys="Ctrl+⇧+Z"   label={de ? 'Wiederholen (auch Ctrl+Y)' : 'Redo (also Ctrl+Y)'} />
           </div>
 
-          {/* Right column */}
           <div>
-            <GroupHeader label={lang === 'de' ? 'Bauteil gewählt' : 'Board selected'} />
-            <ShortcutRow keys="D"          label={lang === 'de' ? 'Duplizieren'       : 'Duplicate'} />
-            <ShortcutRow keys="Del"        label={lang === 'de' ? 'Löschen'           : 'Delete'} />
-            <ShortcutRow keys="G"          label={lang === 'de' ? 'Verschieben'       : 'Move (translate)'} />
-            <ShortcutRow keys="R"          label={lang === 'de' ? 'Drehen'            : 'Rotate'} />
-            <ShortcutRow keys="T"          label={lang === 'de' ? 'Skalieren (Pfeile)': 'Scale (arrows)'} />
-            <ShortcutRow keys="J"          label={lang === 'de' ? 'Verbinden (2 Teile)': 'Join (2 boards)'} />
+            <GroupHeader label={de ? 'Bauteil gewählt' : 'Board selected'} />
+            <ShortcutRow keys="G"          label={de ? 'Verschieben' : 'Move (translate)'} />
+            <ShortcutRow keys="R"          label={de ? 'Drehen' : 'Rotate'} />
+            <ShortcutRow keys="T"          label={de ? 'Skalieren (Pfeile ändern die Größe)' : 'Scale (arrows resize)'} />
+            <ShortcutRow keys="↑↓←→"       label={de ? 'Verschieben um 1 mm' : 'Nudge by 1 mm'} />
+            <ShortcutRow keys="⇧+↑↓←→"     label={de ? 'Verschieben um 10 mm' : 'Nudge by 10 mm'} />
+            <ShortcutRow keys="D"          label={de ? 'Duplizieren' : 'Duplicate'} />
+            <ShortcutRow keys={del}        label={de ? 'Löschen' : 'Delete'} />
+            <ShortcutRow keys="J"          label={de ? 'Verbinden (2 Teile)' : 'Join (2 boards)'} />
+            <ShortcutRow keys="Ctrl+A"     label={de ? 'Ganze Baugruppe wählen' : 'Select the whole assembly'} />
+            <ShortcutRow keys="⇧+F10"      label={t('ui.boardMenu')} />
+          </div>
 
-            <GroupHeader label={lang === 'de' ? 'Werkzeuge & Ansichten' : 'Tools & Views'} />
-            <ShortcutRow keys="1–4"        label={lang === 'de' ? 'Werkzeug wählen'   : 'Select tool'} />
-            <ShortcutRow keys="Alt+1"      label={lang === 'de' ? 'Vorderansicht'     : 'Front view'} />
-            <ShortcutRow keys="Alt+2"      label={lang === 'de' ? 'Seitenansicht'     : 'Side view'} />
-            <ShortcutRow keys="Alt+3"      label={lang === 'de' ? 'Draufsicht'        : 'Top view'} />
-            <ShortcutRow keys="Alt+4"      label={lang === 'de' ? '3D-Ansicht'        : '3D view'} />
-            <ShortcutRow keys="↑↓←→"       label={lang === 'de' ? 'Bauteil verschieben' : 'Nudge board'} />
-            <ShortcutRow keys="⇧+↑↓←→"    label={lang === 'de' ? 'Grob verschieben'  : 'Nudge ×10'} />
+          <div>
+            <GroupHeader label={de ? 'Werkzeuge & Ansichten' : 'Tools & Views'} />
+            <ShortcutRow keys="1 / 2"      label={`${t('tools.select')} / ${t('tools.measure')}`} />
+            <ShortcutRow keys="3 / 4"      label={`${t('tools.angle')} / ${t('tools.area')}`} />
+            <ShortcutRow keys="Alt+1"      label={t('views.front')} />
+            <ShortcutRow keys="Alt+2"      label={t('views.side')} />
+            <ShortcutRow keys="Alt+3"      label={t('views.top')} />
+            <ShortcutRow keys="Alt+4"      label={t('views.3d')} />
+
+            <GroupHeader label={de ? 'Maus' : 'Mouse'} />
+            <ShortcutRow keys={de ? 'Rad' : 'Wheel'}        label="Zoom" />
+            <ShortcutRow keys={de ? 'Rechts' : 'Right'}     label={de ? 'Ziehen: Ansicht schieben' : 'Drag: pan'} />
+            <ShortcutRow keys={de ? 'Mitte' : 'Middle'}     label={de ? 'Ziehen: 3D drehen (2D: schieben)' : 'Drag: orbit 3D (2D: pan)'} />
+            <ShortcutRow keys={de ? 'Ctrl+Klick' : 'Ctrl+click'} label={de ? 'Mehrfachauswahl' : 'Add to selection'} />
           </div>
         </div>
 
-        <p className="mt-5 text-[10px] text-chrome-hint text-center">
-          {lang === 'de'
+        <p className="mt-5 text-[11px] text-chrome-hint text-center">
+          {de
             ? 'Drücke ? oder Esc zum Schließen'
             : 'Press ? or Esc to close'}
         </p>

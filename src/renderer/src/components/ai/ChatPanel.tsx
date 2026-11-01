@@ -6,7 +6,7 @@ import { getApiKey, getModelId } from '../layout/SettingsDialog'
 import { streamChat, type ChatMessage } from '../../services/openrouter'
 import { serializeProjectContext } from '../../services/chat'
 import { extractBoardActions, type BoardAction } from '../../services/action-parser'
-import type { Board } from '../../types/furniture'
+import { Button } from '../ui/Dialog'
 
 const CHAT_STORAGE_KEY = 'abrichten-chat-history'
 
@@ -76,6 +76,23 @@ export function ChatPanel() {
 
   const apiKey = getApiKey()
   const modelId = getModelId()
+
+  // Closing the panel mid-reply unmounts it: stop the request and save what
+  // arrived so far plus a note, so the reply is never lost silently.
+  const latestRef = useRef({ messages, chatHistory })
+  latestRef.current = { messages, chatHistory }
+  useEffect(() => () => {
+    if (!abortRef.current) return
+    abortRef.current.abort()
+    abortRef.current = null
+    const { messages: shown, chatHistory: history } = latestRef.current
+    const last = shown[shown.length - 1]
+    const partial = last?.role === 'assistant' ? last.content : ''
+    saveChatHistory(
+      [...shown, { role: 'system', content: t('ui.chatAborted') }],
+      partial ? [...history, { role: 'assistant', content: partial }] : history
+    )
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Save chat history whenever messages change
   useEffect(() => {
@@ -150,7 +167,7 @@ export function ChatPanel() {
     setMessages((prev) => [...prev, { role: 'assistant', content: '' }])
 
     try {
-      const systemPrompt = serializeProjectContext(project, project.language)
+      const systemPrompt = serializeProjectContext(project, project.language, useUIStore.getState().staticLoadKg)
 
       const fullText = await streamChat(
         apiKey,
@@ -260,29 +277,35 @@ export function ChatPanel() {
   )
 
   return (
-    <div className="fixed right-0 z-50 w-80 border-l border-gray-200 bg-white flex flex-col shadow-xl select-text top-9 bottom-6">
-      {/* Header */}
-      <div className="h-10 px-3 flex items-center justify-between border-b border-gray-200 bg-gray-50 shrink-0">
-        <span className="text-sm font-semibold text-purple-700">{t('ai.title')}</span>
+    <div role="dialog" aria-label={t('ai.title')} className="fixed right-0 z-50 w-80 border-l border-chrome-border bg-chrome-bg text-chrome-text flex flex-col shadow-2xl select-text top-9 bottom-7 [color-scheme:dark]">
+      {/* Header: the AI purple is the accent (top rule + icon), the rest is chrome */}
+      <div className="h-10 px-3 flex items-center justify-between border-b border-chrome-border border-t-2 border-t-ai shrink-0">
+        <span className="flex items-center gap-1.5 text-sm font-semibold">
+          <svg viewBox="0 0 24 24" className="h-4 w-4 text-ai" fill="none" stroke="currentColor" strokeWidth={1.75} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M11 3l1.9 5.1L18 10l-5.1 1.9L11 17l-1.9-5.1L4 10l5.1-1.9z" /><path d="M18.5 15.5l.7 1.8 1.8.7-1.8.7-.7 1.8-.7-1.8-1.8-.7 1.8-.7z" />
+          </svg>
+          {t('ai.title')}
+        </span>
         <div className="flex items-center gap-1">
-          <button
-            onClick={handleNewChat}
-            className="text-xs px-2 py-0.5 rounded bg-gray-200 text-gray-600 hover:bg-gray-300"
-            title={t('ai.chat.newChat')}
-          >
+          <Button variant="ghost" size="sm" onClick={handleNewChat} title={t('ai.chat.newChat')}>
             {t('ai.chat.newChat')}
-          </button>
+          </Button>
           <button
+            type="button"
             onClick={() => setShowChatPanel(false)}
-            className="text-gray-400 hover:text-gray-600 text-lg leading-none px-1"
+            aria-label={t('ui.close')}
+            title={t('ui.close')}
+            className="flex h-7 w-7 items-center justify-center rounded text-chrome-muted outline-none hover:bg-chrome-hover hover:text-chrome-text focus-visible:ring-2 focus-visible:ring-action"
           >
-            &times;
+            <svg viewBox="0 0 16 16" className="h-3.5 w-3.5" aria-hidden="true">
+              <path d="M3.5 3.5l9 9m0-9l-9 9" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+            </svg>
           </button>
         </div>
       </div>
 
       {/* Context indicator */}
-      <div className="px-3 py-1 text-[10px] text-gray-400 border-b border-gray-100 bg-gray-50/50">
+      <div className="px-3 py-1 text-[10px] text-chrome-hint border-b border-chrome-border bg-chrome-deep/60">
         {t('ai.chat.context')}
       </div>
 
@@ -290,20 +313,25 @@ export function ChatPanel() {
       <div className="flex-1 overflow-y-auto px-3 py-2 space-y-3">
         {!apiKey || !modelId ? (
           <div className="flex flex-col items-center gap-3 mt-6 px-2 text-center">
-            <span className="text-4xl">✦</span>
-            <p className="text-sm font-medium text-gray-700">{t('ai.noApiKey')}</p>
-            <p className="text-xs text-gray-500">
+            <span className="flex h-12 w-12 items-center justify-center rounded-full bg-ai-dim/60 text-ai">
+              <svg viewBox="0 0 24 24" className="h-6 w-6" fill="none" stroke="currentColor" strokeWidth={1.75} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M11 3l1.9 5.1L18 10l-5.1 1.9L11 17l-1.9-5.1L4 10l5.1-1.9z" /><path d="M18.5 15.5l.7 1.8 1.8.7-1.8.7-.7 1.8-.7-1.8-1.8-.7 1.8-.7z" />
+              </svg>
+            </span>
+            <p className="text-sm font-medium text-chrome-text">{t('ai.noApiKey')}</p>
+            <p className="text-xs text-chrome-muted">
               {t('ai.configureKey')}
             </p>
-            <button
+            <Button
+              variant="primary"
               onClick={() => { setShowChatPanel(false); setSettingsOpen(true) }}
-              className="mt-1 px-4 py-2 text-sm rounded bg-purple-600 text-white hover:bg-purple-700"
+              className="mt-1"
             >
               {t('ai.openSettings')}
-            </button>
+            </Button>
           </div>
         ) : messages.length === 0 ? (
-          <p className="text-xs text-gray-400 mt-4 text-center">{t('ai.chat.placeholder')}</p>
+          <p className="text-xs text-chrome-hint mt-4 text-center">{t('ai.chat.placeholder')}</p>
         ) : (
           messages.map((msg, i) => (
             <MessageBubble
@@ -319,18 +347,20 @@ export function ChatPanel() {
 
       {/* Input area */}
       {apiKey && modelId && (
-        <div className="border-t border-gray-200 p-2 shrink-0">
+        <div className="border-t border-chrome-border p-2 shrink-0">
           {/* Image preview */}
           {imagePreview && (
             <div className="mb-2 relative inline-block">
               <img
                 src={imagePreview}
                 alt="Upload"
-                className="h-16 rounded border border-gray-200 object-cover"
+                className="h-16 rounded border border-chrome-border object-cover"
               />
               <button
+                type="button"
                 onClick={removeImage}
-                className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 text-white rounded-full text-[10px] leading-none flex items-center justify-center"
+                aria-label={t('actions.delete')}
+                className="absolute -top-1 -right-1 w-4 h-4 bg-chrome-surface text-chrome-text border border-chrome-divider hover:bg-danger rounded-full text-[10px] leading-none flex items-center justify-center"
               >
                 &times;
               </button>
@@ -348,8 +378,9 @@ export function ChatPanel() {
             />
             <button
               onClick={() => fileRef.current?.click()}
-              className="shrink-0 w-8 h-8 flex items-center justify-center rounded bg-gray-100 hover:bg-gray-200 text-gray-500"
+              className="shrink-0 w-8 h-8 flex items-center justify-center rounded bg-chrome-surface hover:bg-chrome-hover text-chrome-secondary outline-none focus-visible:ring-2 focus-visible:ring-action"
               title={t('ai.chat.uploadImage')}
+              aria-label={t('ai.chat.uploadImage')}
             >
               <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
@@ -363,16 +394,18 @@ export function ChatPanel() {
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
               placeholder={t('ai.chat.placeholder')}
+              aria-label={t('ai.chat.placeholder')}
               rows={1}
-              className="flex-1 text-sm border border-gray-300 rounded px-2 py-1.5 resize-none focus:outline-none focus:ring-1 focus:ring-purple-400"
+              className="flex-1 text-sm bg-chrome-deep border border-chrome-border text-chrome-text placeholder:text-chrome-hint rounded px-2 py-1.5 resize-none outline-none focus:border-action"
             />
 
             {/* Send / Stop */}
             {streaming ? (
               <button
                 onClick={handleStop}
-                className="shrink-0 w-8 h-8 flex items-center justify-center rounded bg-red-500 hover:bg-red-600 text-white"
+                className="shrink-0 w-8 h-8 flex items-center justify-center rounded bg-chrome-surface hover:bg-chrome-hover text-danger outline-none focus-visible:ring-2 focus-visible:ring-action"
                 title={t('ai.chat.stop')}
+                aria-label={t('ai.chat.stop')}
               >
                 <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
                   <rect x="6" y="6" width="12" height="12" rx="1" />
@@ -382,8 +415,9 @@ export function ChatPanel() {
               <button
                 onClick={handleSend}
                 disabled={!input.trim() && !imageBase64}
-                className="shrink-0 w-8 h-8 flex items-center justify-center rounded bg-purple-600 hover:bg-purple-700 text-white disabled:opacity-40"
+                className="shrink-0 w-8 h-8 flex items-center justify-center rounded bg-action enabled:hover:bg-action-hover text-action-text disabled:opacity-40 outline-none focus-visible:ring-2 focus-visible:ring-action-hover"
                 title={t('ai.chat.send')}
+                aria-label={t('ai.chat.send')}
               >
                 <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M12 19V5m0 0l-7 7m7-7l7 7" />
@@ -412,7 +446,7 @@ function MessageBubble({
   if (message.role === 'system') {
     return (
       <div className="text-center">
-        <span className="text-[10px] text-green-600 bg-green-50 px-2 py-0.5 rounded-full">
+        <span className="text-[10px] text-chrome-muted bg-chrome-deep border border-chrome-border px-2 py-0.5 rounded-full">
           {message.content}
         </span>
       </div>
@@ -426,8 +460,8 @@ function MessageBubble({
       <div
         className={`max-w-[90%] rounded-lg px-3 py-2 text-sm ${
           isUser
-            ? 'bg-purple-600 text-white'
-            : 'bg-gray-100 text-gray-800'
+            ? 'bg-chrome-surface text-chrome-text'
+            : 'bg-chrome-deep text-chrome-text border border-chrome-border border-l-2 border-l-ai/70'
         }`}
       >
         {/* Image */}
@@ -443,20 +477,24 @@ function MessageBubble({
         <div className="whitespace-pre-wrap break-words cursor-text">{message.content}</div>
 
         {/* Apply boards button — always available for re-import */}
-        {message.actions && (
-          <button
+        {/* Boards the parser had to drop (unusable values) — say why instead of hiding them */}
+        {message.actions?.skipped?.length ? (
+          <div className="mt-2 text-xs text-accent">
+            {t('store.aiBoardsSkipped', { count: message.actions.skipped.length, reasons: message.actions.skipped.join('; ') })}
+          </div>
+        ) : null}
+
+        {message.actions && message.actions.boards.length > 0 && (
+          <Button
+            size="sm"
             onClick={() => onApply(message.actions!, msgIdx)}
-            className={`mt-2 text-xs px-3 py-1 rounded w-full ${
-              message.actionsApplied
-                ? 'bg-green-100 text-green-700 hover:bg-green-200 border border-green-300'
-                : 'bg-blue-600 text-white hover:bg-blue-700'
-            }`}
+            className={`mt-2 w-full ${message.actionsApplied ? 'text-success' : 'ring-1 ring-ai/50'}`}
           >
             {message.actionsApplied
               ? `↻ ${t('ai.chat.apply')} (${message.actions.boards.length} Boards)`
               : `${t('ai.chat.apply')} (${message.actions.boards.length} Boards)`
             }
-          </button>
+          </Button>
         )}
       </div>
     </div>

@@ -85,142 +85,80 @@ export function projectAABB(
 }
 
 export type BoardDim = 'width' | 'height' | 'depth'
-export type PosAxis = 'x' | 'y' | 'z'
+type PosAxis = 'x' | 'y' | 'z'
+type Vec3 = { x: number; y: number; z: number }
 
-export interface DimensionMapping {
-  /** Board dimension that maps to screen horizontal */
-  horizontal: BoardDim
-  /** Board dimension that maps to screen vertical */
-  vertical: BoardDim
-  /** World position axis for screen horizontal (for anchor offset) */
-  horizontalPosAxis: PosAxis
-  /** World position axis for screen vertical (for anchor offset) */
-  verticalPosAxis: PosAxis
+/** World axis that a board dimension spans before rotation (position + dims/2 is the centre). */
+const DIM_AXIS: Record<BoardDim, PosAxis> = { width: 'x', height: 'y', depth: 'z' }
+
+/** Rotation noise such as cos(90°) = 6e-17 is snapped to the exact value. */
+const snapUnit = (v: number): number => (Math.abs(v) < 1e-9 ? 0 : Math.abs(Math.abs(v) - 1) < 1e-9 ? Math.sign(v) : v)
+
+/** World-space unit vector of a board dimension's local axis. */
+export function dimDirection(board: Board, dim: BoardDim): Vec3 {
+  const local = { x: 0, y: 0, z: 0 }
+  local[DIM_AXIS[dim]] = 1
+  const r = makeRotator(board.rotation.x, board.rotation.y, board.rotation.z)(local.x, local.y, local.z)
+  return { x: snapUnit(r.x), y: snapUnit(r.y), z: snapUnit(r.z) }
 }
+
+const WORLD_DIM: Record<PosAxis, BoardDim> = { x: 'width', y: 'height', z: 'depth' }
 
 /**
- * Determine which board dimension (width/height/depth) maps to the
- * horizontal and vertical screen axes in a given projection.
- *
- * Uses a perturbation test: slightly increases each dimension and checks
- * which AABB axis grows the most.
+ * The board's rotated bounding box as an unrotated board (same id, material, …), so
+ * world-axis rules such as the static check see a turned shelf as lying and a turned
+ * panel as standing. Exact for multiples of 90°, the bounding box otherwise; the grain
+ * direction turns with the board.
  */
-function computeDimensionMapping(
-  board: Board,
-  getU: (p: { x: number; y: number; z: number }) => number,
-  getV: (p: { x: number; y: number; z: number }) => number,
-  horizontalPosAxis: PosAxis,
-  verticalPosAxis: PosAxis
-): DimensionMapping {
-  const dims: BoardDim[] = ['width', 'height', 'depth']
-  const DELTA = 1 // 1mm perturbation
-
-  // Get base full AABB (all rotations applied)
-  const base = projectAABB(board, getU, getV)
-
-  let bestH: BoardDim = 'width'
-  let bestHDelta = 0
-  let bestV: BoardDim = 'height'
-  let bestVDelta = 0
-
-  for (const dim of dims) {
-    const testBoard = {
-      ...board,
-      [dim]: board[dim] + DELTA
-    }
-    const test = projectAABB(testBoard, getU, getV)
-    const dw = test.width - base.width
-    const dh = test.height - base.height
-
-    if (dw > bestHDelta) {
-      bestHDelta = dw
-      bestH = dim
-    }
-    if (dh > bestVDelta) {
-      bestVDelta = dh
-      bestV = dim
-    }
+export function worldAligned(board: Board): Board {
+  const { x, y, z } = board.rotation
+  if (!x && !y && !z) return board
+  const corners = boardCorners3D(board)
+  const low = (k: PosAxis): number => Math.min(...corners.map((c) => c[k]))
+  const size = (k: PosAxis): number => Math.max(...corners.map((c) => c[k])) - low(k)
+  let grainDirection = board.grainDirection
+  if (grainDirection) {
+    const d = dimDirection(board, grainDirection)
+    grainDirection = WORLD_DIM[(['x', 'y', 'z'] as const).reduce((a, k) => (Math.abs(d[k]) > Math.abs(d[a]) ? k : a))]
   }
-
-  return { horizontal: bestH, vertical: bestV, horizontalPosAxis, verticalPosAxis }
-}
-
-export function dimensionMappingFront(board: Board): DimensionMapping {
-  return computeDimensionMapping(board, (p) => p.x, (p) => p.y, 'x', 'y')
-}
-
-export function dimensionMappingSide(board: Board): DimensionMapping {
-  return computeDimensionMapping(board, (p) => p.z, (p) => p.y, 'z', 'y')
-}
-
-export function dimensionMappingTop(board: Board): DimensionMapping {
-  return computeDimensionMapping(board, (p) => p.x, (p) => p.z, 'x', 'z')
-}
-
-export type ResizeEdge = 'left' | 'right' | 'top' | 'bottom'
-
-export interface ResizeResult {
-  dim: BoardDim
-  newDimValue: number
-  position: { x: number; y: number; z: number }
-}
-
-/**
- * Compute the board update (dimension + position) for a resize operation.
- * Anchors the opposite edge: dragging 'left' keeps the right edge fixed, etc.
- *
- * Works by comparing the AABB before and after the dimension change
- * and adjusting the position so that the anchor edge doesn't move.
- */
-export function computeResizeUpdate(
-  board: Board,
-  edge: ResizeEdge,
-  deltaMm: number,
-  dimMap: DimensionMapping,
-  getU: (p: { x: number; y: number; z: number }) => number,
-  getV: (p: { x: number; y: number; z: number }) => number
-): ResizeResult {
-  const isHorizontal = edge === 'left' || edge === 'right'
-  const dim = isHorizontal ? dimMap.horizontal : dimMap.vertical
-  const newDimValue = Math.max(3, Math.round(board[dim] + deltaMm))
-
-  // Compute AABB before change
-  const aabbBefore = projectAABB(board, getU, getV)
-
-  // Build modified board with new dimension (same position)
-  const modifiedBoard = { ...board, [dim]: newDimValue }
-  const aabbAfter = projectAABB(modifiedBoard, getU, getV)
-
-  // Determine which AABB edge to anchor
-  // left: anchor right edge (maxU), right: anchor left edge (minU)
-  // top: anchor bottom edge (minV), bottom: anchor top edge (maxV)
-  let posOffset = { x: 0, y: 0, z: 0 }
-
-  if (edge === 'left') {
-    // Keep right edge (maxU) fixed: shift by difference in maxU
-    const shift = aabbAfter.x + aabbAfter.width - (aabbBefore.x + aabbBefore.width)
-    posOffset[dimMap.horizontalPosAxis] = -shift
-  } else if (edge === 'right') {
-    // Keep left edge (minU) fixed: shift by difference in minU
-    const shift = aabbAfter.x - aabbBefore.x
-    posOffset[dimMap.horizontalPosAxis] = -shift
-  } else if (edge === 'top') {
-    // Keep bottom edge (minV) fixed: shift by difference in minV
-    const shift = aabbAfter.y - aabbBefore.y
-    posOffset[dimMap.verticalPosAxis] = -shift
-  } else {
-    // bottom: Keep top edge (maxV) fixed: shift by difference in maxV
-    const shift = aabbAfter.y + aabbAfter.height - (aabbBefore.y + aabbBefore.height)
-    posOffset[dimMap.verticalPosAxis] = -shift
-  }
-
   return {
-    dim,
-    newDimValue,
-    position: {
-      x: Math.round(board.position.x + posOffset.x),
-      y: Math.round(board.position.y + posOffset.y),
-      z: Math.round(board.position.z + posOffset.z)
-    }
+    ...board,
+    position: { x: low('x'), y: low('y'), z: low('z') },
+    width: size('x'),
+    height: size('y'),
+    depth: size('z'),
+    rotation: { x: 0, y: 0, z: 0 },
+    grainDirection
+  }
+}
+
+/** World centre of the board face on the `sign` side of dimension `dim` (rotated boards too). */
+export function faceCentre(board: Board, dim: BoardDim, sign: 1 | -1): Vec3 {
+  const d = dimDirection(board, dim)
+  const k = (sign * board[dim]) / 2
+  return {
+    x: board.position.x + board.width / 2 + d.x * k,
+    y: board.position.y + board.height / 2 + d.y * k,
+    z: board.position.z + board.depth / 2 + d.z * k
+  }
+}
+
+/**
+ * New position when the face on the `sign` side of `dim` is moved so that the board
+ * gets `newDim`, while the opposite face stays put — for rotated boards too.
+ *
+ * `position` is the world-axis min corner of the unrotated box, so the centre is
+ * position + dims/2 and the board rotates about it. Changing one dimension by Δ
+ * moves the centre by Δ/2 along that dimension's rotated direction. The position
+ * is not rounded: rounding would shift the anchored face of a rotated board.
+ */
+export function resizeFromFace(board: Board, dim: BoardDim, sign: 1 | -1, newDim: number): Vec3 {
+  const grow = newDim - board[dim]
+  const d = dimDirection(board, dim)
+  const shift = (axis: PosAxis): number => (sign * d[axis] - (DIM_AXIS[dim] === axis ? 1 : 0)) * (grow / 2)
+  return {
+    x: board.position.x + shift('x'),
+    y: board.position.y + shift('y'),
+    z: board.position.z + shift('z')
   }
 }

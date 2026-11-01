@@ -1,17 +1,18 @@
-import React, { useRef, useEffect, useMemo, useState } from 'react'
-import { activeJoints } from '../../utils/activeParts'
+import React, { memo, useRef, useEffect, useMemo, useState } from 'react'
 import { useThree, useFrame } from '@react-three/fiber'
 import { useTranslation } from 'react-i18next'
-import { useUIStore } from '../../store/useUIStore'
+import { useUIStore, useCanvasView } from '../../store/useUIStore'
 import { useProjectStore } from '../../store/useProjectStore'
 import { TransformControls, Line, Html } from '@react-three/drei'
 import { snapToGrid } from '../../utils/geometry'
+import { snapBoardToBoards, FACE_SNAP_PX, type SnapAxis } from '../../utils/snap'
+import { computeWorldSizeForPixels } from '../../utils/screenSize'
 import { buildBoardGeometry } from '../../utils/boardGeometry'
 import { getMaterialById } from '../../data/materials'
 import { beginTransform, endTransform } from '../../utils/transformLock'
 import { setHoveringGizmo, isHoveringGizmo } from '../../utils/gizmoHover'
 import { beginDragHistory, endDragHistory } from '../../utils/dragHistory'
-import type { Board } from '../../types/furniture'
+import type { Board, Vec3 } from '../../types/furniture'
 import type { ViewMode } from '../../types/measurement'
 import * as THREE from 'three'
 
@@ -23,7 +24,12 @@ interface Board3DProps {
   highlight?: boolean
   /** Another assembly is highlighted — ghost this board so it reads through */
   dimmed?: boolean
+  /** Joints of this board in visible assemblies (badge when joint markers are on) */
+  jointCount?: number
 }
+
+/** Pointer travel (px) above which a right-button release is a pan, not a context-menu click */
+const CONTEXT_MENU_MAX_DELTA = 4
 
 /** Axis constraints for dragging in each ortho view */
 const DRAG_AXES: Record<Exclude<ViewMode, '3d'>, { u: 'x' | 'y' | 'z'; v: 'x' | 'y' | 'z' }> = {
@@ -39,13 +45,46 @@ const DRAG_PLANE_NORMALS: Record<Exclude<ViewMode, '3d'>, THREE.Vector3> = {
   top:   new THREE.Vector3(0, 1, 0)
 }
 
-export function Board3D({ board, assemblyId, orbitRef, highlight = false, dimmed = false }: Board3DProps) {
+/** Edge line material per board colour: the board colour, much darker, so a
+ *  cabinet's parts read apart on light and dark backgrounds. Shared by all
+ *  boards of a colour (never disposed: a handful of colours per project). */
+const edgeMaterials = new Map<string, THREE.LineBasicMaterial>()
+function edgeMaterial(color: string, dimmed: boolean): THREE.LineBasicMaterial {
+  const key = `${color}|${dimmed}`
+  let m = edgeMaterials.get(key)
+  if (!m) {
+    m = new THREE.LineBasicMaterial({
+      color: new THREE.Color(color).multiplyScalar(0.3),
+      transparent: dimmed,
+      opacity: dimmed ? 0.35 : 1,
+      depthWrite: !dimmed
+    })
+    edgeMaterials.set(key, m)
+  }
+  return m
+}
+
+/** The other visible boards a drag can snap to (not the ones being moved). */
+function snapCandidates(moving: string[]): Board[] {
+  const skip = new Set(moving)
+  return useProjectStore.getState().project.assemblies
+    .filter((a) => a.visible !== false)
+    .flatMap((a) => a.boards.filter((b) => !skip.has(b.id)))
+}
+
+/** Memoized: the store keeps unchanged boards' object identity, so a drag or
+ *  edit re-renders only the board that changed instead of every board. */
+export const Board3D = memo(function Board3D({ board, assemblyId, orbitRef, highlight = false, dimmed = false, jointCount = 0 }: Board3DProps) {
   const { t } = useTranslation()
   const meshRef = useRef<THREE.Mesh>(null)
   const transformRef = useRef<any>(null)
+  /** True while a TransformControls drag of this board is in progress */
+  const tcDragRef = useRef(false)
   const dragStartPosRef = useRef<THREE.Vector3>(new THREE.Vector3())
   const dragStartDimsRef = useRef<{ width: number; height: number; depth: number }>({ width: 0, height: 0, depth: 0 })
   const scaleDraggingRef = useRef<boolean>(false)
+
+  const staticGhost = useUIStore((s) => s.showStaticOverlay)
 
   // Ghost drag preview state
   const [isDragging, setIsDragging] = useState(false)
@@ -56,14 +95,17 @@ export function Board3D({ board, assemblyId, orbitRef, highlight = false, dimmed
     active: boolean
     startWorldPos: THREE.Vector3
     startBoardPos: { x: number; y: number; z: number }
-  }>({ active: false, startWorldPos: new THREE.Vector3(), startBoardPos: { x: 0, y: 0, z: 0 } })
+    /** Boards the drag can snap to, collected at drag start */
+    others: Board[]
+  }>({ active: false, startWorldPos: new THREE.Vector3(), startBoardPos: { x: 0, y: 0, z: 0 }, others: [] })
 
-  const selectedBoardIds = useUIStore((s) => s.selectedBoardIds)
-  const selectedAssemblyId = useUIStore((s) => s.selectedAssemblyId)
+  // Derived selectors: a selection change re-renders only the boards whose state flips
+  const isSelected = useUIStore((s) => s.selectedBoardIds.includes(board.id))
+  const isPrimary = useUIStore((s) => s.selectedBoardIds.length === 1 && s.selectedBoardIds[0] === board.id)
   const selectBoard = useUIStore((s) => s.selectBoard)
   const toggleBoardSelection = useUIStore((s) => s.toggleBoardSelection)
   const transformMode = useUIStore((s) => s.transformMode)
-  const activeView = useUIStore((s) => s.activeView)
+  const activeView = useCanvasView()
   const activeTool = useUIStore((s) => s.activeTool)
   const snapEnabled = useUIStore((s) => s.snapEnabled)
   const snapSize = useUIStore((s) => s.snapSize)
@@ -71,16 +113,14 @@ export function Board3D({ board, assemblyId, orbitRef, highlight = false, dimmed
   const updateBoard = useProjectStore((s) => s.updateBoard)
   const nudgeBoards = useProjectStore((s) => s.nudgeBoards)
   const showJointMarkers = useUIStore((s) => s.showJointMarkers)
-  const isSelected = selectedBoardIds.includes(board.id)
-  const isPrimary = selectedBoardIds.length === 1 && selectedBoardIds[0] === board.id
+  const customMaterials = useProjectStore((s) => s.project.customMaterials)
   const isOrtho = activeView !== '3d'
+  /** TransformControls are shown for the single selected board in the 3D view */
+  const showTC = !isOrtho && isPrimary
 
-  // Count this board's joints in visible assemblies (joints may span assemblies)
-  const jointCount = useProjectStore((s) =>
-    activeJoints(s.project).filter(({ joint: j }) => j.boardA === board.id || j.boardB === board.id).length
-  )
-
-  const { camera, gl, raycaster } = useThree()
+  const camera = useThree((s) => s.camera)
+  const gl = useThree((s) => s.gl)
+  const raycaster = useThree((s) => s.raycaster)
 
   // Drag plane for ortho views: positioned at board center, perpendicular to camera
   const dragPlane = useMemo(() => {
@@ -110,12 +150,58 @@ export function Board3D({ board, assemblyId, orbitRef, highlight = false, dimmed
     return () => { transformRef.current?.detach() }
   }, [])
 
-  // When this board loses primary status (deselected, or another board became
-  // primary), clear the gizmo-hover flag so it can't get stuck at true and
-  // block selection on every other board.
+  // When this board loses its gizmo (deselected, another board became
+  // primary, or an ortho view), clear the gizmo-hover flag so it can't get
+  // stuck at true and block selection on every other board.
   useEffect(() => {
-    if (!isPrimary) setHoveringGizmo(false)
-  }, [isPrimary])
+    if (!showTC) setHoveringGizmo(false)
+  }, [showTC])
+
+  /** Put the mesh back where the store says the board is — after an aborted
+   *  drag moved it imperatively (TransformControls or ortho drag). */
+  const resetMeshFromBoard = (): void => {
+    const m = meshRef.current
+    const b = orthoLiveRef.current.board
+    if (!m) return
+    m.position.set(b.position.x + b.width / 2, b.position.y + b.height / 2, b.position.z + b.depth / 2)
+    m.rotation.set((b.rotation.x * Math.PI) / 180, (b.rotation.y * Math.PI) / 180, (b.rotation.z * Math.PI) / 180)
+    m.scale.set(1, 1, 1)
+  }
+
+  /** Esc during a TransformControls drag: stop TC, drop the uncommitted move. */
+  const cancelTcDrag = (): void => {
+    tcDragRef.current = false
+    scaleDraggingRef.current = false
+    // Clearing TC's dragging flag stops its move handling, skips the mouseUp
+    // commit and (via 'dragging-changed') re-enables the default controls.
+    if (transformRef.current) transformRef.current.dragging = false
+    if (orbitRef?.current) orbitRef.current.enabled = true
+    resetMeshFromBoard()
+  }
+
+  // TransformControls unmounting mid-drag (deselect, view switch, delete …)
+  // never fires onMouseUp: end the drag here so the drag lock, the paused
+  // undo history and the disabled OrbitControls don't stay stuck.
+  useEffect(() => {
+    if (!showTC) return
+    // A pointer that leaves the canvas never un-hovers TC's axis — clear it
+    // so the gizmo-hover flag doesn't block clicks in other quadrants.
+    const canvas = gl.domElement
+    const onLeave = (): void => {
+      if (!tcDragRef.current && transformRef.current) transformRef.current.axis = null
+    }
+    canvas.addEventListener('pointerleave', onLeave)
+    return () => {
+      canvas.removeEventListener('pointerleave', onLeave)
+      if (!tcDragRef.current) return
+      tcDragRef.current = false
+      scaleDraggingRef.current = false
+      if (orbitRef?.current) orbitRef.current.enabled = true
+      resetMeshFromBoard()
+      endTransform()
+      endDragHistory()
+    }
+  }, [showTC, gl]) // eslint-disable-line react-hooks/exhaustive-deps
 
 
   // TC drag handler — drei rewires it onto every fresh TransformControlsImpl
@@ -126,9 +212,12 @@ export function Board3D({ board, assemblyId, orbitRef, highlight = false, dimmed
       orbitRef.current.enabled = !event.value
     }
     if (event.value) {
-      beginTransform()
+      tcDragRef.current = true
+      beginTransform(cancelTcDrag)
       beginDragHistory()
     } else {
+      if (!tcDragRef.current) return // cancelled with Esc: nothing to commit
+      tcDragRef.current = false
       endTransform()
       endDragHistory()
     }
@@ -198,7 +287,7 @@ export function Board3D({ board, assemblyId, orbitRef, highlight = false, dimmed
   // (2) mirror TC's hovered axis into the global gizmo-hover flag so a click
   //     on a gizmo handle doesn't fall through to the board behind it.
   useFrame(() => {
-    if (isPrimary) {
+    if (showTC) {
       const axis = transformRef.current?.axis
       setHoveringGizmo(axis !== null && axis !== undefined)
     }
@@ -220,13 +309,19 @@ export function Board3D({ board, assemblyId, orbitRef, highlight = false, dimmed
   // and (combined with setSnapIndicatorPos's UI re-renders) interrupt drags.
   const orthoLiveRef = useRef({
     isOrtho, activeTool, activeView, board, assemblyId,
-    snapEnabled, snapSize, selectedBoardIds, selectedAssemblyId,
-    updateBoard, nudgeBoards, setSnapIndicatorPos, dragPlane
+    snapEnabled, snapSize, updateBoard, nudgeBoards, setSnapIndicatorPos, dragPlane
   })
   orthoLiveRef.current = {
     isOrtho, activeTool, activeView, board, assemblyId,
-    snapEnabled, snapSize, selectedBoardIds, selectedAssemblyId,
-    updateBoard, nudgeBoards, setSnapIndicatorPos, dragPlane
+    snapEnabled, snapSize, updateBoard, nudgeBoards, setSnapIndicatorPos, dragPlane
+  }
+
+  /** Drop the local ortho-drag state and the visual offset (abort, not commit). */
+  const resetOrthoDrag = (): void => {
+    orthoDrag.current.active = false
+    setIsDragging(false)
+    orthoLiveRef.current.setSnapIndicatorPos(null)
+    resetMeshFromBoard()
   }
 
   // Ortho view pointer drag handlers — mounted once per canvas. Handlers read
@@ -234,41 +329,42 @@ export function Board3D({ board, assemblyId, orbitRef, highlight = false, dimmed
   useEffect(() => {
     const canvas = gl.domElement
 
+    /** Board position for the pointer: face snap to other boards first (Alt
+     *  turns it off), grid snap or whole mm on the axes that did not snap. */
+    const dragTarget = (e: PointerEvent, worldPos: THREE.Vector3): { position: Vec3; indicator: Vec3 | null } => {
+      const live = orthoLiveRef.current
+      const axes = DRAG_AXES[live.activeView as Exclude<ViewMode, '3d'>]
+      const { startBoardPos: sp, startWorldPos: sw, others } = orthoDrag.current
+      const raw = { ...sp }
+      raw[axes.u] += worldPos[axes.u] - sw[axes.u]
+      raw[axes.v] += worldPos[axes.v] - sw[axes.v]
+      const dragAxes: SnapAxis[] = [axes.u, axes.v]
+      const face = e.altKey ? null : snapBoardToBoards(
+        { ...live.board, position: raw }, others, dragAxes,
+        computeWorldSizeForPixels(FACE_SNAP_PX, worldPos, camera, gl.domElement.clientHeight)
+      )
+      const position = face ? face.position : raw
+      for (const a of dragAxes) {
+        if (face?.snapped.includes(a)) continue
+        position[a] = live.snapEnabled ? snapToGrid(position[a], live.snapSize) : Math.round(position[a])
+      }
+      const b = live.board
+      const centre = { x: position.x + b.width / 2, y: position.y + b.height / 2, z: position.z + b.depth / 2 }
+      return { position, indicator: face?.indicator ?? (live.snapEnabled ? centre : null) }
+    }
+
     const onPointerMove = (e: PointerEvent) => {
       if (!orthoDrag.current.active) return
       const live = orthoLiveRef.current
       if (!live.isOrtho || live.activeTool !== 'select') return
       const worldPos = raycastToPlane(e.clientX, e.clientY)
-      if (!worldPos) return
-
-      const axes = DRAG_AXES[live.activeView as Exclude<ViewMode, '3d'>]
-      const deltaU = worldPos[axes.u] - orthoDrag.current.startWorldPos[axes.u]
-      const deltaV = worldPos[axes.v] - orthoDrag.current.startWorldPos[axes.v]
+      if (!worldPos || !meshRef.current) return
 
       // Move mesh visually during drag (commit on pointerup)
+      const { position, indicator } = dragTarget(e, worldPos)
       const b = live.board
-      const halfSize = (axis: 'x' | 'y' | 'z') =>
-        axis === 'x' ? b.width / 2 : axis === 'y' ? b.height / 2 : b.depth / 2
-
-      if (meshRef.current) {
-        const sp = orthoDrag.current.startBoardPos
-        const snapVal = (v: number) => live.snapEnabled ? snapToGrid(v, live.snapSize) : v
-        const newU = snapVal(sp[axes.u] + deltaU)
-        const newV = snapVal(sp[axes.v] + deltaV)
-        meshRef.current.position[axes.u] = newU + halfSize(axes.u)
-        meshRef.current.position[axes.v] = newV + halfSize(axes.v)
-
-        if (live.snapEnabled) {
-          const pos = { x: 0, y: 0, z: 0 }
-          pos[axes.u] = newU + halfSize(axes.u)
-          pos[axes.v] = newV + halfSize(axes.v)
-          const fixed = (axes.u === 'x' && axes.v === 'y') ? 'z'
-            : (axes.u === 'z' && axes.v === 'y') ? 'x'
-            : 'y'
-          pos[fixed] = orthoDrag.current.startBoardPos[fixed] + halfSize(fixed as 'x' | 'y' | 'z')
-          live.setSnapIndicatorPos(pos)
-        }
-      }
+      meshRef.current.position.set(position.x + b.width / 2, position.y + b.height / 2, position.z + b.depth / 2)
+      live.setSnapIndicatorPos(indicator)
     }
 
     const onPointerUp = (e: PointerEvent) => {
@@ -285,22 +381,14 @@ export function Board3D({ board, assemblyId, orbitRef, highlight = false, dimmed
         return
       }
 
-      const axes = DRAG_AXES[live.activeView as Exclude<ViewMode, '3d'>]
-      const deltaU = worldPos[axes.u] - orthoDrag.current.startWorldPos[axes.u]
-      const deltaV = worldPos[axes.v] - orthoDrag.current.startWorldPos[axes.v]
-      const snapVal = (v: number) => live.snapEnabled ? snapToGrid(v, live.snapSize) : Math.round(v)
-
-      if (live.selectedBoardIds.length > 1 && live.selectedBoardIds.includes(live.board.id) && live.selectedAssemblyId) {
-        const nudge = { x: 0, y: 0, z: 0 }
-        nudge[axes.u] = snapVal(deltaU)
-        nudge[axes.v] = snapVal(deltaV)
-        live.nudgeBoards(live.selectedAssemblyId, live.selectedBoardIds, nudge)
+      // A multi-selection moves by the dragged board's (snapped) move
+      const { position } = dragTarget(e, worldPos)
+      const sp = orthoDrag.current.startBoardPos
+      const { selectedBoardIds, selectedAssemblyId } = useUIStore.getState()
+      if (selectedBoardIds.length > 1 && selectedBoardIds.includes(live.board.id) && selectedAssemblyId) {
+        live.nudgeBoards(selectedAssemblyId, selectedBoardIds, { x: position.x - sp.x, y: position.y - sp.y, z: position.z - sp.z })
       } else {
-        const sp = orthoDrag.current.startBoardPos
-        const newPos = { ...live.board.position }
-        newPos[axes.u] = snapVal(sp[axes.u] + deltaU)
-        newPos[axes.v] = snapVal(sp[axes.v] + deltaV)
-        live.updateBoard(live.assemblyId, live.board.id, { position: newPos })
+        live.updateBoard(live.assemblyId, live.board.id, { position })
       }
 
       endTransform()
@@ -312,8 +400,14 @@ export function Board3D({ board, assemblyId, orbitRef, highlight = false, dimmed
     return () => {
       canvas.removeEventListener('pointermove', onPointerMove)
       canvas.removeEventListener('pointerup', onPointerUp)
+      // Unmount or camera switch mid-drag: the pointerup will never reach us
+      if (orthoDrag.current.active) {
+        resetOrthoDrag()
+        endTransform()
+        endDragHistory()
+      }
     }
-  }, [gl, camera, raycaster])
+  }, [gl, camera, raycaster]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleOrthoPointerDown = (e: any) => {
     if (!isOrtho || activeTool !== 'select') return
@@ -336,13 +430,16 @@ export function Board3D({ board, assemblyId, orbitRef, highlight = false, dimmed
     const worldPos = raycastToPlane(e.nativeEvent.clientX, e.nativeEvent.clientY)
     if (worldPos) {
       ghostPos.current = { ...board.position }
+      // a multi-selection drag moves all selected boards: none of them is a snap target
+      const { selectedBoardIds } = useUIStore.getState()
       orthoDrag.current = {
         active: true,
         startWorldPos: worldPos.clone(),
-        startBoardPos: { ...board.position }
+        startBoardPos: { ...board.position },
+        others: snapCandidates(selectedBoardIds.includes(board.id) ? selectedBoardIds : [board.id])
       }
       setIsDragging(true)
-      beginTransform()
+      beginTransform(resetOrthoDrag)
       beginDragHistory()
       gl.domElement.setPointerCapture(e.nativeEvent.pointerId)
     }
@@ -354,10 +451,14 @@ export function Board3D({ board, assemblyId, orbitRef, highlight = false, dimmed
 
   useEffect(() => () => boardGeometry.dispose(), [boardGeometry])
 
+  // Outline of the board (also around holes and notches), drawn over the faces
+  const edgesGeometry = useMemo(() => new THREE.EdgesGeometry(boardGeometry), [boardGeometry])
+  useEffect(() => () => edgesGeometry.dispose(), [edgesGeometry])
+
   // Grain direction arrow: half-length arrow along the grain axis
   const grainArrow = useMemo(() => {
     const dir = board.grainDirection
-    const mat = getMaterialById(board.materialId)
+    const mat = getMaterialById(board.materialId, customMaterials)
     if (!dir || !mat?.grain) return null
     const hw = board.width / 2
     const hh = board.height / 2
@@ -367,11 +468,13 @@ export function Board3D({ board, assemblyId, orbitRef, highlight = false, dimmed
     if (dir === 'height') return { from: [0, -arrowLen, 0] as [number,number,number], to: [0, arrowLen, 0] as [number,number,number] }
     if (dir === 'depth')  return { from: [0, 0, -arrowLen] as [number,number,number], to: [0, 0, arrowLen] as [number,number,number] }
     return null
-  }, [board.grainDirection, board.materialId, board.width, board.height, board.depth])
+  }, [board.grainDirection, board.materialId, board.width, board.height, board.depth, customMaterials])
+  const grainPoints = useMemo(() => grainArrow && [grainArrow.from, grainArrow.to], [grainArrow])
 
   const boardMesh = (
     <mesh
       ref={meshRef}
+      name={board.id}
       position={[
         board.position.x + board.width / 2,
         board.position.y + board.height / 2,
@@ -393,11 +496,10 @@ export function Board3D({ board, assemblyId, orbitRef, highlight = false, dimmed
         // receives the click and OrbitControls would orbit the camera.
         if (isHoveringGizmo()) return
         if (e.nativeEvent.button !== 0) return
-        if (isSelected && !e.nativeEvent.ctrlKey && !e.nativeEvent.metaKey) {
-          // Don't stop propagation — TC needs the event
-          return
-        }
+        // Stop R3F from handing the event to the next board along the ray.
+        // TC is unaffected: it listens to the native pointerdown on the canvas.
         e.stopPropagation()
+        if (isSelected && !e.nativeEvent.ctrlKey && !e.nativeEvent.metaKey) return
         if (e.nativeEvent.ctrlKey || e.nativeEvent.metaKey) {
           toggleBoardSelection(assemblyId, board.id)
         } else if (!isSelected) {
@@ -414,6 +516,9 @@ export function Board3D({ board, assemblyId, orbitRef, highlight = false, dimmed
         e.stopPropagation()
         const nativeEvent = e.nativeEvent as MouseEvent
         nativeEvent.preventDefault()
+        // On Windows contextmenu fires on right-button release, i.e. after a
+        // right-drag pan too — that is not a request for the menu.
+        if (e.delta > CONTEXT_MENU_MAX_DELTA) return
         useUIStore.getState().setContextMenu({
           x: nativeEvent.clientX,
           y: nativeEvent.clientY,
@@ -423,39 +528,46 @@ export function Board3D({ board, assemblyId, orbitRef, highlight = false, dimmed
       }}
       geometry={boardGeometry}
     >
+      {/* Opaque; only the X-ray ghosting of other groups stays see-through, and every
+          board turns into a ghost while the static heat map is shown (it lies on the
+          boards, also inside closed carcasses). The polygon offset keeps edge lines crisp. */}
       <meshStandardMaterial
         color={board.color}
-        transparent={!isSelected || dimmed}
-        opacity={isSelected && !dimmed ? 1 : dimmed ? 0.45 : 0.85}
-        depthWrite={!dimmed}
+        transparent={dimmed || staticGhost}
+        opacity={staticGhost ? 0.12 : dimmed ? 0.45 : 1}
+        depthWrite={!dimmed && !staticGhost}
+        polygonOffset
+        polygonOffsetFactor={1}
+        polygonOffsetUnits={1}
         emissive={isSelected ? '#2563eb' : highlight ? '#f59e0b' : '#000000'}
         emissiveIntensity={isSelected ? 0.15 : highlight ? 0.25 : 0}
       />
+      {!isSelected && !highlight && (
+        <lineSegments geometry={edgesGeometry} material={edgeMaterial(board.color, dimmed || staticGhost)} raycast={() => null} />
+      )}
       {highlight && (
-        <lineSegments renderOrder={998}>
-          <edgesGeometry args={[boardGeometry]} />
+        <lineSegments renderOrder={998} geometry={edgesGeometry} raycast={() => null}>
           <lineBasicMaterial color="#f59e0b" depthTest={false} depthWrite={false} />
         </lineSegments>
       )}
       {isSelected && (
-        <lineSegments renderOrder={isOrtho ? 2 : 0}>
-          <edgesGeometry args={[boardGeometry]} />
-          <lineBasicMaterial color="#2563eb" depthTest={!isOrtho} />
+        <lineSegments renderOrder={isOrtho ? 2 : 0} geometry={edgesGeometry} raycast={() => null}>
+          <lineBasicMaterial color="#60a5fa" depthTest={!isOrtho} />
         </lineSegments>
       )}
-      {grainArrow && (
+      {grainPoints && (
         <Line
-          points={[grainArrow.from, grainArrow.to]}
+          points={grainPoints}
           color="#d97706"
           lineWidth={2}
         />
       )}
-      {/* Joint count badge when joint markers are on */}
-      {showJointMarkers && jointCount > 0 && (
+      {/* Joint count badge: selected boards only, while the joints layer is on */}
+      {isSelected && showJointMarkers && jointCount > 0 && (
         <Html
           position={[board.width / 2, board.height / 2, board.depth / 2]}
           style={{ pointerEvents: 'none' }}
-          zIndexRange={[100, 0]}
+          zIndexRange={[20, 0]}
         >
           <div style={{
             background: '#6366f1',
@@ -493,7 +605,7 @@ export function Board3D({ board, assemblyId, orbitRef, highlight = false, dimmed
   // In 3D view: render TransformControls as a sibling (not a parent wrapper).
   // The gizmo is attached to the mesh via useEffect (see above).
   // Using TC as a children-wrapper would position the gizmo at the scene origin.
-  if (!isOrtho && isPrimary) {
+  if (showTC) {
     // 3D shows the standard three.js TransformControls for all modes:
     // arrows (translate), rings (rotate), boxes (scale) — Blender style,
     // all 3 axes always visible.
@@ -521,4 +633,4 @@ export function Board3D({ board, assemblyId, orbitRef, highlight = false, dimmed
       {boardMesh}
     </>
   )
-}
+})

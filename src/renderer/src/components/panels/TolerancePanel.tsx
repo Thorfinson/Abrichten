@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useProjectStore } from '../../store/useProjectStore'
 import { useUIStore } from '../../store/useUIStore'
+import { Dialog, Button, FIELD_CLASS, TH_CLASS, TD_CLASS, SECTION_LABEL_CLASS } from '../ui/Dialog'
 
 interface TolerancePreset {
   key: string
@@ -157,15 +158,16 @@ function CustomToleranceRow({
   const [customValue, setCustomValue] = useState(1)
 
   return (
-    <div className="border-t border-gray-300 bg-yellow-50 px-3 py-2">
-      <span className="text-[10px] text-gray-500 font-bold uppercase mr-2">
+    <div className="border-t border-chrome-border px-4 py-3">
+      <span className={SECTION_LABEL_CLASS}>
         {lang === 'de' ? 'Eigener Wert' : 'Custom'}
       </span>
-      <div className="flex items-center gap-2 mt-1">
+      <div className="mt-1.5 flex items-center gap-2">
         <select
           value={customAxis}
           onChange={(e) => setCustomAxis(e.target.value as 'x' | 'y' | 'z')}
-          className="text-xs border border-gray-300 rounded px-1 py-0.5 bg-white w-14"
+          aria-label={lang === 'de' ? 'Achse' : 'Axis'}
+          className={`${FIELD_CLASS} w-14`}
         >
           <option value="x">X</option>
           <option value="y">Y</option>
@@ -177,19 +179,26 @@ function CustomToleranceRow({
           min={0.1}
           step={0.5}
           onChange={(e) => setCustomValue(Math.max(0.1, Number(e.target.value)))}
-          className="w-16 text-xs border border-gray-300 rounded px-1 py-0.5"
+          aria-label={lang === 'de' ? 'Wert (mm)' : 'Value (mm)'}
+          className={`${FIELD_CLASS} w-20 text-right`}
         />
-        <span className="text-xs text-gray-400">mm</span>
-        <button
+        <span className="text-xs text-chrome-hint">mm</span>
+        <Button
+          size="sm"
           onClick={() => nudge(customValue, customAxis, -1)}
           disabled={!canNudge}
-          className="px-2 py-0.5 text-xs bg-gray-100 rounded hover:bg-gray-200 disabled:opacity-30 font-mono"
-        >−</button>
-        <button
+          aria-label={`-${customValue}mm ${customAxis.toUpperCase()}`}
+          title={`-${customValue}mm ${customAxis.toUpperCase()}`}
+          className="font-mono"
+        >−</Button>
+        <Button
+          size="sm"
           onClick={() => nudge(customValue, customAxis, 1)}
           disabled={!canNudge}
-          className="px-2 py-0.5 text-xs bg-gray-100 rounded hover:bg-gray-200 disabled:opacity-30 font-mono"
-        >+</button>
+          aria-label={`+${customValue}mm ${customAxis.toUpperCase()}`}
+          title={`+${customValue}mm ${customAxis.toUpperCase()}`}
+          className="font-mono"
+        >+</Button>
       </div>
     </div>
   )
@@ -215,95 +224,83 @@ export function TolerancePanel() {
     nudgeBoards(selectedAssemblyId, selectedBoardIds, delta)
   }
 
+  const nudgeBtn = 'rounded bg-chrome-surface px-1.5 py-0.5 font-mono text-[10px] text-chrome-secondary outline-none enabled:hover:bg-chrome-hover enabled:hover:text-chrome-text focus-visible:ring-2 focus-visible:ring-action disabled:opacity-30'
+
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={(e) => { if (e.target === e.currentTarget) setShowTolerancePanel(false) }}>
-      <div className="bg-white rounded-lg shadow-xl w-[620px] max-h-[80vh] overflow-hidden flex flex-col">
-        <div className="p-4 border-b border-gray-200 flex items-center justify-between">
-          <h2 className="text-sm font-bold text-gray-800">
-            {lang === 'de' ? 'Toleranz-Referenz & Einstellmaße' : 'Tolerance Reference & Standard Clearances'}
-          </h2>
-          <button onClick={() => setShowTolerancePanel(false)} className="text-gray-400 hover:text-gray-700 text-lg">×</button>
-        </div>
-
-        <div className="flex-1 overflow-y-auto">
-          <table className="w-full text-xs border-collapse">
-            <thead className="sticky top-0 bg-gray-100">
-              <tr>
-                <th className="border border-gray-200 px-2 py-2 text-center w-10">
-                  {lang === 'de' ? 'Abb.' : 'Diag.'}
-                </th>
-                <th className="border border-gray-200 px-3 py-2 text-left">
-                  {lang === 'de' ? 'Bezeichnung' : 'Name'}
-                </th>
-                <th className="border border-gray-200 px-2 py-2 text-right w-16">mm</th>
-                <th className="border border-gray-200 px-3 py-2 text-left text-gray-500">
-                  {lang === 'de' ? 'Hinweis' : 'Note'}
-                </th>
-                <th className="border border-gray-200 px-2 py-2 text-center w-36">
-                  {lang === 'de' ? 'Brett verschieben' : 'Nudge board'}
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {PRESETS.map((p) => (
-                <tr key={p.key} className="hover:bg-blue-50">
-                  <td className="border border-gray-200 px-1 py-1 text-center">
-                    <ToleranceDiagram toleranceKey={p.key} />
-                  </td>
-                  <td className="border border-gray-200 px-3 py-1.5 font-medium text-gray-800">
-                    {lang === 'de' ? p.labelDe : p.labelEn}
-                  </td>
-                  <td className="border border-gray-200 px-2 py-1.5 text-right font-mono text-blue-700 font-bold">
-                    {p.valueMm}
-                  </td>
-                  <td className="border border-gray-200 px-3 py-1.5 text-gray-400 italic">
-                    {lang === 'de' ? p.noteDe : p.noteEn}
-                  </td>
-                  <td className="border border-gray-200 px-2 py-1.5">
-                    <div className="flex gap-1 justify-center flex-wrap">
-                      {(['x', 'y', 'z'] as const).map((axis) => (
-                        <div key={axis} className="flex gap-0.5">
-                          <button
-                            onClick={() => nudge(p.valueMm, axis, -1)}
-                            disabled={!canNudge}
-                            className="px-1 py-0.5 text-[10px] bg-gray-100 rounded hover:bg-gray-200 disabled:opacity-30 font-mono"
-                            title={`-${p.valueMm}mm ${axis.toUpperCase()}`}
-                          >−{axis}</button>
-                          <button
-                            onClick={() => nudge(p.valueMm, axis, 1)}
-                            disabled={!canNudge}
-                            className="px-1 py-0.5 text-[10px] bg-gray-100 rounded hover:bg-gray-200 disabled:opacity-30 font-mono"
-                            title={`+${p.valueMm}mm ${axis.toUpperCase()}`}
-                          >+{axis}</button>
-                        </div>
-                      ))}
+    <Dialog
+      title={lang === 'de' ? 'Toleranz-Referenz & Einstellmaße' : 'Tolerance Reference & Standard Clearances'}
+      titleId="tolerance-title"
+      onClose={() => setShowTolerancePanel(false)}
+      className="w-[780px]"
+      bodyClassName="overflow-y-auto"
+      footer={<>
+        <span className="mr-auto text-xs text-chrome-muted">
+          {canNudge
+            ? t('dlg.toleranceNudgeTarget', { count: selectedBoardIds.length })
+            : (lang === 'de' ? 'Brett auswählen um Verschiebe-Buttons zu aktivieren' : 'Select a board to enable nudge buttons')}
+        </span>
+        <Button onClick={() => setShowTolerancePanel(false)}>{t('ui.close')}</Button>
+      </>}
+    >
+      <table className="w-full border-collapse text-xs">
+        <thead className="sticky top-0 z-10">
+          <tr>
+            <th className={`${TH_CLASS} w-12 text-center`}>
+              {lang === 'de' ? 'Abb.' : 'Diag.'}
+            </th>
+            <th className={TH_CLASS}>
+              {lang === 'de' ? 'Bezeichnung' : 'Name'}
+            </th>
+            <th className={`${TH_CLASS} w-14 text-right`}>mm</th>
+            <th className={TH_CLASS}>
+              {lang === 'de' ? 'Hinweis' : 'Note'}
+            </th>
+            <th className={`${TH_CLASS} text-center`}>
+              {lang === 'de' ? 'Brett verschieben' : 'Nudge board'}
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          {PRESETS.map((p) => (
+            <tr key={p.key} className="hover:bg-chrome-surface/40">
+              <td className={`${TD_CLASS} text-center`}>
+                <ToleranceDiagram toleranceKey={p.key} />
+              </td>
+              <td className={`${TD_CLASS} font-medium`}>
+                {lang === 'de' ? p.labelDe : p.labelEn}
+              </td>
+              <td className={`${TD_CLASS} text-right font-mono font-bold text-accent`}>
+                {p.valueMm}
+              </td>
+              <td className={`${TD_CLASS} text-chrome-muted`}>
+                {lang === 'de' ? p.noteDe : p.noteEn}
+              </td>
+              <td className={TD_CLASS}>
+                <div className="flex justify-center gap-1.5 whitespace-nowrap">
+                  {(['x', 'y', 'z'] as const).map((axis) => (
+                    <div key={axis} className="flex gap-0.5">
+                      <button
+                        onClick={() => nudge(p.valueMm, axis, -1)}
+                        disabled={!canNudge}
+                        className={nudgeBtn}
+                        title={`-${p.valueMm}mm ${axis.toUpperCase()}`}
+                      >−{axis}</button>
+                      <button
+                        onClick={() => nudge(p.valueMm, axis, 1)}
+                        disabled={!canNudge}
+                        className={nudgeBtn}
+                        title={`+${p.valueMm}mm ${axis.toUpperCase()}`}
+                      >+{axis}</button>
                     </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          {!canNudge && (
-            <p className="text-xs text-gray-400 italic p-3 text-center">
-              {lang === 'de'
-                ? 'Brett auswählen um Verschiebe-Buttons zu aktivieren'
-                : 'Select a board to enable nudge buttons'}
-            </p>
-          )}
-
-          {/* Epic 25b — Custom tolerance entry */}
-          <CustomToleranceRow lang={lang} canNudge={canNudge} nudge={nudge} />
-        </div>
-
-        <div className="p-3 border-t border-gray-200 flex justify-end">
-          <button
-            onClick={() => setShowTolerancePanel(false)}
-            className="text-sm px-4 py-1.5 rounded bg-gray-100 text-gray-700 hover:bg-gray-200"
-          >
-            {t('actions.cancel')}
-          </button>
-        </div>
-      </div>
-    </div>
+                  ))}
+                </div>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      {/* Epic 25b — Custom tolerance entry */}
+      <CustomToleranceRow lang={lang} canNudge={canNudge} nudge={nudge} />
+    </Dialog>
   )
 }

@@ -14,14 +14,43 @@ declare global {
       setState: (s: any) => void
       temporal: { getState: () => { undo: () => void; redo: () => void } }
     }
-    __r3f: {
-      camera: THREE.Camera
-      scene: THREE.Scene
-      size: { width: number; height: number }
-      gl: THREE.WebGLRenderer
-      THREE: typeof THREE
-    }
+    __r3f: R3FState
+    /** Quad layout: the R3F state of each quadrant, by its view */
+    __r3fViews?: Partial<Record<'front' | 'side' | 'top' | '3d', R3FState>>
   }
+}
+
+interface R3FState {
+  camera: THREE.Camera
+  scene: THREE.Scene
+  size: { width: number; height: number }
+  gl: THREE.WebGLRenderer
+  THREE: typeof THREE
+}
+
+/** Like projectToCanvas, but for one quadrant of the quad layout. */
+export async function projectInView(
+  page: Page,
+  view: 'front' | 'side' | 'top' | '3d',
+  world: { x: number; y: number; z: number }
+): Promise<{ x: number; y: number }> {
+  return page.evaluate(({ view, wx, wy, wz }) => {
+    const r = window.__r3fViews![view]!
+    const v = new r.THREE.Vector3(wx, wy, wz).project(r.camera)
+    const rect = r.gl.domElement.getBoundingClientRect()
+    return {
+      x: rect.left + ((v.x + 1) / 2) * rect.width,
+      y: rect.top + ((1 - v.y) / 2) * rect.height
+    }
+  }, { view, wx: world.x, wy: world.y, wz: world.z })
+}
+
+/** Number of undo steps and whether zundo is tracking (false = paused, e.g. stuck mid-drag). */
+export async function undoState(page: Page): Promise<{ past: number; tracking: boolean }> {
+  return page.evaluate(() => {
+    const t = (window.__projectStore.temporal as any).getState()
+    return { past: t.pastStates.length, tracking: t.isTracking }
+  })
 }
 
 export interface BoardState {

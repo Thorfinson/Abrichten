@@ -117,6 +117,55 @@ test.describe('Project integrity', () => {
     expect(pageErrors).toEqual([])
   })
 
+  test('hostile names, colours and parameter keys are neutralised on load and render without errors', async ({ page }) => {
+    await bootWithSample(page)
+    const pageErrors: string[] = []
+    page.on('pageerror', (e) => pageErrors.push(e.message))
+    const leaks: string[] = []
+    page.on('request', (r) => { if (r.url().includes('evil.example')) leaks.push(r.url()) })
+    const loaded = await page.evaluate(() => {
+      const store = window.__projectStore.getState()
+      store.loadProject({
+        name: 'Küche\r\n0\r\nLINE',
+        parameters: { H: 720, '(\\w|\\w)*!': 1, '(': 2 },
+        customMaterials: [{ id: 'cm', name: { evil: 1 }, nameEn: 7, color: 'url(https://evil.example/m.png)', density: 'x' }],
+        customHardware: [{ id: 'ch', name: ['x'], unitPrice: 'free', manufacturer: { a: 1 } }],
+        assemblies: [{ id: 'A', name: 'A\nB', boards: [
+          { id: 'b1', name: 'Seite\n0\nLINE', width: 600, height: 720, depth: 18, position: { x: 0, y: 0, z: 0 },
+            materialId: 'cm', color: 'url(https://evil.example/b.png)', widthFormula: 'H - 120',
+            hardware: [{ hardwareId: 'ch', quantity: 1e12 }] }
+        ], joints: [] }]
+      })
+      const p = window.__projectStore.getState().project
+      const b = p.assemblies[0].boards[0]
+      return {
+        names: [p.name, p.assemblies[0].name, b.name, p.customMaterials[0].name, p.customHardware[0].name],
+        colors: [b.color, p.customMaterials[0].color],
+        params: p.parameters,
+        hardware: b.hardware
+      }
+    })
+    expect(loaded.names.every((n: unknown) => typeof n === 'string' && !/[\r\n]/.test(n))).toBe(true)
+    expect(loaded.colors.every((c: string) => /^#[0-9a-f]+$/i.test(c))).toBe(true)
+    expect(loaded.params).toEqual({ H: 720 })
+    expect(loaded.hardware).toEqual([])
+
+    // the card lists custom materials as <option>s, the panels show names and prices
+    await page.evaluate(() => {
+      window.__uiStore.getState().selectBoard('A', 'b1')
+      window.__uiStore.getState().setShowParametersPanel(true)
+    })
+    await page.waitForTimeout(300)
+    await page.evaluate(() => {
+      const ui = window.__uiStore.getState()
+      ui.setShowParametersPanel(false)
+      ui.setShowCostPanel(true)
+    })
+    await page.waitForTimeout(300)
+    expect(pageErrors).toEqual([])
+    expect(leaks).toEqual([])
+  })
+
   test('joints may span assemblies: kept on load with fasteners and note, pruned when the partner board is removed', async ({ page }) => {
     await bootWithSample(page)
     const result = await page.evaluate(() => {

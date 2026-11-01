@@ -3,7 +3,7 @@ import { useThree, useFrame } from '@react-three/fiber'
 import { Html } from '@react-three/drei'
 import * as THREE from 'three'
 import { useProjectStore } from '../../store/useProjectStore'
-import { useUIStore } from '../../store/useUIStore'
+import { useUIStore, useCanvasView } from '../../store/useUIStore'
 import { boardCorners3D } from '../../utils/projection'
 import { prioritizeRaycast } from '../../utils/raycastPriority'
 import { beginDragHistory, endDragHistory } from '../../utils/dragHistory'
@@ -11,6 +11,7 @@ import { beginTransform, endTransform } from '../../utils/transformLock'
 import { computeWorldSizeForPixels } from '../../utils/screenSize'
 import type { Board } from '../../types/furniture'
 import type { ViewMode } from '../../types/measurement'
+import { HTML_Z_RANGE } from '../canvasTheme'
 
 // Blender-style rotation rings — one per axis (X, Y, Z), centred on the board.
 const RING_RADIUS = 30
@@ -136,7 +137,9 @@ function RotationRing({ axis, centre, board, assemblyId }: RingProps): JSX.Eleme
     return () => {
       canvas.removeEventListener('pointermove', onMove)
       canvas.removeEventListener('pointerup', onUp)
-      // No drag-abort: cleanup only fires on real unmount. See ResizeHandles3D.
+      // Real unmount only (stable deps). Mid-drag the pointerup never arrives:
+      // end the drag here, keeping the rotation so far as one undo step.
+      onUp()
     }
   }, [gl, camera, raycaster])
 
@@ -146,7 +149,7 @@ function RotationRing({ axis, centre, board, assemblyId }: RingProps): JSX.Eleme
   return (
     <group>
       {angleDeg !== null && (
-        <Html position={centre} center style={{ pointerEvents: 'none' }} zIndexRange={[100, 0]}>
+        <Html position={centre} center style={{ pointerEvents: 'none' }} zIndexRange={HTML_Z_RANGE}>
           <div style={{
             background: colorBase, color: '#fff', fontSize: '11px',
             fontFamily: 'monospace', padding: '3px 7px', borderRadius: '4px',
@@ -185,7 +188,12 @@ function RotationRing({ axis, centre, board, assemblyId }: RingProps): JSX.Eleme
           drag.current.startV = c.v + (p.v - c.v)
           drag.current.startRotation = board.rotation[axis]
           drag.current.active = true
-          beginTransform()
+          // Esc cancels: drop the drag state; the caller restores the pre-drag project
+          beginTransform(() => {
+            drag.current.active = false
+            setAngleDeg(null)
+            gl.domElement.style.cursor = 'default'
+          })
           beginDragHistory()
           gl.domElement.setPointerCapture(e.nativeEvent.pointerId)
           gl.domElement.style.cursor = 'grabbing'
@@ -225,7 +233,7 @@ function RotationRing({ axis, centre, board, assemblyId }: RingProps): JSX.Eleme
 export function RotationHandle3D(): JSX.Element | null {
   const project          = useProjectStore((s) => s.project)
   const selectedBoardIds = useUIStore((s) => s.selectedBoardIds)
-  const activeView       = useUIStore((s) => s.activeView)
+  const activeView       = useCanvasView()
   const activeTool       = useUIStore((s) => s.activeTool)
   const transformMode    = useUIStore((s) => s.transformMode)
 

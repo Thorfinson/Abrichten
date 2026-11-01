@@ -4,29 +4,34 @@ import { useUIStore } from '../../store/useUIStore'
 import { useProjectStore } from '../../store/useProjectStore'
 import { fetchVisionModels, type OpenRouterModel } from '../../services/openrouter'
 import { loadEnvConfig } from '../../config/env'
-import { materials } from '../../data/materials'
-import type { Unit } from '../../types/furniture'
+import { Dialog, Button, FIELD_CLASS, segmentClass } from '../ui/Dialog'
 
 const STORAGE_KEY = 'abrichten-settings'
 
 interface Settings {
   apiKey: string
   modelId: string
-  theme: 'light' | 'dark' | 'system'
-  defaultMaterialId: string
-  defaultSnapSize: number
-  defaultUnit: Unit
   csvDelimiter: ';' | ',' | '\t'
-  tooltipsEnabled: boolean
 }
 
+const CSV_DELIMITERS: Settings['csvDelimiter'][] = [';', ',', '\t']
+
 function loadSettings(): Settings {
-  let saved: Partial<Settings> = {}
+  let saved: Partial<Record<keyof Settings, unknown>> = {}
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
-    if (raw) saved = JSON.parse(raw)
+    if (raw) saved = JSON.parse(raw) ?? {}
   } catch { /* ignore */ }
-  const merged = { ...defaultSettings(), ...saved }
+  // Older versions stored more (colour scheme, default values, tips) that nothing read:
+  // keep only the settings that still exist, each checked
+  const d = defaultSettings()
+  const merged: Settings = {
+    apiKey: typeof saved.apiKey === 'string' ? saved.apiKey : d.apiKey,
+    modelId: typeof saved.modelId === 'string' ? saved.modelId : d.modelId,
+    csvDelimiter: CSV_DELIMITERS.includes(saved.csvDelimiter as Settings['csvDelimiter'])
+      ? (saved.csvDelimiter as Settings['csvDelimiter'])
+      : d.csvDelimiter
+  }
 
   // .env values fill in when nothing is configured via the dialog
   const env = loadEnvConfig()
@@ -41,32 +46,12 @@ function defaultSettings(): Settings {
   return {
     apiKey: '',
     modelId: '',
-    theme: 'system',
-    defaultMaterialId: 'spanplatte-melamin',
-    defaultSnapSize: 10,
-    defaultUnit: 'mm',
-    csvDelimiter: ';',
-    tooltipsEnabled: false
+    csvDelimiter: ';'
   }
 }
 
 function saveSettings(s: Settings) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(s))
-  // Apply theme immediately
-  applyTheme(s.theme)
-}
-
-function applyTheme(theme: 'light' | 'dark' | 'system') {
-  const root = document.documentElement
-  if (theme === 'dark') {
-    root.classList.add('dark')
-  } else if (theme === 'light') {
-    root.classList.remove('dark')
-  } else {
-    // system
-    const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches
-    root.classList.toggle('dark', prefersDark)
-  }
 }
 
 export function getApiKey(): string {
@@ -77,21 +62,17 @@ export function getModelId(): string {
   return loadSettings().modelId
 }
 
-export function getDefaultMaterialId(): string {
-  return loadSettings().defaultMaterialId
-}
-
-export function getCsvDelimiter(): string {
+export function getCsvDelimiter(): Settings['csvDelimiter'] {
   return loadSettings().csvDelimiter
 }
 
-type SectionId = 'appearance' | 'defaults' | 'export' | 'ai' | 'shortcuts'
+type SectionId = 'general' | 'export' | 'ai' | 'shortcuts'
 
 const SHORTCUTS = [
   { key: 'Ctrl+Z / Ctrl+Shift+Z', actionDe: 'Rückgängig / Wiederholen', actionEn: 'Undo / Redo' },
   { key: 'Ctrl+S', actionDe: 'Speichern', actionEn: 'Save' },
   { key: 'Ctrl+O', actionDe: 'Öffnen', actionEn: 'Open' },
-  { key: 'Ctrl+D', actionDe: 'Duplizieren', actionEn: 'Duplicate' },
+  { key: 'D / Ctrl+D', actionDe: 'Duplizieren', actionEn: 'Duplicate' },
   { key: 'Ctrl+A', actionDe: 'Alles auswählen', actionEn: 'Select all' },
   { key: 'F', actionDe: 'Ansicht einpassen', actionEn: 'Fit view' },
   { key: 'Ctrl+K', actionDe: 'Befehlspalette', actionEn: 'Command palette' },
@@ -118,7 +99,7 @@ export function SettingsDialog() {
   const [loading, setLoading] = useState(false)
   const [testStatus, setTestStatus] = useState<'idle' | 'ok' | 'error'>('idle')
   const [error, setError] = useState('')
-  const [activeSection, setActiveSection] = useState<SectionId>('appearance')
+  const [activeSection, setActiveSection] = useState<SectionId>('general')
 
   useEffect(() => {
     if (settingsOpen) {
@@ -160,328 +141,185 @@ export function SettingsDialog() {
 
   if (!settingsOpen) return null
 
-  const sections: { id: SectionId; labelDe: string; labelEn: string }[] = [
-    { id: 'appearance', labelDe: 'Darstellung', labelEn: 'Appearance' },
-    { id: 'defaults', labelDe: 'Standard-Werte', labelEn: 'Defaults' },
-    { id: 'export', labelDe: 'Export', labelEn: 'Export' },
-    { id: 'ai', labelDe: 'KI / API', labelEn: 'AI / API' },
-    { id: 'shortcuts', labelDe: 'Tastenkürzel', labelEn: 'Keyboard Shortcuts' },
+  const sections: { id: SectionId; label: string }[] = [
+    { id: 'general', label: t('dlg.general') },
+    { id: 'export', label: 'Export' },
+    { id: 'ai', label: lang === 'de' ? 'KI / API' : 'AI / API' },
+    { id: 'shortcuts', label: lang === 'de' ? 'Tastenkürzel' : 'Keyboard Shortcuts' },
   ]
 
+  const fieldLabel = 'mb-1.5 block text-xs font-medium text-chrome-secondary'
+
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={(e) => { if (e.target === e.currentTarget) setSettingsOpen(false) }}>
-      <div className="bg-white rounded-lg shadow-xl w-[600px] max-h-[85vh] flex flex-col">
-        {/* Header */}
-        <div className="flex items-center justify-between px-5 pt-5 pb-3 border-b border-gray-200">
-          <h2 className="text-base font-bold text-gray-800">{t('settings.title')}</h2>
+    <Dialog
+      title={t('settings.title')}
+      titleId="settings-title"
+      onClose={() => setSettingsOpen(false)}
+      className="h-[520px] w-[640px]"
+      bodyClassName="flex"
+      footer={<>
+        <Button onClick={() => setSettingsOpen(false)}>{t('actions.cancel')}</Button>
+        <Button variant="primary" onClick={handleSave}>{t('actions.apply')}</Button>
+      </>}
+    >
+      {/* Left nav */}
+      <nav aria-label={t('settings.title')} className="w-44 shrink-0 border-r border-chrome-border py-2">
+        {sections.map((s) => (
           <button
-            onClick={() => setSettingsOpen(false)}
-            className="text-gray-400 hover:text-gray-600 text-xl leading-none"
-          >×</button>
-        </div>
+            key={s.id}
+            type="button"
+            aria-current={activeSection === s.id ? 'page' : undefined}
+            onClick={() => setActiveSection(s.id)}
+            className={`w-full border-l-2 px-4 py-2 text-left text-sm outline-none transition-colors focus-visible:bg-chrome-hover ${
+              activeSection === s.id
+                ? 'border-accent bg-chrome-surface/60 font-medium text-chrome-text'
+                : 'border-transparent text-chrome-muted hover:bg-chrome-hover/40 hover:text-chrome-text'
+            }`}
+          >
+            {s.label}
+          </button>
+        ))}
+      </nav>
 
-        <div className="flex flex-1 overflow-hidden">
-          {/* Left nav */}
-          <div className="w-40 border-r border-gray-100 py-2 shrink-0">
-            {sections.map((s) => (
-              <button
-                key={s.id}
-                onClick={() => setActiveSection(s.id)}
-                className={`w-full text-left px-4 py-2 text-sm rounded-none transition-colors ${
-                  activeSection === s.id
-                    ? 'bg-blue-50 text-blue-700 font-medium border-r-2 border-blue-600'
-                    : 'text-gray-600 hover:bg-gray-50'
-                }`}
+      {/* Content */}
+      <div className="min-w-0 flex-1 overflow-y-auto p-5">
+        {activeSection === 'general' && (
+          <div className="space-y-5">
+            {/* Language */}
+            <div>
+              <span className={fieldLabel}>{t('settings.language')}</span>
+              <div className="flex gap-2">
+                {(['de', 'en'] as const).map((l) => (
+                  <button
+                    key={l}
+                    type="button"
+                    onClick={() => handleLanguageChange(l)}
+                    aria-pressed={lang === l}
+                    className={segmentClass(lang === l)}
+                  >
+                    {l === 'de' ? 'Deutsch' : 'English'}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+          </div>
+        )}
+
+        {activeSection === 'export' && (
+          <div>
+            <span className={fieldLabel}>{lang === 'de' ? 'CSV-Trennzeichen' : 'CSV Delimiter'}</span>
+            <div className="flex gap-2">
+              {[
+                { v: ';' as const, label: lang === 'de' ? 'Semikolon ;' : 'Semicolon ;' },
+                { v: ',' as const, label: lang === 'de' ? 'Komma ,' : 'Comma ,' },
+                { v: '\t' as const, label: lang === 'de' ? 'Tabulator ⇥' : 'Tab ⇥' }
+              ].map((opt) => (
+                <button
+                  key={opt.v}
+                  type="button"
+                  aria-pressed={settings.csvDelimiter === opt.v}
+                  onClick={() => update({ csvDelimiter: opt.v })}
+                  className={segmentClass(settings.csvDelimiter === opt.v)}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+            <p className="mt-1.5 text-xs text-chrome-hint">
+              {lang === 'de'
+                ? 'Für deutsche Excel-Versionen: Semikolon empfohlen'
+                : 'For European Excel: Semicolon recommended'}
+            </p>
+          </div>
+        )}
+
+        {activeSection === 'ai' && (
+          <div className="space-y-4">
+            <label className="block">
+              <span className={fieldLabel}>{t('settings.apiKey')}</span>
+              <input
+                type="password"
+                value={settings.apiKey}
+                onChange={(e) => update({ apiKey: e.target.value })}
+                placeholder="sk-or-..."
+                className={`${FIELD_CLASS} w-full py-1.5 text-sm`}
+              />
+            </label>
+            <p className="-mt-2 text-xs text-chrome-hint">
+              {t('ai.noApiKey')}{' '}
+              <a
+                href="https://openrouter.ai/keys"
+                target="_blank"
+                rel="noreferrer"
+                className="text-info underline hover:text-info-text"
               >
-                {lang === 'de' ? s.labelDe : s.labelEn}
-              </button>
-            ))}
-          </div>
+                openrouter.ai/keys
+              </a>
+            </p>
 
-          {/* Content */}
-          <div className="flex-1 overflow-y-auto p-5">
+            <div className="flex items-center gap-3">
+              <Button onClick={handleFetchModels} disabled={!settings.apiKey.trim() || loading}>
+                {loading
+                  ? t('settings.loadingModels')
+                  : lang === 'de' ? 'Verbindung testen & Modelle laden' : 'Test connection & load models'}
+              </Button>
+              {testStatus === 'ok' && (
+                <span className="text-sm text-success">✓ {lang === 'de' ? 'Verbunden' : 'Connected'}</span>
+              )}
+              {testStatus === 'error' && (
+                <span className="text-sm text-danger">✗ {lang === 'de' ? 'Fehler' : 'Error'}</span>
+              )}
+            </div>
+            {error && <p role="alert" className="text-xs text-danger">{error}</p>}
 
-            {activeSection === 'appearance' && (
-              <div className="space-y-4">
-                {/* Language */}
-                <div>
-                  <label className="text-sm font-medium text-gray-700 block mb-1">
-                    {t('settings.language')}
-                  </label>
-                  <div className="flex gap-2">
-                    {(['de', 'en'] as const).map((l) => (
-                      <button
-                        key={l}
-                        onClick={() => handleLanguageChange(l)}
-                        className={`px-3 py-1.5 text-sm rounded ${
-                          project.language === l
-                            ? 'bg-blue-600 text-white'
-                            : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                        }`}
-                      >
-                        {l === 'de' ? 'Deutsch' : 'English'}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Theme */}
-                <div>
-                  <label className="text-sm font-medium text-gray-700 block mb-1">
-                    {lang === 'de' ? 'Farbschema' : 'Theme'}
-                  </label>
-                  <div className="flex gap-2">
-                    {([
-                      { v: 'light', labelDe: 'Hell', labelEn: 'Light' },
-                      { v: 'dark', labelDe: 'Dunkel', labelEn: 'Dark' },
-                      { v: 'system', labelDe: 'System', labelEn: 'System' }
-                    ] as const).map((opt) => (
-                      <button
-                        key={opt.v}
-                        onClick={() => update({ theme: opt.v })}
-                        className={`px-3 py-1.5 text-sm rounded ${
-                          settings.theme === opt.v
-                            ? 'bg-blue-600 text-white'
-                            : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                        }`}
-                      >
-                        {lang === 'de' ? opt.labelDe : opt.labelEn}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Discovery tooltips */}
-                <div className="flex items-center justify-between">
-                  <div>
-                    <div className="text-sm font-medium text-gray-700">
-                      {lang === 'de' ? 'Lern-Hinweise' : 'Discovery Tooltips'}
-                    </div>
-                    <div className="text-xs text-gray-400">
-                      {lang === 'de' ? 'Kontextuelle Tipps für neue Benutzer' : 'Contextual tips for new users'}
-                    </div>
-                  </div>
-                  <button
-                    onClick={() => update({ tooltipsEnabled: !settings.tooltipsEnabled })}
-                    className={`w-10 h-5 rounded-full transition-colors ${settings.tooltipsEnabled ? 'bg-blue-600' : 'bg-gray-300'}`}
-                  >
-                    <div className={`w-4 h-4 bg-white rounded-full mx-0.5 transition-transform ${settings.tooltipsEnabled ? 'translate-x-5' : 'translate-x-0'}`} />
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {activeSection === 'defaults' && (
-              <div className="space-y-4">
-                <div>
-                  <label className="text-sm font-medium text-gray-700 block mb-1">
-                    {lang === 'de' ? 'Standard-Material' : 'Default Material'}
-                  </label>
-                  <select
-                    value={settings.defaultMaterialId}
-                    onChange={(e) => update({ defaultMaterialId: e.target.value })}
-                    className="w-full text-sm border border-gray-300 rounded px-3 py-2"
-                  >
-                    {materials.map((m) => (
-                      <option key={m.id} value={m.id}>
-                        {lang === 'de' ? m.name : m.nameEn}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label className="text-sm font-medium text-gray-700 block mb-1">
-                    {lang === 'de' ? 'Standard-Raster (mm)' : 'Default Snap Size (mm)'}
-                  </label>
-                  <div className="flex gap-2">
-                    {[1, 5, 10, 25, 50, 100].map((v) => (
-                      <button
-                        key={v}
-                        onClick={() => update({ defaultSnapSize: v })}
-                        className={`px-2.5 py-1 text-sm rounded ${
-                          settings.defaultSnapSize === v
-                            ? 'bg-blue-600 text-white'
-                            : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                        }`}
-                      >
-                        {v}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                <div>
-                  <label className="text-sm font-medium text-gray-700 block mb-1">
-                    {lang === 'de' ? 'Standard-Einheit' : 'Default Unit'}
-                  </label>
-                  <div className="flex gap-2">
-                    {(['mm', 'cm', 'm'] as Unit[]).map((u) => (
-                      <button
-                        key={u}
-                        onClick={() => update({ defaultUnit: u })}
-                        className={`px-3 py-1.5 text-sm rounded ${
-                          settings.defaultUnit === u
-                            ? 'bg-blue-600 text-white'
-                            : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                        }`}
-                      >
-                        {u}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {activeSection === 'export' && (
-              <div className="space-y-4">
-                <div>
-                  <label className="text-sm font-medium text-gray-700 block mb-1">
-                    {lang === 'de' ? 'CSV-Trennzeichen' : 'CSV Delimiter'}
-                  </label>
-                  <div className="flex gap-2">
-                    {[
-                      { v: ';' as const, label: lang === 'de' ? 'Semikolon ;' : 'Semicolon ;' },
-                      { v: ',' as const, label: lang === 'de' ? 'Komma ,' : 'Comma ,' },
-                      { v: '\t' as const, label: lang === 'de' ? 'Tabulator ⇥' : 'Tab ⇥' }
-                    ].map((opt) => (
-                      <button
-                        key={opt.v}
-                        onClick={() => update({ csvDelimiter: opt.v })}
-                        className={`px-3 py-1.5 text-sm rounded ${
-                          settings.csvDelimiter === opt.v
-                            ? 'bg-blue-600 text-white'
-                            : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                        }`}
-                      >
-                        {opt.label}
-                      </button>
-                    ))}
-                  </div>
-                  <p className="text-xs text-gray-400 mt-1">
-                    {lang === 'de'
-                      ? 'Für deutsche Excel-Versionen: Semikolon empfohlen'
-                      : 'For European Excel: Semicolon recommended'}
-                  </p>
-                </div>
-              </div>
-            )}
-
-            {activeSection === 'ai' && (
-              <div className="space-y-4">
-                <div>
-                  <label className="text-sm font-medium text-gray-700 block mb-1">
-                    {t('settings.apiKey')}
-                  </label>
-                  <input
-                    type="password"
-                    value={settings.apiKey}
-                    onChange={(e) => update({ apiKey: e.target.value })}
-                    placeholder="sk-or-..."
-                    className="w-full text-sm border border-gray-300 rounded px-3 py-2"
-                  />
-                  <p className="text-xs text-gray-400 mt-1">
-                    {t('ai.noApiKey')}{' '}
-                    <a
-                      href="https://openrouter.ai/keys"
-                      target="_blank"
-                      rel="noreferrer"
-                      className="text-blue-500 underline"
-                    >
-                      openrouter.ai/keys
-                    </a>
-                  </p>
-                </div>
-
-                <div className="flex gap-2 items-center">
-                  <button
-                    onClick={handleFetchModels}
-                    disabled={!settings.apiKey.trim() || loading}
-                    className="text-sm bg-blue-600 text-white px-4 py-1.5 rounded hover:bg-blue-700 disabled:opacity-50"
-                  >
-                    {loading
-                      ? t('settings.loadingModels')
-                      : lang === 'de' ? 'Verbindung testen & Modelle laden' : 'Test connection & load models'}
-                  </button>
-                  {testStatus === 'ok' && (
-                    <span className="text-sm text-green-600">✓ {lang === 'de' ? 'Verbunden' : 'Connected'}</span>
-                  )}
-                  {testStatus === 'error' && (
-                    <span className="text-sm text-red-500">✗ {lang === 'de' ? 'Fehler' : 'Error'}</span>
-                  )}
-                </div>
-                {error && <p className="text-xs text-red-500">{error}</p>}
-
-                {models.length > 0 && (
-                  <div>
-                    <label className="text-sm font-medium text-gray-700 block mb-1">
-                      {t('settings.model')}
-                    </label>
-                    <select
-                      value={settings.modelId}
-                      onChange={(e) => update({ modelId: e.target.value })}
-                      className="w-full text-sm border border-gray-300 rounded px-3 py-2"
-                    >
-                      <option value="">-- {t('ai.selectModel')} --</option>
-                      {models.map((m) => (
-                        <option key={m.id} value={m.id}>{m.name}</option>
-                      ))}
-                    </select>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {activeSection === 'shortcuts' && (
-              <div>
-                <table className="w-full text-xs">
-                  <thead>
-                    <tr className="text-left text-gray-500 border-b border-gray-100">
-                      <th className="pb-1 font-medium pr-4">
-                        {lang === 'de' ? 'Tastenkürzel' : 'Shortcut'}
-                      </th>
-                      <th className="pb-1 font-medium">
-                        {lang === 'de' ? 'Aktion' : 'Action'}
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {SHORTCUTS.map((s) => (
-                      <tr key={s.key} className="border-b border-gray-50">
-                        <td className="py-1.5 pr-4">
-                          <kbd className="font-mono text-[10px] bg-gray-100 border border-gray-200 px-1.5 py-0.5 rounded">
-                            {s.key}
-                          </kbd>
-                        </td>
-                        <td className="py-1.5 text-gray-600">
-                          {lang === 'de' ? s.actionDe : s.actionEn}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+            {models.length > 0 && (
+              <label className="block">
+                <span className={fieldLabel}>{t('settings.model')}</span>
+                <select
+                  value={settings.modelId}
+                  onChange={(e) => update({ modelId: e.target.value })}
+                  className={`${FIELD_CLASS} w-full py-1.5 text-sm`}
+                >
+                  <option value="">-- {t('ai.selectModel')} --</option>
+                  {models.map((m) => (
+                    <option key={m.id} value={m.id}>{m.name}</option>
+                  ))}
+                </select>
+              </label>
             )}
           </div>
-        </div>
+        )}
 
-        {/* Footer */}
-        <div className="flex justify-end gap-2 px-5 py-3 border-t border-gray-200">
-          <button
-            onClick={() => setSettingsOpen(false)}
-            className="text-sm px-4 py-1.5 rounded bg-gray-100 text-gray-700 hover:bg-gray-200"
-          >
-            {t('actions.cancel')}
-          </button>
-          <button
-            onClick={handleSave}
-            className="text-sm px-4 py-1.5 rounded bg-blue-600 text-white hover:bg-blue-700"
-          >
-            {t('actions.apply')}
-          </button>
-        </div>
+        {activeSection === 'shortcuts' && (
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="border-b border-chrome-border text-left text-chrome-muted">
+                <th className="pb-1.5 pr-4 font-medium">
+                  {lang === 'de' ? 'Tastenkürzel' : 'Shortcut'}
+                </th>
+                <th className="pb-1.5 font-medium">
+                  {lang === 'de' ? 'Aktion' : 'Action'}
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {SHORTCUTS.map((s) => (
+                <tr key={s.key} className="border-b border-chrome-border/60">
+                  <td className="py-1.5 pr-4">
+                    <kbd className="rounded border border-chrome-border bg-chrome-deep px-1.5 py-0.5 font-mono text-[10px] text-chrome-text">
+                      {s.key}
+                    </kbd>
+                  </td>
+                  <td className="py-1.5 text-chrome-secondary">
+                    {lang === 'de' ? s.actionDe : s.actionEn}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
       </div>
-    </div>
+    </Dialog>
   )
 }

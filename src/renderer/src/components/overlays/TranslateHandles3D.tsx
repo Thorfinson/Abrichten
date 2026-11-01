@@ -2,8 +2,9 @@ import { useRef, useEffect, useState, type JSX } from 'react'
 import { useThree, useFrame } from '@react-three/fiber'
 import * as THREE from 'three'
 import { useProjectStore } from '../../store/useProjectStore'
-import { useUIStore } from '../../store/useUIStore'
+import { useUIStore, useCanvasView } from '../../store/useUIStore'
 import { snapToGrid } from '../../utils/geometry'
+import { snapBoardToBoards, FACE_SNAP_PX } from '../../utils/snap'
 import { prioritizeRaycast } from '../../utils/raycastPriority'
 import { computeWorldSizeForPixels } from '../../utils/screenSize'
 import { beginDragHistory, endDragHistory } from '../../utils/dragHistory'
@@ -70,11 +71,14 @@ function TranslateArrow({ arrow, centre, board, assemblyId }: ArrowProps): JSX.E
     startWorld: THREE.Vector3
     startBoardPos: { x: number; y: number; z: number }
     plane: THREE.Plane
+    /** Visible boards the dragged one can snap to, collected at drag start */
+    others: Board[]
   }>({
     active: false,
     startWorld: new THREE.Vector3(),
     startBoardPos: { x: 0, y: 0, z: 0 },
-    plane: new THREE.Plane()
+    plane: new THREE.Plane(),
+    others: []
   })
 
   // Live values read by the pointer handler — kept in a ref so deps stay
@@ -112,16 +116,25 @@ function TranslateArrow({ arrow, centre, board, assemblyId }: ArrowProps): JSX.E
       const live = liveRef.current
       const w = intersectPlane(e.clientX, e.clientY)
       if (!w) return
-      const delta = w[live.arrow.axis] - drag.current.startWorld[live.arrow.axis]
-      const target = drag.current.startBoardPos[live.arrow.axis] + delta
-      const snapped = live.snapEnabled ? snapToGrid(target, live.snapSize) : Math.round(target)
-      const newPos = { ...live.board.position, [live.arrow.axis]: snapped }
+      const axis = live.arrow.axis
+      const delta = w[axis] - drag.current.startWorld[axis]
+      const raw = { ...live.board.position, [axis]: drag.current.startBoardPos[axis] + delta }
+      // Face snap to other boards first (Alt turns it off), else grid snap / whole mm
+      const face = e.altKey ? null : snapBoardToBoards(
+        { ...live.board, position: raw }, drag.current.others, [axis],
+        computeWorldSizeForPixels(FACE_SNAP_PX, w, camera, canvas.clientHeight)
+      )
+      const newPos = face?.snapped.length
+        ? face.position
+        : { ...raw, [axis]: live.snapEnabled ? snapToGrid(raw[axis], live.snapSize) : Math.round(raw[axis]) }
+      useUIStore.getState().setSnapIndicatorPos(face?.indicator ?? null)
       live.updateBoard(live.assemblyId, live.board.id, { position: newPos })
     }
     const onUp = (): void => {
       if (!drag.current.active) return
       drag.current.active = false
       canvas.style.cursor = 'default'
+      useUIStore.getState().setSnapIndicatorPos(null)
       endTransform()
       endDragHistory()
     }
@@ -130,7 +143,10 @@ function TranslateArrow({ arrow, centre, board, assemblyId }: ArrowProps): JSX.E
     return () => {
       canvas.removeEventListener('pointermove', onMove)
       canvas.removeEventListener('pointerup', onUp)
-      // No drag-abort: cleanup only fires on real unmount. See ResizeHandles3D.
+      // Deps are stable, so this only runs on real unmount. Unmounted mid-drag
+      // (board deleted, view switched …) the pointerup never arrives: end the
+      // drag here, keeping the move made so far as one undo step.
+      onUp()
     }
   }, [gl, camera, raycaster])
 
@@ -149,8 +165,16 @@ function TranslateArrow({ arrow, centre, board, assemblyId }: ArrowProps): JSX.E
     if (!w) return
     drag.current.startWorld = w.clone()
     drag.current.startBoardPos = { ...board.position }
+    drag.current.others = useProjectStore.getState().project.assemblies
+      .filter((a) => a.visible !== false)
+      .flatMap((a) => a.boards.filter((b) => b.id !== board.id))
     drag.current.active = true
-    beginTransform()
+    // Esc cancels: drop the drag state; the caller restores the pre-drag project
+    beginTransform(() => {
+      drag.current.active = false
+      gl.domElement.style.cursor = 'default'
+      useUIStore.getState().setSnapIndicatorPos(null)
+    })
     beginDragHistory()
     gl.domElement.setPointerCapture(pointerId)
     gl.domElement.style.cursor = 'grabbing'
@@ -225,7 +249,7 @@ function TranslateArrow({ arrow, centre, board, assemblyId }: ArrowProps): JSX.E
 export function TranslateHandles3D(): JSX.Element | null {
   const project          = useProjectStore((s) => s.project)
   const selectedBoardIds = useUIStore((s) => s.selectedBoardIds)
-  const activeView       = useUIStore((s) => s.activeView)
+  const activeView       = useCanvasView()
   const activeTool       = useUIStore((s) => s.activeTool)
   const transformMode    = useUIStore((s) => s.transformMode)
 

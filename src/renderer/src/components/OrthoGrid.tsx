@@ -1,8 +1,9 @@
 import { useMemo } from 'react'
 import { Grid, Line, Html } from '@react-three/drei'
 import * as THREE from 'three'
-import { useUIStore } from '../store/useUIStore'
+import { useUIStore, useCanvasView } from '../store/useUIStore'
 import type { ViewMode } from '../types/measurement'
+import { CANVAS, HTML_Z_RANGE } from './canvasTheme'
 
 const GRID_SIZE = 16000
 const LABEL_STEP = 1000 // mm between labels
@@ -10,16 +11,15 @@ const LABEL_COUNT = Math.floor(GRID_SIZE / LABEL_STEP) // labels in each directi
 const AXIS_LENGTH = GRID_SIZE / 2
 
 /** Axis line colors */
-const X_COLOR = '#ef4444' // red
-const Y_COLOR = '#22c55e' // green
-const Z_COLOR = '#3b82f6' // blue
+const X_COLOR = CANVAS.axisX
+const Y_COLOR = CANVAS.axisY
+const Z_COLOR = CANVAS.axisZ
 
 const LABEL_STYLE: React.CSSProperties = {
   fontSize: '9px',
-  color: '#666',
-  background: 'rgba(255,255,255,0.7)',
+  color: CANVAS.gridLabel,
   padding: '0 2px',
-  borderRadius: '1px',
+  fontVariantNumeric: 'tabular-nums',
   whiteSpace: 'nowrap',
   pointerEvents: 'none',
   userSelect: 'none'
@@ -128,19 +128,19 @@ function OriginAxes({ config, activeView }: { config: AxisConfig; activeView: Vi
       {/* Origin dot */}
       <mesh position={[0, 0, 0]}>
         <sphereGeometry args={[isOrtho ? 4 : 3, 12, 12]} />
-        <meshBasicMaterial color="#333" />
+        <meshBasicMaterial color={CANVAS.origin} />
       </mesh>
 
       {/* Axis labels */}
       {isOrtho && (
         <>
-          <Html position={hLabelPos} center style={{ pointerEvents: 'none' }} zIndexRange={[100, 0]}>
-            <span style={{ ...AXIS_LABEL_STYLE, color: config.hColor, background: 'rgba(255,255,255,0.85)' }}>
+          <Html position={hLabelPos} center style={{ pointerEvents: 'none' }} zIndexRange={HTML_Z_RANGE}>
+            <span style={{ ...AXIS_LABEL_STYLE, color: config.hColor, background: 'var(--color-canvas-label)' }}>
               {config.hLabel}
             </span>
           </Html>
-          <Html position={vLabelPos} center style={{ pointerEvents: 'none' }} zIndexRange={[100, 0]}>
-            <span style={{ ...AXIS_LABEL_STYLE, color: config.vColor, background: 'rgba(255,255,255,0.85)' }}>
+          <Html position={vLabelPos} center style={{ pointerEvents: 'none' }} zIndexRange={HTML_Z_RANGE}>
+            <span style={{ ...AXIS_LABEL_STYLE, color: config.vColor, background: 'var(--color-canvas-label)' }}>
               {config.vLabel}
             </span>
           </Html>
@@ -184,7 +184,7 @@ function GridLabels({ config }: { config: AxisConfig }) {
   return (
     <>
       {labels.map((l, i) => (
-        <Html key={i} position={l.pos} center style={{ pointerEvents: 'none' }} zIndexRange={[100, 0]}>
+        <Html key={i} position={l.pos} center style={{ pointerEvents: 'none' }} zIndexRange={HTML_Z_RANGE}>
           <span style={LABEL_STYLE}>{l.text}</span>
         </Html>
       ))}
@@ -196,9 +196,8 @@ function GridLabels({ config }: { config: AxisConfig }) {
  * Grid plane that adjusts orientation based on the active view.
  * Includes colored origin axes, axis labels, and mm tick marks.
  */
-export function OrthoGrid({ forceView }: { forceView?: ViewMode } = {}) {
-  const storeView = useUIStore((s) => s.activeView)
-  const activeView = forceView ?? storeView
+export function OrthoGrid() {
+  const activeView = useCanvasView()
   const showGrid = useUIStore((s) => s.showGrid)
   const config = VIEW_CONFIGS[activeView]
   const isOrtho = activeView !== '3d'
@@ -210,11 +209,11 @@ export function OrthoGrid({ forceView }: { forceView?: ViewMode } = {}) {
       <Grid
         args={[GRID_SIZE, GRID_SIZE]}
         cellSize={50}
-        cellThickness={0.5}
-        cellColor="#ccc"
+        cellThickness={0.8}
+        cellColor={CANVAS.gridCell}
         sectionSize={LABEL_STEP}
         sectionThickness={1}
-        sectionColor="#999"
+        sectionColor={CANVAS.gridSection}
         fadeDistance={isOrtho ? 25000 : 8000}
         position={config.position}
         rotation={config.rotation}

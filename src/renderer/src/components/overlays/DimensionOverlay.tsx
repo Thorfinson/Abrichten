@@ -1,11 +1,27 @@
-import { useMemo } from 'react'
+import { memo, useMemo } from 'react'
 import { Line, Html } from '@react-three/drei'
 import { useProjectStore } from '../../store/useProjectStore'
-import { useUIStore } from '../../store/useUIStore'
+import { useUIStore, useCanvasView } from '../../store/useUIStore'
 import { boardCorners3D } from '../../utils/projection'
 import { formatValue } from '../../utils/units'
 import type { Board } from '../../types/furniture'
 import type { ViewMode } from '../../types/measurement'
+import { CANVAS, HTML_Z_RANGE, sceneLabelStyle } from '../canvasTheme'
+
+/** Per-board dimension lines are drawn for at most this many selected boards;
+ *  a bigger selection (e.g. Ctrl+A) gets one overall dimension instead. */
+const MAX_BOARD_DIMS = 3
+/** Offset of the first per-board dimension line from the board (mm) */
+const BASE_OFF = 20
+/** Extra offset per further board so labels don't overlap (mm) */
+const EXTRA_OFF = 18
+/** Offset of the assembly dimension, outside every per-board line (mm) */
+const OUTER_OFF = 80
+
+/** Render order of dimension lines (drawn without depth test, over the boards) */
+const ON_TOP = 10
+
+type Vec3Tuple = [number, number, number]
 
 /** Which board dimensions to show per view */
 const VIEW_DIMS: Record<ViewMode, { h: 'width' | 'depth'; v: 'height' | 'depth' | 'width' }> = {
@@ -23,36 +39,33 @@ interface DimLineProps {
   color?: string
 }
 
-function DimLine3D({ from, to, label, offset, color = '#333' }: DimLineProps) {
+function DimLine3D({ from, to, label, offset, color = CANVAS.dimLine }: DimLineProps) {
   const zoom = useUIStore((s) => s.zoom)
   const fontSize = Math.max(7, Math.min(12, 9 * Math.sqrt(zoom)))
 
-  const oFrom: [number, number, number] = [from[0] + offset[0], from[1] + offset[1], from[2] + offset[2]]
-  const oTo: [number, number, number] = [to[0] + offset[0], to[1] + offset[1], to[2] + offset[2]]
-  const mid: [number, number, number] = [
-    (oFrom[0] + oTo[0]) / 2,
-    (oFrom[1] + oTo[1]) / 2,
-    (oFrom[2] + oTo[2]) / 2
-  ]
+  // Memoized on the values: drei <Line> rebuilds its geometry whenever the
+  // points array changes identity, i.e. on every render with inline arrays.
+  const valueKey = [...from, ...to, ...offset].join(',')
+  const { ext1, ext2, dim, mid } = useMemo(() => {
+    const oFrom: Vec3Tuple = [from[0] + offset[0], from[1] + offset[1], from[2] + offset[2]]
+    const oTo: Vec3Tuple = [to[0] + offset[0], to[1] + offset[1], to[2] + offset[2]]
+    return {
+      ext1: [from, oFrom],
+      ext2: [to, oTo],
+      dim: [oFrom, oTo],
+      mid: [(oFrom[0] + oTo[0]) / 2, (oFrom[1] + oTo[1]) / 2, (oFrom[2] + oTo[2]) / 2] as Vec3Tuple
+    }
+  }, [valueKey]) // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <group>
-      {/* Extension lines */}
-      <Line points={[from, oFrom]} color="#999" lineWidth={0.5} />
-      <Line points={[to, oTo]} color="#999" lineWidth={0.5} />
-      {/* Dimension line */}
-      <Line points={[oFrom, oTo]} color={color} lineWidth={1} />
+      {/* Extension and dimension lines — drawn over the boards, like the label */}
+      <Line points={ext1} color={CANVAS.dimExtension} lineWidth={0.5} transparent depthTest={false} renderOrder={ON_TOP} />
+      <Line points={ext2} color={CANVAS.dimExtension} lineWidth={0.5} transparent depthTest={false} renderOrder={ON_TOP} />
+      <Line points={dim} color={color} lineWidth={1} transparent depthTest={false} renderOrder={ON_TOP} />
       {/* Label */}
-      <Html position={mid} center style={{ pointerEvents: 'none' }} zIndexRange={[100, 0]}>
-        <span style={{
-          fontSize: `${fontSize}px`,
-          lineHeight: 1,
-          color,
-          background: 'rgba(255,255,255,0.9)',
-          padding: '0 3px',
-          borderRadius: '2px',
-          whiteSpace: 'nowrap'
-        }}>
+      <Html position={mid} center style={{ pointerEvents: 'none' }} zIndexRange={HTML_Z_RANGE}>
+        <span style={sceneLabelStyle(color, fontSize)}>
           {label}
         </span>
       </Html>
@@ -89,15 +102,13 @@ interface BoardDimsProps {
   staggerIdx: number
 }
 
-function BoardDimensions({ board, activeView, staggerIdx }: BoardDimsProps) {
+const BoardDimensions = memo(function BoardDimensions({ board, activeView, staggerIdx }: BoardDimsProps) {
   const displayUnit = useProjectStore((s) => s.project.displayUnit)
 
   const aabb = useMemo(() => computeAABB(board), [board])
 
   const dims = VIEW_DIMS[activeView]
   // Each subsequent board gets an extra OFF distance to stagger dimension lines
-  const BASE_OFF = 20
-  const EXTRA_OFF = 18
   const off = BASE_OFF + staggerIdx * EXTRA_OFF
 
   let hFrom: [number, number, number]
@@ -149,10 +160,19 @@ function BoardDimensions({ board, activeView, staggerIdx }: BoardDimsProps) {
       <DimLine3D from={vFrom} to={vTo} label={formatValue(board[dims.v], displayUnit)} offset={vOffset} />
     </group>
   )
+})
+
+interface GroupDimsProps {
+  boards: Board[]
+  activeView: ViewMode
+  /** Distance of the dimension lines from the bounding box (mm) */
+  offset?: number
+  color?: string
 }
 
-/** Assembly bounding box dimensions in orange */
-function AssemblyDimensions({ boards, activeView }: { boards: Board[]; activeView: ViewMode }) {
+/** Overall bounding-box dimensions of a group of boards — the assembly (orange)
+ *  or a large selection. */
+const AssemblyDimensions = memo(function AssemblyDimensions({ boards, activeView, offset = OUTER_OFF, color = CANVAS.dimAssembly }: GroupDimsProps) {
   const displayUnit = useProjectStore((s) => s.project.displayUnit)
 
   const aabb = useMemo(() => {
@@ -173,8 +193,7 @@ function AssemblyDimensions({ boards, activeView }: { boards: Board[]; activeVie
 
   if (!isFinite(aabb.minX)) return null
 
-  // Outer offset: further out than any board dim line
-  const OUTER = 80
+  const OUTER = offset
 
   let hFrom: [number, number, number]
   let hTo: [number, number, number]
@@ -235,26 +254,27 @@ function AssemblyDimensions({ boards, activeView }: { boards: Board[]; activeVie
         from={hFrom} to={hTo}
         label={formatValue(hVal, displayUnit)}
         offset={hOffset}
-        color="#ea580c"
+        color={color}
       />
       <DimLine3D
         from={vFrom} to={vTo}
         label={formatValue(vVal, displayUnit)}
         offset={vOffset}
-        color="#ea580c"
+        color={color}
       />
     </group>
   )
-}
+})
 
 /**
- * 3D dimension overlay — shows dimension lines for selected boards.
+ * 3D dimension overlay — shows dimension lines for selected boards (up to
+ * MAX_BOARD_DIMS; a larger selection gets its overall size instead).
  * When showAssemblyDims is on, also renders assembly-level bounding dimensions in orange.
  */
 export function DimensionOverlay() {
   const project = useProjectStore((s) => s.project)
   const selectedBoardIds = useUIStore((s) => s.selectedBoardIds)
-  const activeView = useUIStore((s) => s.activeView)
+  const activeView = useCanvasView()
   const selectedAssemblyId = useUIStore((s) => s.selectedAssemblyId)
   const showAssemblyDims = useUIStore((s) => s.showAssemblyDims)
 
@@ -289,14 +309,16 @@ export function DimensionOverlay() {
 
   return (
     <>
-      {sortedBoards.map((board, idx) => (
-        <BoardDimensions
-          key={`dim-${board.id}`}
-          board={board}
-          activeView={activeView}
-          staggerIdx={idx}
-        />
-      ))}
+      {sortedBoards.length <= MAX_BOARD_DIMS
+        ? sortedBoards.map((board, idx) => (
+            <BoardDimensions
+              key={`dim-${board.id}`}
+              board={board}
+              activeView={activeView}
+              staggerIdx={idx}
+            />
+          ))
+        : <AssemblyDimensions boards={selectedBoards} activeView={activeView} offset={BASE_OFF} color={CANVAS.dimLine} />}
       {showAssemblyDims && assemblyBoards.length > 0 && (
         <AssemblyDimensions boards={assemblyBoards} activeView={activeView} />
       )}

@@ -1,12 +1,62 @@
 import type { Project } from '../types/furniture'
 import { getMaterialById } from '../data/materials'
-import { calculateStatic } from './static-calc'
+import { activeAssemblies, activeJoints } from '../utils/activeParts'
+import { GRAVITY } from './static-calc'
+import { simulateStatics, type BoardStatic } from './static-sim'
+
+/** Payload per shelf assumed for the structural notes when the caller passes none (kg). */
+const CONTEXT_LOAD_KG = 20
+
+/** Where the field axes are measured from (the board's min corner: left, back, bottom). */
+const FROM: Record<'x' | 'y' | 'z', [string, string]> = {
+  x: ['von links', 'from the left'],
+  y: ['von unten', 'from the bottom'],
+  z: ['von hinten', 'from the back']
+}
+
+/** Where a board is used most: both coordinates on its face, and for standing panels what governs. */
+function hotSpot(r: BoardStatic, isDe: boolean): string {
+  const [a, b] = r.field.axes
+  const part = (axis: 'x' | 'y' | 'z', v: number): string => `${Math.round(v)} mm ${FROM[axis][isDe ? 0 : 1]}`
+  const at = `${part(a, r.maxLocal.a)} / ${part(b, r.maxLocal.b)}`
+  if (r.governing === 'buckling') return `${at} (${isDe ? 'Knicken' : 'buckling'})`
+  return r.model === 'plane' ? `${at} (${isDe ? 'Spannung in der Plattenebene' : 'in-plane stress'})` : at
+}
+
+/** One line on a critical, warning or unsupported board for the AI; null for the others. */
+function staticNote(name: string, r: BoardStatic | undefined, isDe: boolean): string | null {
+  if (!r) return null
+  if (r.status === 'unsupported') {
+    return isDe
+      ? `"${name}": kein ausreichendes Auflager (fällt, kippt oder liegt nur auf einem schmalen Punkt)`
+      : `"${name}": no adequate support (falls, tips or rests on one narrow point)`
+  }
+  if (r.status !== 'critical' && r.status !== 'warning') return null
+  const u = Math.round(r.uMax * 100)
+  const level = r.uMax >= 1 ? (isDe ? 'bricht' : 'breaks') : r.status === 'critical' ? (isDe ? 'kritisch' : 'critical') : (isDe ? 'Warnung' : 'warning')
+  const where = hotSpot(r, isDe)
+  const parts = [isDe ? `Auslastung ${u} % (${level}) bei ${where}` : `utilisation ${u} % (${level}) at ${where}`]
+  if (r.allowableDeflectionMm > 0) {
+    const d = r.deflectionMm.toFixed(1), allow = r.allowableDeflectionMm.toFixed(1), span = Math.round(r.spanMm)
+    parts.push(isDe
+      ? `Durchbiegung ${d} mm (zulässig ${allow} mm, ${r.cantilever ? 'Kragarm' : 'Spannweite'} ${span} mm)`
+      : `deflection ${d} mm (allowed ${allow} mm, ${r.cantilever ? 'cantilever' : 'span'} ${span} mm)`)
+  }
+  parts.push(isDe ? `Last ${(r.totalLoadN / GRAVITY).toFixed(0)} kg` : `load ${(r.totalLoadN / GRAVITY).toFixed(0)} kg`)
+  if (r.minThicknessMm !== null) {
+    parts.push(isDe
+      ? `Mindestdicke ${r.minThicknessMm} mm (aktuell ${Math.round(r.thicknessMm)} mm)`
+      : `minimum thickness ${r.minThicknessMm} mm (current ${Math.round(r.thicknessMm)} mm)`)
+  }
+  return `"${name}": ${parts.join(', ')}`
+}
 
 /**
  * Serialize the current project state into a compact system prompt
  * that gives the VLM context about the user's furniture design.
+ * `payloadKg` is the payload per shelf of the load simulation behind the structural notes.
  */
-export function serializeProjectContext(project: Project, language: 'de' | 'en'): string {
+export function serializeProjectContext(project: Project, language: 'de' | 'en', payloadKg = CONTEXT_LOAD_KG): string {
   const isDe = language === 'de'
 
   const intro = isDe
@@ -66,6 +116,11 @@ Respond in English.`
     : `Current project: "${project.name}"\n`
 
   const warnings: string[] = []
+  // The load simulation sees the same boards as the 3D heat map: visible assemblies
+  const sim = simulateStatics(activeAssemblies(project).flatMap((a) => a.boards), {
+    payloadKg, customMaterials: project.customMaterials, customHardware: project.customHardware,
+    joints: activeJoints(project).map((j) => j.joint)
+  })
 
   for (const assembly of project.assemblies) {
     if (assembly.boards.length === 0) continue
@@ -75,7 +130,7 @@ Respond in English.`
       : `\nAssembly "${assembly.name}" (${assembly.boards.length} boards):\n`
 
     for (const board of assembly.boards) {
-      const mat = getMaterialById(board.materialId)
+      const mat = getMaterialById(board.materialId, project.customMaterials)
       const matName = mat ? (isDe ? mat.name : mat.nameEn) : board.materialId
       context += `- ${board.name}: ${board.width}x${board.height}x${board.depth}mm, ${matName}`
       context += `, pos(${board.position.x},${board.position.y},${board.position.z})`
@@ -84,30 +139,16 @@ Respond in English.`
       }
       context += '\n'
 
-      // Check static warnings
-      if (mat) {
-        const thickness = Math.min(board.height, board.depth)
-        const result = calculateStatic(board.width, board.depth, thickness, 20, mat)
-        if (result.rating === 'critical') {
-          warnings.push(isDe
-            ? `"${board.name}": Durchbiegung kritisch, min. ${result.minThicknessMm}mm empfohlen (aktuell ${result.currentThicknessMm}mm)`
-            : `"${board.name}": Critical deflection, min. ${result.minThicknessMm}mm recommended (current ${result.currentThicknessMm}mm)`)
-        } else if (result.rating === 'warning') {
-          warnings.push(isDe
-            ? `"${board.name}": Durchbiegung grenzwertig, ${result.minThicknessMm}mm empfohlen`
-            : `"${board.name}": Borderline deflection, ${result.minThicknessMm}mm recommended`)
-        }
-        if (result.isStone && result.stoneNeedsSupport) {
-          warnings.push(isDe
-            ? `"${board.name}": Stein braucht Unterkonstruktion`
-            : `"${board.name}": Stone needs substructure support`)
-        }
-      }
+      // Same simulation as the static heat map and the static summary
+      const note = staticNote(board.name, sim.results.get(board.id), isDe)
+      if (note) warnings.push(note)
     }
   }
 
   if (warnings.length > 0) {
-    context += isDe ? '\nStatik-Warnungen:\n' : '\nStructural warnings:\n'
+    context += isDe
+      ? `\nStatik-Warnungen (Lastsimulation, ${payloadKg} kg Nutzlast je Fachboden; 2D-FE-Modell je Bauteil; Auslastung = Spannung / Festigkeit an der ungünstigsten Stelle, 100 % = Bruch):\n`
+      : `\nStructural warnings (load simulation, ${payloadKg} kg payload per shelf; 2D finite-element model per part; utilisation = stress / strength at the worst point, 100 % = breaks):\n`
     for (const w of warnings) {
       context += `- ${w}\n`
     }

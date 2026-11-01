@@ -1,6 +1,7 @@
 import { useTranslation } from 'react-i18next'
 import { useProjectStore } from '../../store/useProjectStore'
 import { useUIStore } from '../../store/useUIStore'
+import { Dialog, Button } from '../ui/Dialog'
 import { formatValue } from '../../utils/units'
 import type { Measurement } from '../../types/measurement'
 
@@ -27,7 +28,7 @@ function typeIcon(m: Measurement): string {
 }
 
 export function MeasurementPanel() {
-  const { i18n } = useTranslation()
+  const { t, i18n } = useTranslation()
   const lang = i18n.language as 'de' | 'en'
   const displayUnit = useProjectStore((s) => s.project.displayUnit)
   const measurements = useUIStore((s) => s.measurements)
@@ -50,83 +51,57 @@ export function MeasurementPanel() {
   }
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={(e) => { if (e.target === e.currentTarget) setShowMeasurementPanel(false) }}>
-      <div className="bg-white rounded-lg shadow-xl w-[480px] max-h-[75vh] overflow-hidden flex flex-col">
-
-        {/* Header */}
-        <div className="p-4 border-b border-gray-200 flex items-center justify-between shrink-0">
-          <h2 className="text-sm font-bold text-gray-800">
-            {lang === 'de' ? 'Messungen' : 'Measurements'}
-          </h2>
-          <div className="flex items-center gap-2">
-            {measurements.length > 0 && (
-              <>
-                <button
-                  onClick={handleExportCsv}
-                  className="text-xs text-green-700 hover:text-green-900 border border-green-300 hover:border-green-500 px-2 py-0.5 rounded transition-colors"
-                >
-                  {lang === 'de' ? 'CSV Export' : 'Export CSV'}
-                </button>
-                <button
-                  onClick={clearMeasurements}
-                  className="text-xs text-red-500 hover:text-red-700 border border-red-200 hover:border-red-400 px-2 py-0.5 rounded transition-colors"
-                >
-                  {lang === 'de' ? 'Alle löschen' : 'Clear all'}
-                </button>
-              </>
-            )}
-            <button onClick={() => setShowMeasurementPanel(false)} className="text-gray-400 hover:text-gray-700 text-lg leading-none">×</button>
-          </div>
+    <Dialog
+      title={lang === 'de' ? 'Messungen' : 'Measurements'}
+      titleId="measurements-title"
+      onClose={() => setShowMeasurementPanel(false)}
+      className="w-[480px]"
+      headerExtra={measurements.length > 0 && (
+        <Button variant="danger" size="sm" onClick={clearMeasurements}>
+          {lang === 'de' ? 'Alle löschen' : 'Clear all'}
+        </Button>
+      )}
+      footer={<>
+        <span className="mr-auto text-xs text-chrome-muted">
+          {measurements.length} {lang === 'de' ? 'Messungen' : 'measurements'}
+        </span>
+        <Button variant="primary" onClick={handleExportCsv} disabled={measurements.length === 0}>
+          {lang === 'de' ? 'CSV Export' : 'Export CSV'}
+        </Button>
+        <Button onClick={() => setShowMeasurementPanel(false)}>{t('ui.close')}</Button>
+      </>}
+    >
+      {measurements.length === 0 ? (
+        <div className="py-8 text-center">
+          <p className="mb-2 text-sm italic text-chrome-muted">
+            {lang === 'de' ? 'Noch keine Messungen.' : 'No measurements yet.'}
+          </p>
+          <p className="text-xs text-chrome-hint">
+            {t('dlg.measureHint')}
+          </p>
         </div>
-
-        {/* List */}
-        <div className="flex-1 overflow-y-auto p-4">
-          {measurements.length === 0 ? (
-            <div className="text-center py-8">
-              <p className="text-sm text-gray-400 italic mb-2">
-                {lang === 'de' ? 'Noch keine Messungen.' : 'No measurements yet.'}
-              </p>
-              <p className="text-xs text-gray-400">
-                {lang === 'de'
-                  ? 'Nutze die Messwerkzeuge (M / A / Q) im Viewport.'
-                  : 'Use the measurement tools (M / A / Q) in the viewport.'}
-              </p>
-            </div>
-          ) : (
-            <div className="flex flex-col gap-1">
-              {measurements.map((m, i) => (
-                <div key={i} className="flex items-center gap-2 p-2 rounded border border-gray-100 hover:bg-gray-50">
-                  <span className="text-base w-6 text-center shrink-0">
-                    {typeIcon(m)}
-                  </span>
-                  <span className="flex-1 text-xs text-gray-700">
-                    <span className="text-gray-400 mr-1">#{i + 1}</span>
-                    {measurementLabel(m, displayUnit, lang)}
-                  </span>
-                  <button
-                    onClick={() => removeMeasurement(i)}
-                    className="text-gray-400 hover:text-red-500 transition-colors text-sm leading-none px-1"
-                    title={lang === 'de' ? 'Löschen' : 'Delete'}
-                  >×</button>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-
-        {/* Footer */}
-        <div className="p-3 border-t border-gray-100 flex justify-between items-center shrink-0">
-          <span className="text-xs text-gray-400">
-            {measurements.length} {lang === 'de' ? 'Messungen' : 'measurements'}
-          </span>
-          <button
-            onClick={() => setShowMeasurementPanel(false)}
-            className="text-sm px-4 py-1.5 rounded bg-gray-100 text-gray-700 hover:bg-gray-200"
-          >
-            {lang === 'de' ? 'Schließen' : 'Close'}
-          </button>
-        </div>
-      </div>
-    </div>
+      ) : (
+        <ul className="flex flex-col gap-1">
+          {measurements.map((m, i) => (
+            <li key={i} className="flex items-center gap-2 rounded border border-chrome-border px-2 py-1.5 hover:bg-chrome-surface/40">
+              <span className="w-6 shrink-0 text-center text-base text-accent" aria-hidden="true">
+                {typeIcon(m)}
+              </span>
+              <span className="flex-1 text-xs text-chrome-text">
+                <span className="mr-1 font-mono text-chrome-hint">#{i + 1}</span>
+                {measurementLabel(m, displayUnit, lang)}
+              </span>
+              <Button
+                variant="danger"
+                size="sm"
+                onClick={() => removeMeasurement(i)}
+                title={t('measurements.delete')}
+                aria-label={t('measurements.delete')}
+              >×</Button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </Dialog>
   )
 }

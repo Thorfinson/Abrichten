@@ -1,6 +1,7 @@
-import type { Board } from '../types/furniture'
+import type { Board, Joint } from '../types/furniture'
 import { boardCorners3D, projectAABB, type Rect2D } from './projection'
 import { insideCutout } from './geometry'
+import { boardFace } from './boardFace'
 
 export interface CollisionPair {
   boardIdA: string
@@ -222,6 +223,48 @@ function overlapsOnlyInCutout(a: { board: Board; aabb: AABB3D }, b: { board: Boa
   return insideCutout(a.board, box) || insideCutout(b.board, box)
 }
 
+// ── Grooves: dado/rabbet joints overlap by design ─────────────────────────
+
+const GROOVE_JOINT_TYPES: ReadonlySet<Joint['type']> = new Set(['dado', 'rabbet'])
+const LOCAL_AXIS_INDEX = { width: 0, height: 1, depth: 2 } as const
+
+function pairKey(a: string, b: string): string {
+  return a < b ? `${a}|${b}` : `${b}|${a}`
+}
+
+/** Board pairs joined by a dado or rabbet joint. */
+function groovedPairs(joints: Joint[]): Set<string> {
+  return new Set(joints.filter((j) => GROOVE_JOINT_TYPES.has(j.type)).map((j) => pairKey(j.boardA, j.boardB)))
+}
+
+/** The overlap reaches no deeper into the board than half its thickness — a groove,
+ *  not a cut through. Depth is measured along the world axis closest to the board's
+ *  thickness axis (exact for boards rotated in 90° steps). */
+function withinGroove(e: BoardEntry, box: AABB3D): boolean {
+  const face = boardFace(e.board)
+  const axis = e.obb.axes[LOCAL_AXIS_INDEX[face.thicknessAxis]]
+  const comps = [Math.abs(axis.x), Math.abs(axis.y), Math.abs(axis.z)]
+  const extents = [box.maxX - box.minX, box.maxY - box.minY, box.maxZ - box.minZ]
+  const k = comps.indexOf(Math.max(...comps))
+  return extents[k] <= face.thickness / 2 + 1e-6
+}
+
+function overlapBox(a: BoardEntry, b: BoardEntry): AABB3D {
+  return {
+    minX: Math.max(a.aabb.minX, b.aabb.minX), maxX: Math.min(a.aabb.maxX, b.aabb.maxX),
+    minY: Math.max(a.aabb.minY, b.aabb.minY), maxY: Math.min(a.aabb.maxY, b.aabb.maxY),
+    minZ: Math.max(a.aabb.minZ, b.aabb.minZ), maxZ: Math.min(a.aabb.maxZ, b.aabb.maxZ)
+  }
+}
+
+/** Overlap that is meant to be there: inside a cutout, or a groove of a dado/rabbet joint. */
+function intendedOverlap(a: BoardEntry, b: BoardEntry, grooved: Set<string>): boolean {
+  if (overlapsOnlyInCutout(a, b)) return true
+  if (!grooved.has(pairKey(a.board.id, b.board.id))) return false
+  const box = overlapBox(a, b)
+  return withinGroove(a, box) || withinGroove(b, box)
+}
+
 /**
  * Detect all colliding board pairs using sweep-and-prune + SAT OBB.
  *
@@ -236,15 +279,18 @@ function overlapsOnlyInCutout(a: { board: Board; aabb: AABB3D }, b: { board: Boa
  * @param boards  Boards with their pre-projected 2D rect (rect unused internally now)
  * @param getU    Maps a 3D point to the view's horizontal screen coordinate
  * @param getV    Maps a 3D point to the view's vertical screen coordinate
+ * @param joints  Project joints: dado/rabbet pairs may overlap by their groove
  */
 export function detectCollisions(
   boards: { board: Board; rect: Rect2D }[],
   getU: PlaneGetter,
-  getV: PlaneGetter
+  getV: PlaneGetter,
+  joints: Joint[] = []
 ): CollisionPair[] {
   if (boards.length < 2) return []
 
   const sorted = buildSorted(boards.map((b) => b.board))
+  const grooved = groovedPairs(joints)
   const collisions: CollisionPair[] = []
 
   for (let i = 0; i < sorted.length; i++) {
@@ -261,7 +307,7 @@ export function detectCollisions(
 
       // SAT narrow phase — accurate for rotated boards
       if (!satOBBOverlap(a.obb, b.obb)) continue
-      if (overlapsOnlyInCutout(a, b)) continue
+      if (intendedOverlap(a, b, grooved)) continue
 
       // 2D overlap rect for visual display
       const rectA = projectAABB(a.board, getU, getV)
@@ -281,13 +327,16 @@ export function detectCollisions(
  * Used by CollisionOverlay3D — replaces its private duplicated implementation.
  *
  * Same sweep-and-prune + SAT algorithm as detectCollisions().
+ * @param joints  Project joints: dado/rabbet pairs may overlap by their groove
  */
 export function detectCollisions3D(
-  boards: Board[]
+  boards: Board[],
+  joints: Joint[] = []
 ): { boardIdA: string; boardIdB: string; overlapAABB: AABB3D }[] {
   if (boards.length < 2) return []
 
   const sorted = buildSorted(boards)
+  const grooved = groovedPairs(joints)
   const results: { boardIdA: string; boardIdB: string; overlapAABB: AABB3D }[] = []
 
   for (let i = 0; i < sorted.length; i++) {
@@ -301,21 +350,10 @@ export function detectCollisions3D(
       if (b.aabb.minZ >= a.aabb.maxZ || b.aabb.maxZ <= a.aabb.minZ) continue
 
       if (!satOBBOverlap(a.obb, b.obb)) continue
-      if (overlapsOnlyInCutout(a, b)) continue
+      if (intendedOverlap(a, b, grooved)) continue
 
       // AABB intersection as visual overlap box approximation
-      results.push({
-        boardIdA: a.board.id,
-        boardIdB: b.board.id,
-        overlapAABB: {
-          minX: Math.max(a.aabb.minX, b.aabb.minX),
-          maxX: Math.min(a.aabb.maxX, b.aabb.maxX),
-          minY: Math.max(a.aabb.minY, b.aabb.minY),
-          maxY: Math.min(a.aabb.maxY, b.aabb.maxY),
-          minZ: Math.max(a.aabb.minZ, b.aabb.minZ),
-          maxZ: Math.min(a.aabb.maxZ, b.aabb.maxZ)
-        }
-      })
+      results.push({ boardIdA: a.board.id, boardIdB: b.board.id, overlapAABB: overlapBox(a, b) })
     }
   }
 
