@@ -1,5 +1,5 @@
 import type { Board, CustomHardwareItem, Joint, Material, PlacedLoad } from '../types/furniture'
-import { getMaterialById, GAMMA_M } from '../data/materials'
+import { getMaterialById, permanentMaterial, GAMMA_M } from '../data/materials'
 import { hardwareItems } from '../data/hardware'
 import { worldAligned, dimDirection } from '../utils/projection'
 import { boardFace, type BoardFace } from '../utils/boardFace'
@@ -36,15 +36,18 @@ export type { StaticBox, StaticField } from './static-fe'
  *    stands and is braced by its joints, what does not stand hangs on its joints. They
  *    push like contacts and pull only where a board would otherwise come off
  *    (static-fe JointMode); every joint braces a standing panel against buckling.
- *  - Loads in N: self-weight ρ·V·g, the payload (Board.loadKg, else the global kg per
+ *  - Loads in N: self-weight ρ·V·g (or Board.weightKg), the payload (Board.loadKg, else the global kg per
  *    shelf on lying boards whose top is free) over the free top, loads placed on the
  *    face (Board.loads), and the reactions of boards resting on it at their real
  *    footprint. Load givers are processed before receivers (see processingOrder).
  *  - A lying board resting on another over most of its area is a layer (stone on a
  *    carrier board): both bend together, sharing the moment by stiffness (LAYER_COVERAGE).
+ *  - Every load is permanent (EN 1995-1-1, service class 1): the FE models use the material
+ *    under permanent load (data/materials.ts permanentMaterial), so 100 % means it breaks
+ *    in the long run and the deflection is the final one, creep included.
  *  - Not modelled: joint and fastener strength, wall anchors, boards held only by a side
- *    face, drawer runners, shear deformation of thick plates, out-of-plane loads on
- *    standing boards, creep and load duration (k_def, k_mod), dynamic loads.
+ *    face, shear deformation of thick plates, out-of-plane loads on standing boards,
+ *    dynamic loads.
  */
 
 /** Up to this height a board stands on the floor. */
@@ -76,6 +79,18 @@ const MIN_END_SUPPORT_THICKNESS_MM = 10
 const BODY_MIN_THICKNESS_MM = 30
 /** Typical appliance mass per bounding volume (oven ≈ 60 kg in 0.3 m³). */
 const BODY_DENSITY = 200
+
+const isBody = (b: Board, material: Material | undefined): boolean =>
+  (material?.category === 'metal' || material?.category === 'glass') && Math.min(b.width, b.height, b.depth) > BODY_MIN_THICKNESS_MM
+const ownWeight = (b: Board): number | undefined => (typeof b.weightKg === 'number' && b.weightKg >= 0 ? b.weightKg : undefined)
+
+/**
+ * A board's weight in kg as the simulation takes it: its own weightKg (an appliance from
+ * its datasheet), else volume × density, an appliance placeholder at BODY_DENSITY.
+ */
+export function boardWeightKg(b: Board, material: Material | undefined): number {
+  return ownWeight(b) ?? (b.width * b.height * b.depth / 1e9) * (isBody(b, material) ? BODY_DENSITY : material?.density ?? 0)
+}
 /**
  * Finite-element solutions kept across runs (one board changing re-solves only what it
  * touches): several 100-board projects; the least recently used go first.
@@ -98,6 +113,8 @@ interface Member {
   board: Board
   box: StaticBox
   material: Material | undefined
+  /** The material under permanent load (strength × k_mod, stiffness ÷ (1 + k_def)): what the FE models use */
+  longTerm: Material | undefined
   /** The height is the largest dimension (post, side panel, back, door) */
   vertical: boolean
   /** Thickness (smallest dimension) of the world-aligned board and its axis */
@@ -244,16 +261,16 @@ function buildMember(raw: Board, index: number, options: SimulationOptions): Mem
   const board = worldAligned(raw)
   const { x, y, z } = board.position
   const material = getMaterialById(board.materialId, options.customMaterials)
-  const solidOnly = material?.category === 'metal' || material?.category === 'glass'
   const face = boardFace(board)
   return {
     index, raw, board,
     box: { x0: x, y0: y, z0: z, x1: x + board.width, y1: y + board.height, z1: z + board.depth },
     material,
+    longTerm: material && permanentMaterial(material),
     vertical: board.height >= Math.max(board.width, board.depth),
     face,
     lying: face.thicknessAxis === 'height' && board.height < Math.max(board.width, board.depth),
-    body: solidOnly && Math.min(raw.width, raw.height, raw.depth) > BODY_MIN_THICKNESS_MM,
+    body: isBody(raw, material),
     pins: hasShelfPins(raw, options.customHardware),
     grain: board.grainDirection ? WORLD_AXIS[board.grainDirection] : undefined,
     supports: [],
@@ -336,16 +353,19 @@ function findSupports(members: Member[]): void {
   }
 }
 
+/** A joint bridges a gap up to this: drawer runners (12.7 mm a side), spacer strips. */
+const JOINT_GAP_MM = 15
+
 /**
  * Where two boxes touch or overlap: per axis the overlap, or the middle of a gap of at
- * most CONTACT_MM. Null when they are apart, or touch only at an edge point.
+ * most `gap`. Null when they are apart, or touch only at an edge point.
  */
-function contactRegion(a: StaticBox, b: StaticBox): StaticBox | null {
+function contactRegion(a: StaticBox, b: StaticBox, gap: number): StaticBox | null {
   const out: number[] = []
   let flat = 0
   for (const [lo0, hi0, lo1, hi1] of [[a.x0, a.x1, b.x0, b.x1], [a.y0, a.y1, b.y0, b.y1], [a.z0, a.z1, b.z0, b.z1]]) {
     const l = Math.max(lo0, lo1), h = Math.min(hi0, hi1)
-    if (h < l - CONTACT_MM) return null
+    if (h < l - gap) return null
     if (h - l <= MIN_OVERLAP_MM) { flat++; out.push((l + h) / 2, (l + h) / 2) } else out.push(l, h)
   }
   if (flat > 2) return null
@@ -379,7 +399,7 @@ function applyJoints(members: Member[], joints: Pick<Joint, 'boardA' | 'boardB'>
     if (a === undefined || b === undefined || a === b) continue
     const key = a < b ? `${a}|${b}` : `${b}|${a}`
     if (pairs.has(key)) continue
-    const region = contactRegion(members[a].box, members[b].box)
+    const region = contactRegion(members[a].box, members[b].box, JOINT_GAP_MM)
     if (!region) continue
     pairs.set(key, { a, b, region })
     members[a].joints.push(region)
@@ -387,21 +407,31 @@ function applyJoints(members: Member[], joints: Pick<Joint, 'boardA' | 'boardB'>
   }
   if (pairs.size === 0) return
 
-  // Standing boards: on the floor, or steadily on standing boards by their contacts
-  const standing = new Uint8Array(n)
-  for (const m of members) if (m.supports.some((s) => s.kind === 'floor')) standing[m.index] = 1
+  // Standing boards: on the floor, or steadily on standing boards by their contacts. A
+  // standing panel whose centre is not over its contacts (a side panel on a rail at its
+  // front edge) stands, but not steadily: its joints with steady standing boards carry it
+  const standing = new Uint8Array(n), steady = new Uint8Array(n)
+  for (const m of members) if (m.supports.some((s) => s.kind === 'floor')) { standing[m.index] = 1; steady[m.index] = 1 }
   for (let changed = true; changed;) {
     changed = false
     for (const m of members) {
       if (standing[m.index]) continue
       const on = m.supports.filter((s) => s.by >= 0 && standing[s.by])
-      if (on.length && standsOn(m, on)) { standing[m.index] = 1; changed = true }
+      if (!on.length || !standsOn(m, on)) continue
+      standing[m.index] = 1
+      steady[m.index] = steadyInPlane(m, on) ? 1 : 0
+      changed = true
     }
   }
-  // Distance from the standing boards: a joint is one step, resting on a board none (0-1 BFS)
+  // Distance from the standing boards: a joint is one step, resting steadily on boards none
+  // (0-1 BFS). A board that would tip on its contacts (a drawer bottom touching a rail with
+  // its front edge) gets its place from its joints; the contacts still push.
   const dist = members.map((m) => (standing[m.index] ? 0 : Infinity))
   const steps: { to: number; w: number }[][] = members.map(() => [])
-  for (const m of members) for (const s of m.supports) if (s.by >= 0) steps[s.by].push({ to: m.index, w: 0 })
+  for (const m of members) {
+    const resting = m.supports.filter((s) => s.by >= 0)
+    if (resting.length && standsOn(m, resting)) for (const s of resting) steps[s.by].push({ to: m.index, w: 0 })
+  }
   for (const { a, b } of pairs.values()) { steps[a].push({ to: b, w: 1 }); steps[b].push({ to: a, w: 1 }) }
   const deque: number[] = members.filter((m) => standing[m.index]).map((m) => m.index)
   for (let head = 0; head < deque.length; head++) {
@@ -428,6 +458,7 @@ function applyJoints(members: Member[], joints: Pick<Joint, 'boardA' | 'boardB'>
     let carrier = -1, held = -1
     if (aOnB && dist[b] <= dist[a]) { carrier = b; held = a }
     else if (bOnA && dist[a] <= dist[b]) { carrier = a; held = b }
+    else if (standing[a] && standing[b] && steady[a] !== steady[b]) [carrier, held] = steady[a] ? [a, b] : [b, a]
     else if (dist[a] !== dist[b] && !(standing[a] && standing[b])) {
       ;[carrier, held] = dist[a] < dist[b] ? [a, b] : [b, a]
     }
@@ -440,10 +471,15 @@ function applyJoints(members: Member[], joints: Pick<Joint, 'boardA' | 'boardB'>
  * The supports `on` hold board m steadily under its own weight: its centre lies within
  * their extent (both ways for a lying board, along its plane for a rail on edge), which
  * is not one narrow point. A standing panel stands on any support (it is not checked for
- * tipping in its plane, the carcass holds it).
+ * tipping in its plane, the carcass holds it: see steadyInPlane).
  */
 function standsOn(m: Member, on: Support[]): boolean {
   if (m.vertical) return true
+  return steadyInPlane(m, on)
+}
+
+/** Board m's centre lies over the supports `on` (both ways when lying, along its plane when standing). */
+function steadyInPlane(m: Member, on: Support[]): boolean {
   const axes: HAxis[] = m.lying ? ['x', 'z'] : [m.face.thicknessAxis === 'width' ? 'z' : 'x']
   return holdsAt(m, on, [{ rect: footprint(m.box), F: 1 }], axes)
 }
@@ -513,8 +549,10 @@ function ownLoads(m: Member, payloadKg: number): OwnLoads {
   const map = m.lying ? faceToWorld(raw) : null
   const cuts = map ? (raw.cutouts ?? []) : []
   const cut = cuts.reduce((s, c) => s + c.width * c.depth, 0)
-  const density = m.body ? BODY_DENSITY : m.material?.density ?? 0
   const volumeM3 = (Math.max(0, raw.width * raw.depth - cut) * raw.height) / 1e9
+  // a part with its own weight (Board.weightKg) spreads it over its volume
+  const weight = ownWeight(raw)
+  const density = weight !== undefined && volumeM3 > 0 ? weight / volumeM3 : m.body ? BODY_DENSITY : m.material?.density ?? 0
   const selfN = density * volumeM3 * GRAVITY
   const coveredTop = m.covers.reduce((s, r) => s + rectArea(r), 0) >= COVERED_TOP * rectArea(footprint(m.box))
   const own = typeof raw.loadKg === 'number' && raw.loadKg >= 0 ? raw.loadKg : m.lying && !coveredTop ? payloadKg : 0
@@ -762,7 +800,7 @@ function solveMember(m: Member, own: OwnLoads, members: Member[]): Outcome {
     }) : []
     const fe = solveLying({
       box: m.box,
-      material: m.material,
+      material: m.longTerm!,
       grain: m.grain,
       cutouts,
       supports: m.supports,
@@ -773,7 +811,7 @@ function solveMember(m: Member, own: OwnLoads, members: Member[]): Outcome {
       received: m.received,
       layers: m.layers.map((l) => {
         const k = members[l.index]
-        return { rect: l.rect, D: plateRigidity(k.material ?? m.material!, k.grain, k.face.thickness) }
+        return { rect: l.rect, D: plateRigidity(k.longTerm ?? m.longTerm!, k.grain, k.face.thickness) }
       })
     })
     return fe ? fromFe(m, fe, base, members) : { result: { ...base, status: 'unsupported' }, transfers: [] }
@@ -793,7 +831,7 @@ function solveMember(m: Member, own: OwnLoads, members: Member[]): Outcome {
   const input = {
     box: m.box,
     along,
-    material: m.material,
+    material: m.longTerm!,
     grain: m.grain,
     supports: m.supports,
     weight: own.selfPressure,
@@ -814,7 +852,7 @@ function solveMember(m: Member, own: OwnLoads, members: Member[]): Outcome {
  */
 function layerResult(r: BoardStatic, k: Member, host: FeOutcome): BoardStatic {
   if (r.status === 'unsupported' || !k.material) return r
-  const lf = layerField(r.field, { material: k.material, grain: k.grain, t: k.face.thickness }, host)
+  const lf = layerField(r.field, { material: k.longTerm!, grain: k.grain, t: k.face.thickness }, host)
   if (!lf) return r
   const ownRatio = r.allowableDeflectionMm > 0 ? r.deflectionMm / (r.allowableDeflectionMm * DEFLECTION_WARNING_RATIO) : 0
   if (lf.uMax <= r.uMax && host.ratio <= ownRatio) return r

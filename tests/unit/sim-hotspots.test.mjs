@@ -15,7 +15,7 @@ registerHooks({
 })
 const { simulateStatics, faceToWorld, worldToFace } = await import('../../src/renderer/src/services/static-sim.ts')
 const { GRAVITY } = await import('../../src/renderer/src/services/static-calc.ts')
-const { getMaterialById } = await import('../../src/renderer/src/data/materials.ts')
+const { getMaterialById, permanentMaterial } = await import('../../src/renderer/src/data/materials.ts')
 const { validateBoard, MAX_LOADS_PER_BOARD } = await import('../../src/renderer/src/utils/validateProject.ts')
 
 const board = (id, w, h, d, pos, extra = {}) => ({
@@ -107,11 +107,11 @@ test('a rail on edge between two posts bends in its plane like a beam', () => {
   assert.deepEqual(r.field.axes, ['x', 'y'])
   const q = (50 * GRAVITY + weightN(rail)) / 800
   const M = q * 800 ** 2 / 8, W = 20 * 100 ** 2 / 6
-  near(r.uMax, M / W / 40, 0.08, 'σ = M/W')
+  near(r.uMax, M / W / permanentMaterial(getMaterialById('multiplex-birke')).bendingStrength, 0.08, 'σ = M/W')
   near(r.maxLocal.a, 400, 0.08, 'at mid-span')
   assert.ok(r.maxLocal.b < 1 || r.maxLocal.b > 99, 'at an edge fibre')
   // deflection: bending plus shear (Timoshenko), against span/300
-  const E = 10000, G = E / 2.6, I = 20 * 100 ** 3 / 12
+  const E = permanentMaterial(getMaterialById('multiplex-birke')).eModul, G = E / 2.6, I = 20 * 100 ** 3 / 12   // final, creep included
   near(r.deflectionMm, 5 * q * 800 ** 4 / (384 * E * I) + q * 800 ** 2 / (8 * (5 / 6) * G * 20 * 100), 0.1, 'δ')
   assert.equal(r.spanMm, 800)
   // its ends hang on the posts

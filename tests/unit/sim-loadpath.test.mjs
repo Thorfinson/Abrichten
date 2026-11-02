@@ -18,7 +18,7 @@ registerHooks({
 })
 const { simulateStatics } = await import('../../src/renderer/src/services/static-sim.ts')
 const { GRAVITY } = await import('../../src/renderer/src/services/static-calc.ts')
-const { getMaterialById } = await import('../../src/renderer/src/data/materials.ts')
+const { getMaterialById, permanentMaterial } = await import('../../src/renderer/src/data/materials.ts')
 const { serializeProjectContext } = await import('../../src/renderer/src/services/chat.ts')
 const { validateBoard, MAX_LOAD_KG } = await import('../../src/renderer/src/utils/validateProject.ts')
 
@@ -53,11 +53,15 @@ test('a shelf between two side panels: a plate simply supported at its ends, eac
   assert.equal(shelf.model, 'plate')
   assert.deepEqual(shelf.field.axes, ['x', 'z'])
   const q = (20 * GRAVITY + weightN(boards[2])) / 564
-  const E = getMaterialById('spanplatte').eModul, I = 300 * 19 ** 3 / 12, W = 300 * 19 ** 2 / 6
+  // every load is permanent (EN 1995-1-1): particleboard at k_mod 0.3, final deflection × (1 + k_def 2.25)
+  const perm = permanentMaterial(getMaterialById('spanplatte'))
+  near(perm.bendingStrength, 11 * 0.3, 1e-12)
+  near(perm.eModul, 1600 / 3.25, 1e-12)
+  const E = perm.eModul, I = 300 * 19 ** 3 / 12, W = 300 * 19 ** 2 / 6
   // a plate free along its front and back edges is the beam, a little softer at the free
   // edges (anticlastic bending, ν = 0.3): within a few per cent of the beam formulas
   near(shelf.deflectionMm, 5 * q * 564 ** 4 / (384 * E * I), 0.04, 'δ ≈ 5qL⁴/384EI')
-  near(shelf.uMax, (q * 564 ** 2 / 8) / W / 11, 0.04, 'u ≈ M/W/f')
+  near(shelf.uMax, (q * 564 ** 2 / 8) / W / perm.bendingStrength, 0.04, 'u ≈ M/W/f')
   near(shelf.maxLocal.a, 282, 1e-9, 'at mid-span')
   assert.equal(shelf.maxAt.y, 419, 'on the top face')
   near(shelf.totalLoadN, 20 * GRAVITY + weightN(boards[2]), 1e-9)
@@ -178,6 +182,15 @@ test('appliance placeholders (thick steel / glass bodies) are not rated and weig
   const shelf = run(boards, 0).results.get('shelf0')
   const ovenKg = (500 * 300 * 280 / 1e9) * 200
   near(shelf.totalLoadN, weightN(boards[2]) + ovenKg * GRAVITY, 1e-6)
+  // with its datasheet weight (Board.weightKg) the oven weighs exactly that, also as a sheet
+  const datasheet = [...cabinet(), { ...boards[3], weightKg: 37.8 }]
+  near(run(datasheet, 0).results.get('shelf0').totalLoadN, weightN(boards[2]) + 37.8 * GRAVITY, 1e-6)
+  const lid = board('lid', 500, 8, 280, [50, 419, 10], { materialId: 'stahl', weightKg: 10 })
+  near(run([...cabinet(), lid], 0).results.get('lid').totalLoadN, 10 * GRAVITY, 1e-6)
+  // the trust boundary keeps a weight in range and drops anything else
+  assert.equal(validateBoard({ ...lid, weightKg: 12.5 }).weightKg, 12.5)
+  assert.equal(validateBoard({ ...lid, weightKg: -1 }).weightKg, undefined)
+  assert.equal(validateBoard({ ...lid, weightKg: '9' }).weightKg, undefined)
 })
 
 test('a stiff layer on a thin carrier board bends with it: the carrier is not rated alone', () => {
@@ -207,7 +220,7 @@ test('the AI context describes critical and unsupported boards with utilisation 
   const weak = cabinet(0, { width: 564, height: 8, materialId: 'mdf' })
   const ctx = serializeProjectContext(project([...weak, board('floating', 400, 19, 300, [1000, 900, 0])]), 'de')
   assert.match(ctx, /Statik-Warnungen \(Lastsimulation, 20 kg/)
-  assert.match(ctx, /"shelf0": Auslastung \d+ % \(kritisch\) bei 282 mm von links \/ 300 mm von hinten, Durchbiegung [\d.]+ mm \(zulässig 1\.9 mm, Spannweite 564 mm\)/)
+  assert.match(ctx, /"shelf0": Auslastung \d+ % \(bricht\) bei 282 mm von links \/ 300 mm von hinten, Durchbiegung [\d.]+ mm \(zulässig 1\.9 mm, Spannweite 564 mm\)/)
   assert.match(ctx, /Mindestdicke \d+ mm \(aktuell 8 mm\)/)
   assert.match(ctx, /"floating": kein ausreichendes Auflager/)
   assert.doesNotMatch(ctx, /"left0":/)

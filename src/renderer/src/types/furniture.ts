@@ -65,6 +65,8 @@ export interface Board {
   /** Payload in kg on this board for the load simulation; missing = the global payload per shelf */
   loadKg?: number  /** Loads placed on the top face for the load simulation (a box of books, a TV) */
   loads?: PlacedLoad[]
+  /** Weight of this part in kg (an appliance from its datasheet); missing = volume × material density */
+  weightKg?: number
   // Formula strings for parametric dimensions (raw expression, e.g. "H - 40")
   widthFormula?: string
   heightFormula?: string
@@ -113,6 +115,10 @@ export interface Material {
   eModul: number               // N/mm²
   bendingStrength: number      // N/mm²
   compressiveStrength?: number // N/mm²
+  /** Strength factor under permanent load (EN 1995-1-1 k_mod); missing = by category (data/materials.ts PERMANENT) */
+  kmod?: number
+  /** Creep factor (EN 1995-1-1 k_def): final deflection = (1 + k_def) × instant; missing = by category */
+  kdef?: number
   defaultThickness: number[]   // mm
   color: string
   grain: boolean

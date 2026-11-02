@@ -54,6 +54,33 @@ test.describe('Dialogs', () => {
     expect(sides[sides.length - 1]).toBe('2')
   })
 
+  test('cutting list: battens get a cut plan on stock bars; lengths follow the display unit', async ({ page }) => {
+    await bootWithSample(page)
+    // three 40 × 60 spruce battens next to the sample cabinet
+    await page.evaluate(() => {
+      const st = window.__projectStore.getState()
+      const a = st.project.assemblies[0].id
+      for (const [name, len, z] of [['Latte A', 2660, 400], ['Latte B', 1070, 500], ['Latte C', 1780, 600]] as const) {
+        st.addBoard(a, { name, width: len, height: 40, depth: 60, position: { x: 0, y: 0, z }, rotation: { x: 0, y: 0, z: 0 }, materialId: 'fichte', color: '#f5deb3' })
+      }
+    })
+    await open(page, 'setShowCuttingList')
+    const plan = page.getByTestId('bar-plan')
+    await expect(plan).toBeVisible()
+    // 2660 + 1070 on one 4 m bar (3980 usable), 1780 on the next
+    await expect(plan.getByTestId('bar-row')).toHaveCount(2)
+    await expect(plan.getByTestId('bar-row').first()).toContainText('2660 + 1070')
+    await expect(plan.getByTestId('bar-row').first()).toContainText('Latte A · Latte B')
+    // in cm: the headers and the numbers follow the unit from the status bar
+    await page.evaluate(() => window.__projectStore.getState().setDisplayUnit('cm'))
+    await expect(plan.getByTestId('bar-row').first()).toContainText('266 + 107')
+    await expect(page.getByRole('columnheader', { name: /(Länge|Length) \(cm\)/ })).toBeVisible()
+    // a shorter stock length needs more bars
+    await plan.getByTestId('bar-stockMm').fill('2000')
+    await expect(plan.getByTestId('bar-row')).toHaveCount(2)
+    await expect(plan).toContainText(/Latte A \(266 cm\)/)
+  })
+
   test('cost: guide prices out of the box, an own price wins and is marked', async ({ page }) => {
     await bootWithSample(page)
     await open(page, 'setShowCostPanel')

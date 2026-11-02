@@ -12,6 +12,9 @@ import { cuttingDims, type GrainRelation } from '../../utils/cuttingDims'
 import { printHtml } from '../../utils/printHtml'
 import { Dialog, Button, FIELD_CLASS, TH_CLASS, TD_CLASS, CHECK_CLASS, SECTION_LABEL_CLASS } from '../ui/Dialog'
 import { getCsvDelimiter } from '../layout/SettingsDialog'
+import { formatNumber } from '../../utils/units'
+import { planBars, DEFAULT_BAR_SETTINGS, type BarSettings } from '../../utils/barCutting'
+import { BarCutPlan, barPlanHtml, barPlanCsvRows, type LengthFormat } from './BarCutPlan'
 import type { Board } from '../../types/furniture'
 
 function edgeBandingLabel(board: Board): string {
@@ -84,6 +87,7 @@ export function CuttingList() {
   const [filterMaterial, setFilterMaterial] = useState('')
   const [groupIdentical, setGroupIdentical] = useState(false)
   const [exportToast, setExportToast] = useState<string | null>(null)
+  const [barSettings, setBarSettings] = useState<BarSettings>(DEFAULT_BAR_SETTINGS)
 
   const showToast = (msg: string) => {
     setExportToast(msg)
@@ -196,13 +200,26 @@ export function CuttingList() {
     return [...map.values()].sort((p, q) => p.type.localeCompare(q.type) || p.size.localeCompare(q.size))
   }, [project.assemblies])
 
+  // Battens, rails, square timber (solid wood bar stock) packed onto stock bars
+  const barGroups = useMemo(() => planBars(filtered, barSettings, project.customMaterials), [filtered, barSettings, project.customMaterials])
+
   // Early return only AFTER every hook: a conditional return above the useMemos
   // changes the hook count between renders and crashes React (#310).
   if (!showCuttingList) return null
   const hiddenCount = project.assemblies.length - activeAssemblies(project).length
   const totalPieces = sorted.reduce((s, r) => s + (r.qty ?? 1), 0)
 
-  const dimHeaders = [`${t('dlg.length')} (mm)`, `${t('dlg.width')} (mm)`, `${t('dlg.thickness')} (mm)`]
+  // Lengths in the project's display unit (status bar), as plain numbers: the headers name the unit
+  const unit = project.displayUnit
+  const dim = (mm: number): string => formatNumber(mm, unit, lang)
+  const lengthFormat: LengthFormat = {
+    fmt: dim, unit, lang,
+    materialName: (id) => {
+      const m = getMaterialById(id, project.customMaterials)
+      return m ? (lang === 'de' ? m.name : m.nameEn) : id
+    }
+  }
+  const dimHeaders = [`${t('dlg.length')} (${unit})`, `${t('dlg.width')} (${unit})`, `${t('dlg.thickness')} (${unit})`]
 
   const buildCsvRows = (rows: Row[]) => {
     const headers = [
@@ -222,7 +239,7 @@ export function CuttingList() {
       rowNr++
       csvRows.push([
         rowNr, r.assemblyName, r.name, r.material,
-        r.length, r.width, r.thickness, grainLabel(r.grain), r.ebLabel,
+        dim(r.length), dim(r.width), dim(r.thickness), grainLabel(r.grain), r.ebLabel,
         ...(groupIdentical ? [r.qty ?? 1] : [])
       ].map(csvCell).join(sep))
     }
@@ -236,6 +253,7 @@ export function CuttingList() {
       csvRows.push([t('cutting.fasteners'), t('cutting.fastenerSize'), t('cutting.qty')].map(csvCell).join(sep))
       for (const f of fastenerRows) csvRows.push([t(`joints.f_${f.type}`), f.size, f.qty].map(csvCell).join(sep))
     }
+    csvRows.push(...barPlanCsvRows(barGroups, barSettings, lengthFormat, t, sep))
     return csvRows.join('\n')
   }
 
@@ -244,20 +262,23 @@ export function CuttingList() {
       '#', t('board.name'), t('cutting.assembly'), t('board.material'), ...dimHeaders,
       t('cutting.grain'), t('cutting.edgeBanding'), ...(groupIdentical ? [t('cutting.qty')] : [])
     ]
+    const numeric = new Set([0, 4, 5, 6, 9])   // #, length, width, thickness, quantity: right-aligned
     const rows = sorted.map((r, i) => {
-      const cols: (string | number)[] = [i + 1, r.name, r.assemblyName, r.material, r.length, r.width, r.thickness, grainLabel(r.grain), r.ebLabel]
+      const cols: (string | number)[] = [i + 1, r.name, r.assemblyName, r.material, dim(r.length), dim(r.width), dim(r.thickness), grainLabel(r.grain), r.ebLabel]
       if (groupIdentical) cols.push(r.qty ?? 1)
-      return `<tr>${cols.map((c) => `<td${typeof c === 'number' ? ' class="n"' : ''}>${escapeHtml(String(c))}</td>`).join('')}</tr>`
+      return `<tr>${cols.map((c, ci) => `<td${numeric.has(ci) ? ' class="n"' : ''}>${escapeHtml(String(c))}</td>`).join('')}</tr>`
     })
     const title = t('cutting.title')
     const html = `<!DOCTYPE html><html><head><meta charset="utf-8">
 <title>${escapeHtml(project.name)} - ${escapeHtml(title)}</title>
 <style>body{font:12px sans-serif;margin:20px}h1{font-size:14px;margin-bottom:8px}
 table{border-collapse:collapse;width:100%}th,td{border:1px solid #ccc;padding:4px 6px;text-align:left}
-td.n{text-align:right;font-variant-numeric:tabular-nums}th{background:#f0f0f0}@media print{@page{size:A4;margin:15mm}}</style></head>
+td.n{text-align:right;font-variant-numeric:tabular-nums}th{background:#f0f0f0}h2{font-size:13px;margin:18px 0 4px}h3{font-size:12px;margin:12px 0 4px}small{color:#666}
+@media print{@page{size:A4;margin:15mm}}</style></head>
 <body><h1>${escapeHtml(project.name)} — ${escapeHtml(title)}</h1>
 <table><thead><tr>${colHeaders.map((h) => `<th>${escapeHtml(h)}</th>`).join('')}</tr></thead>
 <tbody>${rows.join('')}</tbody></table>
+${barPlanHtml(barGroups, barSettings, lengthFormat, t)}
 </body></html>`
     printHtml(html)
   }
@@ -396,9 +417,9 @@ td.n{text-align:right;font-variant-numeric:tabular-nums}th{background:#f0f0f0}@m
                   <td className={`${TD_CLASS} text-chrome-secondary`}>{r.assemblyName}</td>
                   <td className={TD_CLASS}>{r.name}</td>
                   <td className={`${TD_CLASS} text-chrome-secondary`}>{r.material}</td>
-                  <td className={num}>{r.length}</td>
-                  <td className={num}>{r.width}</td>
-                  <td className={`${num} text-chrome-secondary`}>{r.thickness}</td>
+                  <td className={num}>{dim(r.length)}</td>
+                  <td className={num}>{dim(r.width)}</td>
+                  <td className={`${num} text-chrome-secondary`}>{dim(r.thickness)}</td>
                   <td className={`${TD_CLASS} text-center`}>
                     {r.grain
                       ? <span className="font-medium text-accent">{grainLabel(r.grain)}</span>
@@ -438,6 +459,7 @@ td.n{text-align:right;font-variant-numeric:tabular-nums}th{background:#f0f0f0}@m
             </table>
           </section>
         )}
+        <BarCutPlan groups={barGroups} settings={barSettings} onSettings={setBarSettings} format={lengthFormat} />
       </div>
     </Dialog>
   )

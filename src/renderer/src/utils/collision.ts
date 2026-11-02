@@ -99,6 +99,9 @@ function obbSupportRadius(obb: OBB, axis: Vec3): number {
  *   – 9 cross-products of edge pairs (A.xi × B.xj)
  * Returns true when the boxes overlap, false when a separating axis exists.
  */
+/** Overlap below this is touching, not a collision: float dust (1169.7 + 504.6 ≠ 1674.3), sin/cos of rotations. */
+const TOUCH_MM = 0.01
+
 function satOBBOverlap(a: OBB, b: OBB): boolean {
   const d: Vec3 = {
     x: b.center.x - a.center.x,
@@ -131,7 +134,7 @@ function satOBBOverlap(a: OBB, b: OBB): boolean {
     const rA = obbSupportRadius(a, norm)
     const rB = obbSupportRadius(b, norm)
 
-    if (dist > rA + rB) return false // separating axis found
+    if (dist > rA + rB - TOUCH_MM) return false // separating axis found (or they only touch)
   }
 
   return true // no separating axis — boxes overlap

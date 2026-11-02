@@ -127,6 +127,9 @@ export interface UIState {
   /** The shortcut HUD is folded to its overlay row — the user's choice, remembered */
   hudCollapsed: boolean
   setHudCollapsed: (collapsed: boolean) => void
+  /** The static legend is folded to its title row — remembered like hudCollapsed */
+  staticLegendCollapsed: boolean
+  setStaticLegendCollapsed: (collapsed: boolean) => void
   /** Close the topmost open modal (see topModal) */
   closeTopModal: () => void
 }
@@ -151,6 +154,7 @@ export function topModal(s: UIState): ModalId | null {
 }
 
 const HUD_COLLAPSED_KEY = 'abrichten-hud-collapsed'
+const LEGEND_COLLAPSED_KEY = 'abrichten-static-legend-collapsed'
 
 function storedFlag(key: string): boolean {
   try { return typeof localStorage !== 'undefined' && localStorage.getItem(key) === '1' } catch { return false }
@@ -213,6 +217,7 @@ export const useUIStore = create<UIState>((set, get) => ({
   showShortcutsOverlay: false,
   showGrid: true,
   hudCollapsed: storedFlag(HUD_COLLAPSED_KEY),
+  staticLegendCollapsed: storedFlag(LEGEND_COLLAPSED_KEY),
 
   setActiveView: (view) => set({ activeView: view }),
   setActiveTool: (tool) => set({ activeTool: tool }),
@@ -301,6 +306,10 @@ export const useUIStore = create<UIState>((set, get) => ({
   setHudCollapsed: (collapsed) => {
     try { localStorage.setItem(HUD_COLLAPSED_KEY, collapsed ? '1' : '0') } catch { /* session only */ }
     set({ hudCollapsed: collapsed })
+  },
+  setStaticLegendCollapsed: (collapsed) => {
+    try { localStorage.setItem(LEGEND_COLLAPSED_KEY, collapsed ? '1' : '0') } catch { /* session only */ }
+    set({ staticLegendCollapsed: collapsed })
   },
   closeTopModal: () => {
     const top = topModal(get())

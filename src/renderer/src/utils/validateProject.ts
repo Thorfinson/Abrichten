@@ -104,7 +104,9 @@ export function validateBoard(b: unknown, path: string): Board {
     edgeBanding: isRecord(b.edgeBanding) ? (b.edgeBanding as Board['edgeBanding']) : undefined,
     cutouts: Array.isArray(b.cutouts) ? b.cutouts.flatMap(validateCutout) : undefined,
     hardware: Array.isArray(b.hardware) ? b.hardware.filter(isHardware) : undefined,
-    loadKg: isLoadKg(b.loadKg) ? b.loadKg : undefined,    loads: Array.isArray(b.loads)
+    loadKg: isLoadKg(b.loadKg) ? b.loadKg : undefined,
+    weightKg: isLoadKg(b.weightKg) ? b.weightKg : undefined,
+    loads: Array.isArray(b.loads)
       ? b.loads.flatMap((l) => validatePlacedLoad(l, b.width as number, b.depth as number)).slice(0, MAX_LOADS_PER_BOARD)
       : undefined,
     widthFormula: optStr(b.widthFormula),

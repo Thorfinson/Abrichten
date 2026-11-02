@@ -147,8 +147,8 @@ Respond in English.`
 
   if (warnings.length > 0) {
     context += isDe
-      ? `\nStatik-Warnungen (Lastsimulation, ${payloadKg} kg Nutzlast je Fachboden; 2D-FE-Modell je Bauteil; Auslastung = Spannung / Festigkeit an der ungünstigsten Stelle, 100 % = Bruch):\n`
-      : `\nStructural warnings (load simulation, ${payloadKg} kg payload per shelf; 2D finite-element model per part; utilisation = stress / strength at the worst point, 100 % = breaks):\n`
+      ? `\nStatik-Warnungen (Lastsimulation, ${payloadKg} kg Nutzlast je Fachboden; 2D-FE-Modell je Bauteil; Auslastung = Spannung / Festigkeit unter Dauerlast an der ungünstigsten Stelle, Durchbiegung mit Kriechen, 100 % = Bruch):\n`
+      : `\nStructural warnings (load simulation, ${payloadKg} kg payload per shelf; 2D finite-element model per part; utilisation = stress / strength under permanent load at the worst point, deflection including creep, 100 % = breaks):\n`
     for (const w of warnings) {
       context += `- ${w}\n`
     }

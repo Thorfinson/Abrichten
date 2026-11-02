@@ -7,7 +7,7 @@ import { useUIStore } from '../../store/useUIStore'
 import { materials, getMaterialById } from '../../data/materials'
 import { DimInput, Vec3Input } from '../layout/DimensionInputs'
 import { openJointEditor } from '../panels/JointDialog'
-import { BoardLoadField } from './BoardLoadField'
+import { BoardLoadField, BoardWeightField } from './BoardLoadField'
 import { boardFace, edgeBandingLengthMm } from '../../utils/boardFace'
 import { worldAligned } from '../../utils/projection'
 import type { Board, BoardCutout, EdgeBanding, Fastener, MaterialCategory, Vec3 } from '../../types/furniture'
@@ -569,6 +569,12 @@ export function FloatingPropertiesCard() {
             hasGrain={mat?.grain ?? false}
             onChange={(grainDirection) => handleUpdate({ grainDirection })}
           />
+          {/* Weight of the part for the load simulation (statics mode; an appliance from its datasheet) */}
+          {showStaticOverlay && (
+            <div className="mt-2">
+              <BoardWeightField assemblyId={assembly.id} board={board} />
+            </div>
+          )}
           {/* Payload on this board for the load simulation (statics mode, lying boards only —
               the simulation puts payloads on horizontal members) */}
           {showStaticOverlay && boardFace(worldAligned(board)).thicknessAxis === 'height' && (

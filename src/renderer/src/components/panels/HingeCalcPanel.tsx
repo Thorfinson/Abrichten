@@ -184,7 +184,7 @@ export function HingeCalcPanel() {
     const b = door.board
     const height = Math.round(uprightFace(b).y)
     const density = getMaterialById(b.materialId, customMaterials)?.density ?? 700
-    const weight = Math.max(0.5, Math.round((density * b.width * b.height * b.depth) / 1e9 * 2) / 2)
+    const weight = Math.max(0.5, Math.round((b.weightKg ?? (density * b.width * b.height * b.depth) / 1e9) * 2) / 2)
     setDoorHeight(height)
     setDoorThickness(Math.round(boardFace(b).thickness * 10) / 10)
     setDoorWeightKg(weight)

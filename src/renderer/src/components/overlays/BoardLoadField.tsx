@@ -3,6 +3,8 @@ import { useTranslation } from 'react-i18next'
 import { useProjectStore } from '../../store/useProjectStore'
 import { useUIStore } from '../../store/useUIStore'
 import { isLoadKg, MAX_LOAD_KG } from '../../utils/validateProject'
+import { getMaterialById } from '../../data/materials'
+import { boardWeightKg } from '../../services/static-sim'
 import type { Board, PlacedLoad } from '../../types/furniture'
 
 interface BoardLoadFieldProps {
@@ -18,6 +20,8 @@ interface KgFieldProps {
   optional?: boolean
   placeholder?: string
   ariaLabel?: string
+  /** Input step; 'any' for weights with decimals (a datasheet's 37.8 kg) */
+  step?: number | 'any'
   testId: string
   onCommit: (kg: number | undefined) => void
 }
@@ -26,7 +30,7 @@ interface KgFieldProps {
  * A kg field that commits on blur or Enter (one undo step); Esc puts the stored value
  * back. A half-typed or out-of-range number keeps the stored value.
  */
-function KgField({ id, value, optional, placeholder, ariaLabel, testId, onCommit }: KgFieldProps) {
+function KgField({ id, value, optional, placeholder, ariaLabel, step = 1, testId, onCommit }: KgFieldProps) {
   const stored = value === undefined ? '' : String(value)
   const [draft, setDraft] = useState(stored)
   const editing = useRef(false)
@@ -47,7 +51,7 @@ function KgField({ id, value, optional, placeholder, ariaLabel, testId, onCommit
       type="number"
       min={0}
       max={MAX_LOAD_KG}
-      step={1}
+      step={step}
       inputMode="decimal"
       value={draft}
       placeholder={placeholder}
@@ -133,6 +137,35 @@ export function BoardLoadField({ assemblyId, board }: BoardLoadFieldProps) {
           ))}
         </div>
       )}
+    </div>
+  )
+}
+
+/**
+ * The part's weight for the load simulation (Board.weightKg; empty = volume × density,
+ * shown as the placeholder), e.g. an appliance from its datasheet.
+ */
+export function BoardWeightField({ assemblyId, board }: BoardLoadFieldProps) {
+  const { t } = useTranslation()
+  const id = useId()
+  const customMaterials = useProjectStore((s) => s.project.customMaterials)
+  const fromMaterial = Math.round(boardWeightKg({ ...board, weightKg: undefined }, getMaterialById(board.materialId, customMaterials)) * 10) / 10
+
+  return (
+    <div className="flex items-center gap-2" title={t('sim.boardWeightHint', { kg: fromMaterial })}>
+      <label htmlFor={id} className="text-[9px] font-bold text-chrome-muted uppercase tracking-widest shrink-0">
+        {t('sim.boardWeight')}
+      </label>
+      <KgField
+        id={id}
+        value={board.weightKg}
+        optional
+        step="any"
+        placeholder={String(fromMaterial)}
+        testId="board-weight-field"
+        onCommit={(kg) => useProjectStore.getState().updateBoard(assemblyId, board.id, { weightKg: kg })}
+      />
+      <span className="text-[10px] text-chrome-muted">kg</span>
     </div>
   )
 }

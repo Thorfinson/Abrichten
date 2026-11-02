@@ -30,6 +30,15 @@ export function formatValue(valueMm: number, unit: Unit, lang?: string): string 
   }
 }
 
+/**
+ * A mm value as a plain number in the given unit, for tables whose header names the unit:
+ * mm to 0.1, cm to 0.01, m to 0.0001, no thousands separator (a cut list reads 2660, not 2.660).
+ */
+export function formatNumber(valueMm: number, unit: Unit, lang?: string): string {
+  const digits = unit === 'mm' ? 1 : unit === 'cm' ? 2 : 4
+  return fromMm(valueMm, unit).toLocaleString(lang === 'de' ? 'de-DE' : 'en-US', { maximumFractionDigits: digits, useGrouping: false })
+}
+
 /** Format a currency value with locale-aware decimal/thousands separators */
 export function formatCurrency(value: number, lang?: string): string {
   const locale = lang === 'de' ? 'de-DE' : 'en-US'

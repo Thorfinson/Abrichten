@@ -195,8 +195,9 @@ test.describe('Static heat map', () => {
     await showOverlay(page)
     await fitView(page)
     const shelf = await findBoardIdByName(page, 'Einlegeboden')
-    // a heavy load near the front-left corner: the maximum is there, off the middle
-    await page.evaluate(({ a, s }) => window.__projectStore.getState().updateBoard(a, s, { loads: [{ id: 'l1', x: 20, z: 170, kg: 120, w: 100, d: 100 }] }), { a: assemblyId, s: shelf })
+    // a heavy load near the front-left corner: the maximum is there, off the middle (60 kg
+    // stays below 100 % under permanent load, where the colours saturate and the peak is unique)
+    await page.evaluate(({ a, s }) => window.__projectStore.getState().updateBoard(a, s, { loads: [{ id: 'l1', x: 20, z: 170, kg: 60, w: 100, d: 100 }] }), { a: assemblyId, s: shelf })
     await selectBoard(page, assemblyId, shelf)
     await page.waitForTimeout(200)
     const h = (await heat(page, shelf))!
@@ -401,5 +402,41 @@ test.describe('Static heat map', () => {
       return out
     }, shelf)
     expect(pins).toEqual({ contact: 4, joint: 0 })
+  })
+
+  test('the legend folds to its title row (remembered) and its × switches the overlay off', async ({ page }) => {
+    await bootWithSample(page)
+    await setView(page, '3d')
+    await showOverlay(page)
+    const legend = page.getByTestId('static-legend')
+    await expect(legend.getByTestId('static-result-stress')).toBeVisible()
+    await page.getByTestId('static-legend-fold').click()
+    await expect(legend.getByTestId('static-result-stress')).toHaveCount(0)
+    await expect(legend).toContainText(/Statik-Simulation|Load simulation/)
+    expect(await page.evaluate(() => localStorage.getItem('abrichten-static-legend-collapsed'))).toBe('1')
+    await page.getByTestId('static-legend-fold').click()
+    await expect(legend.getByTestId('static-result-stress')).toBeVisible()
+    await page.getByTestId('static-legend-close').click()
+    await expect(legend).toHaveCount(0)
+    expect(await page.evaluate(() => window.__uiStore.getState().showStaticOverlay)).toBe(false)
+  })
+
+  test('the weight field: empty shows the weight from material and size, a datasheet weight replaces it', async ({ page }) => {
+    const { assemblyId } = await bootWithSample(page)
+    await setView(page, '3d')
+    await showOverlay(page)
+    const back = await findBoardIdByName(page, 'Rückwand')
+    await selectBoard(page, assemblyId, back)
+    const field = page.getByTestId('board-weight-field')
+    await expect(field).toHaveValue('')
+    expect(Number(await field.getAttribute('placeholder'))).toBeGreaterThan(1)   // 564 × 684 × 8 mm HDF
+    await field.fill('4.5')
+    await field.press('Enter')
+    await page.waitForTimeout(100)
+    expect((await shelfBoard(page, back)).weightKg).toBe(4.5)
+    await field.fill('')
+    await field.press('Enter')
+    await page.waitForTimeout(100)
+    expect((await shelfBoard(page, back)).weightKg).toBeUndefined()
   })
 })

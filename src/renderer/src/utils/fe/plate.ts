@@ -374,6 +374,10 @@ export function solvePlate(input: PlateInput): PlateResult | null {
     seen.add(key)
   }
   if (!u.every(Number.isFinite) || unsettled({ held, covered, bilateral }, reaction, total)) return null
+  // A node moving farther than the board is large: a mechanism whose pivots the check in
+  // band.ts took for real on round-off (they are noise near SINGULAR_PIVOT), not a solution
+  const size = Math.max(xa[na - 1], xb[nb - 1])
+  for (let n = 0; n < nodes; n++) if (nodeActive[n] && Math.abs(u[3 * slot[n]]) > size) return null
 
   const w = new Float64Array(nodes), R = new Float64Array(nodes)
   for (let n = 0; n < nodes; n++) {

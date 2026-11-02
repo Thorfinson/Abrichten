@@ -41,3 +41,12 @@ test('an overlap deeper than half the grooved board is still reported', () => {
   const deep = board('back', 594, 700, 6, [3, 10, 558])   // 15 mm into the 18 mm side
   assert.equal(detectCollisions3D([side, deep], [joint('dado', 'back', 'side')]).length, 1)
 })
+
+test('boards that only touch through float dust do not collide; a real overlap does', () => {
+  // 1435 + 52.3 ends a hair past 1487.3, where the next board starts (found by a random search)
+  const left = board('left', 52.3, 70, 15, [1435, 0, 0])
+  const right = board('right', 13.5, 70, 15, [1487.3, 0, 0])
+  assert.deepEqual(detectCollisions3D([left, right]), [])
+  const into = board('into', 13.5, 70, 15, [1487.3 - 0.5, 0, 0])
+  assert.equal(detectCollisions3D([left, into]).length, 1)
+})

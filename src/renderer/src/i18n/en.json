@@ -131,6 +131,20 @@
     "mixed": "(mixed)"
   },
   "cutting": {
+    "barPlan": "Bar stock cut plan",
+    "barStock": "Stock length",
+    "barKerf": "Saw kerf",
+    "barTrim": "Trim per end",
+    "barHint": "Solid wood up to {{width}} cm wide (battens, rails, square timber), longest pieces first",
+    "barSummary_one": "{{count}} piece, {{total}} m · {{bars}} of {{stock}} m",
+    "barSummary_other": "{{count}} pieces, {{total}} m · {{bars}} of {{stock}} m",
+    "barBars_one": "{{count}} bar",
+    "barBars_other": "{{count}} bars",
+    "barNr": "Bar",
+    "barPieces": "Pieces ({{unit}})",
+    "barRest": "Left over ({{unit}})",
+    "barParts": "Parts",
+    "barTooLong": "Longer than a bar: {{parts}}",
     "title": "Cutting List",
     "export": "Export as CSV",
     "exportDxf": "Export DXF",
@@ -515,8 +529,11 @@
   },
   "sim": {
     "legendTitle": "Load simulation",
-    "scaleBreak": "100 % = breaks",
-    "utilisationHint": "Utilisation = stress / strength at every point (2D finite-element model per board)",
+    "legendFold": "Fold the legend",
+    "legendUnfold": "Unfold the legend",
+    "legendClose": "Hide the load simulation",
+    "scaleBreak": "100 % = breaks under permanent load",
+    "utilisationHint": "Utilisation = stress / strength under permanent load at every point (2D finite-element model per board; EN 1995 k_mod, deflection including creep)",
     "payload": "Payload per shelf",
     "deformation": "Deformation ×{{factor}}",
     "unsupported": "No adequate support",
@@ -529,6 +546,8 @@
     "counts": "{{critical}} critical · {{warning}} warning · {{unsupported}} unsupported",
     "boardLoad": "Payload",
     "boardLoadHint": "Empty = global payload per shelf ({{kg}} kg)",
+    "boardWeight": "Weight",
+    "boardWeightHint": "Empty = from material and size ({{kg}} kg); for appliances, the datasheet weight",
     "summaryTitle": "Static Summary",
     "payloadNote": "Payload: {{kg}} kg per shelf, set in the legend of the static view. Self-weight and parts resting on a board are included.",
     "onlyIssues": "Issues only",
@@ -542,24 +561,28 @@
     "colLocation": "Location (mm)",
     "colDeflection": "Deflection / allowed (mm)",
     "colMinThickness": "Min. / actual thickness (mm)",
-    "colRating": "Rating",
+    "colRating": "Rating",
+
+
+
     "cantilever": "cantilever",
     "ok": "OK",
     "warning": "Warning",
     "critical": "Critical",
     "selectHint": "Click a row to select the part.",
-    "close": "Close",
+    "close": "Close"
+,
     "deflectionHint": "Deflection against the free span: span/200 = 100 %",
     "resultType": "Result",
     "resultStress": "Stress",
     "resultDeflection": "Deflection",
     "scaleLabel": "Colour scale",
     "scaleModel": "Model",
-    "modelHint": "Colours from 0 to the highest value in the whole model — like an FEA plot. 100 % would break; the markers show each board's percentage.",
+    "modelHint": "Colours from 0 to the highest value in the whole model — like an FEA plot. 100 % would break under permanent load; the markers show each board's percentage.",
     "scaleRelative": "Per board",
     "scaleAbsolute": "Absolute",
     "scaleBoardMax": "Board maximum",
-    "relativeHint": "Colours per board from 0 to its own maximum: shows where the load sits. The percentages at the markers are absolute (100 % = breaks).",
+    "relativeHint": "Colours per board from 0 to its own maximum: shows where the load sits. The percentages at the markers are absolute (100 % = breaks under permanent load).",
     "contours": "Contours",
     "placeLoad": "Place load",
     "placeKg": "Load per click",
@@ -571,7 +594,8 @@
     "labelBuckling": "Buckling · {{u}} %",
     "supportsLegend": "Resting (selected board)",
     "hotspotLegend": "Maximum",
-    "location": "{{a}} · {{b}}",
+    "location": "{{a}} · {{b}}"
+,
     "jointsLegend": "Joined (selected board)"
   }
 }

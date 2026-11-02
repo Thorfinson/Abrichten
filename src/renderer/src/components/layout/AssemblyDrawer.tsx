@@ -4,6 +4,7 @@ import { useProjectStore, type AssemblyDrop } from '../../store/useProjectStore'
 import { useUIStore } from '../../store/useUIStore'
 import { boardPresets, presetToBoard } from '../../data/board-presets'
 import { getMaterialById } from '../../data/materials'
+import { boardWeightKg } from '../../services/static-sim'
 import type { Assembly, Board, JointType, Material } from '../../types/furniture'
 import { subtreeIds, ancestorIds } from '../../utils/assemblyTree'
 import { computeJointPosition } from '../../utils/geometry'
@@ -26,10 +27,7 @@ function assemblyStats(boards: Board[], customMaterials?: Material[]) {
     minZ = Math.min(minZ, b.position.z)
     maxZ = Math.max(maxZ, b.position.z + b.depth)
 
-    const mat = getMaterialById(b.materialId, customMaterials)
-    if (mat) {
-      totalWeightKg += (b.width * b.height * b.depth * 1e-9) * mat.density
-    }
+    totalWeightKg += boardWeightKg(b, getMaterialById(b.materialId, customMaterials))
   }
 
   return {

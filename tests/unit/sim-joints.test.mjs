@@ -179,3 +179,24 @@ test('a 40 × 60 timber screwed onto a plinth is a beam: a load over its edge do
   assert.ok(r.uMax < 0.1, `u ${r.uMax}`)
   near(handed(r, 'plinth'), r.totalLoadN, 1e-9, 'all of it goes into the plinth')
 })
+
+test('a drawer hangs on its runners: the joint bridges the 12.7 mm gap, a rail its bottom touches does not carry it', () => {
+  // drawer box (bottom glued between two sides) on side-mounted runners between two cabinet
+  // sides; its bottom touches a rail at the front edge only (5 mm gap), where it would tip
+  const ply = { materialId: 'multiplex-birke' }
+  const boards = [
+    board('wallL', 19, 700, 540, [0, 0, 0], ply),
+    board('wallR', 19, 700, 540, [582.4, 0, 0], ply),
+    board('rail', 600, 100, 60, [0, 0, 480], { materialId: 'fichte' }),
+    board('bottom', 538, 12, 500, [31.7, 105, 20], ply),
+    board('sideL', 15, 68, 500, [31.7, 117, 20], ply),
+    board('sideR', 15, 68, 500, [554.7, 117, 20], ply)
+  ]
+  const joints = [joint('bottom', 'sideL', 'glued'), joint('bottom', 'sideR', 'glued'), joint('sideL', 'wallL'), joint('sideR', 'wallR')]
+  const sim = run(boards, joints, 20).results
+  const bottom = sim.get('bottom')
+  assert.notEqual(bottom.status, 'unsupported')
+  const onRunners = handed(sim.get('sideL'), 'wallL') + handed(sim.get('sideR'), 'wallR')
+  assert.ok(onRunners > 0.5 * bottom.totalLoadN, `runners carry ${onRunners} of ${bottom.totalLoadN}`)
+  assert.ok(handed(bottom, 'sideL') > 0 && handed(bottom, 'sideR') > 0, 'the bottom hangs on the sides')
+})
