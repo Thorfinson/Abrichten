@@ -171,8 +171,8 @@ test('suggested order follows the part roles; carcass per assembly in tree order
   let n = 0
   const steps = suggestSteps(p, (kind, path) => (path ? `${kind}: ${path}` : kind), () => `id${++n}`)
   assert.deepEqual(steps.map((s) => [s.title, s.boardIds]), [
-    ['back', ['rw']],
     ['substructure', ['lattung']],
+    ['back', ['rw']],
     ['carcass: Küche', ['k-side']],
     ['carcass: Küche › Fach 2', ['k2-side']],
     ['carcass: Küche › Fach 1', ['k1-side']],
@@ -189,6 +189,16 @@ test('suggested order follows the part roles; carcass per assembly in tree order
   // hidden assemblies are not planned
   const hidden = { ...p, assemblies: p.assemblies.map((a) => (a.id === 'X' ? { ...a, visible: false } : a)) }
   assert.ok(!suggestSteps(hidden, (k) => k).some((s) => s.boardIds.includes('lamp')))
+})
+
+test('without a substructure the back panels follow the carcasses they are fixed to', () => {
+  const p = validateProject({
+    assemblies: [{ id: 'S', name: 'Schrank', boards: [
+      board('rw', { role: 'back' }), board('side', { role: 'carcass' }), board('front', { role: 'visible', width: 596, height: 716, depth: 19 })
+    ], joints: [] }]
+  })
+  assert.deepEqual(suggestSteps(p, (kind, path) => (path ? `${kind}: ${path}` : kind)).map((s) => s.title),
+    ['carcass: Schrank', 'back', 'fronts'])
 })
 
 // ── Store ───────────────────────────────────────────────────────────────────

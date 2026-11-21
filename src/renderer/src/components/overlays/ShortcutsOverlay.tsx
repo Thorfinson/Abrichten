@@ -105,6 +105,8 @@ export function ShortcutsOverlay() {
             <ShortcutRow keys={keyCombo('2', ['alt'])} label={t('views.side')} />
             <ShortcutRow keys={keyCombo('3', ['alt'])} label={t('views.top')} />
             <ShortcutRow keys={keyCombo('4', ['alt'])} label={t('views.3d')} />
+            <ShortcutRow keys={keyCombo('1', ['cmd'])} label={`${t('workspace.label')}: ${t('workspace.design')}`} />
+            <ShortcutRow keys={keyCombo('2', ['cmd'])} label={`${t('workspace.label')}: ${t('workspace.assembly')}`} />
 
             <GroupHeader label={de ? 'Maus' : 'Mouse'} />
             <ShortcutRow keys={de ? 'Rad' : 'Wheel'}        label="Zoom" />

@@ -37,21 +37,25 @@ test.describe('Assembly mode', () => {
     const panel = page.getByTestId('assembly-panel')
     await panel.getByRole('button', { name: /^(Reihenfolge vorschlagen|Suggest an order)$/ }).click()
     await expect(stepLabel(page)).toHaveText(/(Schritt|Step) 1 (von|of) 2/)
-    await expect(panel.getByRole('textbox', { name: /Titel des Schritts|Step title/ })).toHaveValue(/Rückwände|Back panels/)
+    // no substructure: the carcass first, the back panel is fixed to it afterwards
+    await expect(panel.getByRole('textbox', { name: /Titel des Schritts|Step title/ })).toHaveValue(/^(Korpus|Carcass)/)
+    await expect(page.getByTestId('assembly-band')).toContainText(/(Schritt|Step) 1 (von|of) 2/)
+    await expect(page.getByTestId('assembly-step-list').getByRole('listitem')).toHaveCount(2)
 
-    // step 1: only the back panel, highlighted
-    await expect.poll(async () => Object.keys(await drawn(page))).toEqual(['b-rueckwand'])
-    expect((await drawn(page))['b-rueckwand'].lit).toBe(true)
+    // step 1: only the carcass, highlighted; its fixings listed
+    await expect.poll(async () => Object.keys(await drawn(page)).length).toBe(5)
+    expect((await drawn(page))['b-links'].lit).toBe(true)
+    expect(Object.keys(await drawn(page))).not.toContain('b-rueckwand')
+    await expect(panel.getByTestId('assembly-step-fasteners')).toContainText(/12 × Confirmat/)
 
-    // → step 2: the carcass highlighted, the back ghosted; its fixings listed
+    // → step 2: the back panel highlighted, the carcass ghosted
     await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur())
     await page.keyboard.press('ArrowRight')
     await expect(stepLabel(page)).toHaveText(/(Schritt|Step) 2 (von|of) 2/)
     await expect.poll(async () => Object.keys(await drawn(page)).length).toBe(6)
     const s2 = await drawn(page)
-    expect(s2['b-rueckwand']).toEqual({ ghost: true, lit: false })
-    expect(s2['b-links']).toEqual({ ghost: false, lit: true })
-    await expect(panel.getByTestId('assembly-step-fasteners')).toContainText(/12 × Confirmat/)
+    expect(s2['b-links']).toEqual({ ghost: true, lit: false })
+    expect(s2['b-rueckwand']).toEqual({ ghost: false, lit: true })
 
     // with a board selected, arrows step instead of nudging it
     await page.evaluate(() => window.__uiStore.getState().selectBoard('asm-1', 'b-links'))
@@ -99,7 +103,7 @@ test.describe('Assembly mode', () => {
     // a second step takes the back panel
     await panel.getByRole('button', { name: /^(\+ Schritt|\+ Step)$/ }).click()
     await expect(stepLabel(page)).toHaveText(/(Schritt|Step) 2 (von|of) 2/)
-    await page.getByRole('button', { name: /^(Voriger Schritt|Previous step)/ }).click()
+    await panel.getByRole('button', { name: /^(Voriger Schritt|Previous step)/ }).click()
     await panel.getByRole('combobox', { name: /(In Schritt verschieben|Move to step): Rückwand/ }).selectOption({ index: 1 })
     const steps = await page.evaluate(() => window.__projectStore.getState().project.assemblySteps)
     expect(steps.map((s: any) => [s.title, s.note, s.boardIds.length])).toEqual([

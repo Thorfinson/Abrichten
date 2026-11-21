@@ -66,6 +66,11 @@ button, input, select, textarea, a, [role="button"] {
   --color-ai-dim:           #3b0764;  /* purple-950 background tint */
   --color-ai-text:          #e9d5ff;  /* purple-200 text on AI bg */
 
+  /* Workspaces — design uses the action blue; assembly has its own */
+  --color-ws-assembly:       #f59e0b;  /* amber-500 */
+  --color-ws-assembly-dim:    #451a03;  /* amber-950 */
+  --color-ws-assembly-text:   #1c1400;  /* text on amber */
+
   /* Canvas — the 3D/ortho viewport. A notch lighter than the chrome so the
      model area reads as the workspace; the three.js side mirrors these
      values in components/canvasTheme.ts. */

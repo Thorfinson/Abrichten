@@ -143,7 +143,17 @@ export interface UIState {
   /** Turning it on clears the selection (it may sit on parts the step view hides) */
   setAssemblyMode: (on: boolean) => void
   setAssemblyStep: (index: number) => void
+  /** Workspace: design (the model) or assembly (steps). Assembly mode is the assembly workspace. */
+  workspace: Workspace
+  setWorkspace: (workspace: Workspace) => void
+  /** How the parts column groups the parts (the assembly workspace shows its steps instead) */
+  drawerGroupBy: DrawerGroupBy
+  setDrawerGroupBy: (groupBy: DrawerGroupBy) => void
 }
+
+export type Workspace = 'design' | 'assembly'
+export const WORKSPACES: readonly Workspace[] = ['design', 'assembly']
+export type DrawerGroupBy = 'assembly' | 'role' | 'material'
 
 /** Modal panel flags, topmost first (z-index order) so Esc closes the one on top. */
 const MODAL_FLAGS = [
@@ -240,7 +250,18 @@ export const useUIStore = create<UIState>((set, get) => ({
   inputDevice: storedInputDevice(),
   assemblyMode: false,
   assemblyStep: 0,
-  setAssemblyMode: (on) => set(on ? { assemblyMode: true, selectedBoardIds: [] } : { assemblyMode: false }),
+  setAssemblyMode: (on) => get().setWorkspace(on ? 'assembly' : 'design'),
+  workspace: 'design',
+  setWorkspace: (workspace) => {
+    if (!WORKSPACES.includes(workspace) || workspace === get().workspace) return
+    set({
+      workspace,
+      assemblyMode: workspace === 'assembly',
+      ...(workspace === 'assembly' ? { selectedBoardIds: [] } : {})
+    })
+  },
+  drawerGroupBy: 'assembly',
+  setDrawerGroupBy: (groupBy) => set({ drawerGroupBy: groupBy }),
   setAssemblyStep: (index) => set({ assemblyStep: Number.isFinite(index) ? Math.max(0, Math.round(index)) : 0 }),
 
   setActiveView: (view) => set({ activeView: view }),

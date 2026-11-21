@@ -130,7 +130,7 @@ export function AssemblyModePanel() {
 
   return (
     <div
-      className="absolute top-3 left-16 z-30 w-80 max-h-[calc(100%-12rem)] min-h-0 rounded-xl border border-white/10 shadow-2xl bg-gray-900/92 backdrop-blur-md text-white flex flex-col"
+      className="w-80 shrink-0 min-h-0 border-l border-chrome-border bg-chrome-bg text-white flex flex-col"
       onPointerDown={(e) => e.stopPropagation()}
       role="region"
       aria-label={t('montage.modeTitle')}

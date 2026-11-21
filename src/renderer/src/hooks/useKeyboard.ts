@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react'
-import { useUIStore, topModal } from '../store/useUIStore'
+import { useUIStore, topModal, WORKSPACES } from '../store/useUIStore'
 import { useProjectStore } from '../store/useProjectStore'
 import type { ToolMode, ViewMode } from '../types/measurement'
 import { openProjectFile, saveProjectFile, confirmDiscardChanges } from '../services/projectFile'
@@ -110,6 +110,14 @@ export function useKeyboard() {
         if (ui.selectedAssemblyId) {
           ui.selectAllBoards(ui.selectedAssemblyId)
         }
+        return
+      }
+
+      // ⌘1 / ⌘2: workspaces design, assembly — by physical key like ⌥1–4
+      const wsDigit = cmd && !e.altKey && !e.shiftKey ? digitOf(e) : null
+      if (wsDigit && WORKSPACES[Number(wsDigit) - 1]) {
+        e.preventDefault()
+        ui.setWorkspace(WORKSPACES[Number(wsDigit) - 1])
         return
       }
 

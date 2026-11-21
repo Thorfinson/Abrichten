@@ -199,9 +199,11 @@ export type SuggestedStepKind =
   | 'back' | 'substructure' | 'carcass' | 'endPanels' | 'worktop' | 'appliance' | 'drawer' | 'fronts' | 'plinth' | 'other'
 
 /**
- * A first order of steps from the part roles, the way a kitchen goes up: back panels,
- * substructure, the carcass of each assembly (in tree order), end panels and covers,
- * worktop, appliances, drawer boxes, fronts, plinth. A visible part facing forward
+ * A first order of steps from the part roles, the way a kitchen goes up. A back panel
+ * is always fixed to something already built: with a substructure (frame construction)
+ * it is substructure, back panels, then the carcass of each assembly (in tree order);
+ * without one, the carcasses first and the back panels onto them. Then end panels and
+ * covers, worktop, appliances, drawer boxes, fronts, plinth. A visible part facing forward
  * (thin along the depth) counts as a front, any other as an end panel or cover.
  * Parts without a role follow at the end, one step per assembly. Empty steps are left out.
  */
@@ -227,9 +229,11 @@ export function suggestSteps(
     kinds.flatMap((k) => (single.get(k)?.length ? [step(k, single.get(k)!)] : []))
   const grouped = (kind: 'carcass' | 'other'): AssemblyStep[] =>
     [...perAssembly[kind]].map(([id, boardIds]) => step(kind, boardIds, assemblyPath(project.assemblies, id)))
+  const frame = (single.get('substructure')?.length ?? 0) > 0
   return [
-    ...singles(['back', 'substructure']),
-    ...grouped('carcass'),
+    ...(frame
+      ? [...singles(['substructure', 'back']), ...grouped('carcass')]
+      : [...grouped('carcass'), ...singles(['back'])]),
     ...singles(['endPanels', 'worktop', 'appliance', 'drawer', 'fronts', 'plinth']),
     ...grouped('other')
   ]

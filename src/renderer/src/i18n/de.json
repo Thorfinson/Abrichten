@@ -140,7 +140,10 @@
     "s_drawer": "Schubkästen",
     "s_fronts": "Fronten",
     "s_plinth": "Sockel",
-    "s_other": "{{path}}"
+    "s_other": "{{path}}",
+    "steps": "Schritte",
+    "noStepsHint": "Noch keine Schritte. Rechts „Reihenfolge vorschlagen“ wählen.",
+    "leave": "Beenden"
   },
   "materials": {
     "solid_wood": "Massivholz",
@@ -697,5 +700,17 @@
     "hotspotLegend": "Höchstwert",
     "location": "{{a}} · {{b}}",
     "jointsLegend": "Verbunden (gewähltes Brett)"
+  },
+  "workspace": {
+    "label": "Arbeitsbereich",
+    "design": "Entwurf",
+    "designDesc": "Modell planen und bearbeiten",
+    "assembly": "Montage",
+    "assemblyDesc": "Montageschritte planen und als Anleitung drucken",
+    "parts": "Teile",
+    "groupBy": "Gruppieren",
+    "groupAssembly": "Baugruppe",
+    "groupRole": "Bauteilart",
+    "groupMaterial": "Material"
   }
 }

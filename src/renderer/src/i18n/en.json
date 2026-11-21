@@ -140,7 +140,10 @@
     "s_drawer": "Drawer boxes",
     "s_fronts": "Fronts",
     "s_plinth": "Plinth",
-    "s_other": "{{path}}"
+    "s_other": "{{path}}",
+    "steps": "Steps",
+    "noStepsHint": "No steps yet. Choose “Suggest an order” on the right.",
+    "leave": "Exit"
   },
   "materials": {
     "solid_wood": "Solid Wood",
@@ -699,5 +702,17 @@
     "location": "{{a}} · {{b}}"
 ,
     "jointsLegend": "Joined (selected board)"
+  },
+  "workspace": {
+    "label": "Workspace",
+    "design": "Design",
+    "designDesc": "Plan and edit the model",
+    "assembly": "Assembly",
+    "assemblyDesc": "Plan the assembly steps and print the instructions",
+    "parts": "Parts",
+    "groupBy": "Group",
+    "groupAssembly": "Assembly",
+    "groupRole": "Part role",
+    "groupMaterial": "Material"
   }
 }

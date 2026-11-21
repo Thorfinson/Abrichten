@@ -6,6 +6,7 @@ import { useProjectStore } from '../../store/useProjectStore'
 import { useUIStore } from '../../store/useUIStore'
 import { getApiKey } from './SettingsDialog'
 import { Icon } from './Icon'
+import { WorkspaceSwitcher } from './WorkspaceSwitcher'
 import { IS_MAC } from '../../utils/canvasInput'
 import { keyCombo } from '../../utils/shortcutKeys'
 
@@ -176,7 +177,10 @@ export function Toolbar() {
         {t('actions.save')}
       </Btn>
 
-      <Sep />
+      {/* Workspaces, centred between the file group and the search */}
+      <div className="flex-1 flex justify-center min-w-0 px-2">
+        <WorkspaceSwitcher />
+      </div>
 
       {/* ⌘K Search pill */}
       <button

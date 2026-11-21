@@ -6,9 +6,11 @@ import { boardPresets, presetToBoard } from '../../data/board-presets'
 import { getMaterialById } from '../../data/materials'
 import { boardWeightKg } from '../../services/static-sim'
 import type { Assembly, Board, JointType, Material } from '../../types/furniture'
-import { subtreeIds, ancestorIds } from '../../utils/assemblyTree'
+import { subtreeIds, ancestorIds, assemblyPath } from '../../utils/assemblyTree'
 import { computeJointPosition } from '../../utils/geometry'
 import { useDialogFocus } from '../../hooks/useKeyboard'
+import { groupBoards } from '../../utils/boardGroups'
+import type { DrawerGroupBy } from '../../store/useUIStore'
 import { Icon } from './Icon'
 
 function assemblyStats(boards: Board[], customMaterials?: Material[]) {
@@ -49,7 +51,13 @@ export function AssemblyDrawer() {
   const { t, i18n } = useTranslation()
   const lang = i18n.language as 'de' | 'en'
 
-  const show    = useUIStore((s) => s.showAssemblyDrawer)
+  const shown   = useUIStore((s) => s.showAssemblyDrawer)
+  const workspace = useUIStore((s) => s.workspace)
+  // the assembly workspace shows its steps in this column instead (AssemblyStepList)
+  const show = shown && workspace !== 'assembly'
+  const groupBy = useUIStore((s) => s.drawerGroupBy)
+  const setDrawerGroupBy = useUIStore((s) => s.setDrawerGroupBy)
+  const [closedGroups, setClosedGroups] = useState<Set<string>>(new Set())
 
   const project = useProjectStore((s) => s.project)
   const addAssembly = useProjectStore((s) => s.addAssembly)
@@ -569,21 +577,82 @@ export function AssemblyDrawer() {
           aria-label={t('layout.drawer.title')}
           className="w-60 shrink-0 bg-chrome-bg text-chrome-text border-r border-chrome-border flex flex-col min-h-0"
         >
-          <div className="flex items-center justify-between h-8 px-3 border-b border-chrome-border shrink-0">
-            <h3 className="text-[11px] font-semibold text-chrome-muted uppercase tracking-wider">{t('layout.drawer.title')}</h3>
-            <button
+          <div className="flex items-center gap-2 h-8 px-3 border-b border-chrome-border shrink-0">
+            <h3 className="text-[11px] font-semibold text-chrome-muted uppercase tracking-wider">{groupBy === 'assembly' ? t('layout.drawer.title') : t('workspace.parts')}</h3>
+            <label htmlFor="drawer-group-by" className="ml-auto text-[10px] text-chrome-muted">{t('workspace.groupBy')}</label>
+            <select
+              id="drawer-group-by"
+              value={groupBy}
+              onChange={(e) => setDrawerGroupBy(e.target.value as DrawerGroupBy)}
+              className="text-[11px] bg-chrome-surface text-chrome-text border border-chrome-divider rounded px-1 py-0.5 outline-none focus:border-action-hover"
+              data-testid="drawer-group-by"
+            >
+              <option value="assembly">{t('workspace.groupAssembly')}</option>
+              <option value="role">{t('workspace.groupRole')}</option>
+              <option value="material">{t('workspace.groupMaterial')}</option>
+            </select>
+            {groupBy === 'assembly' && <button
               onClick={handleAddAssembly}
               aria-label={t('ui.addAssembly')}
               title={t('ui.addAssembly')}
               className="w-6 h-6 flex items-center justify-center rounded text-chrome-secondary hover:bg-chrome-surface hover:text-chrome-text"
             >
               <Icon name="plus" />
-            </button>
+            </button>}
           </div>
 
           {/* Assemblies & boards */}
           <div className="px-2 py-2 flex-1 overflow-y-auto">
-            {project.assemblies.filter((a) => !a.parentId).map((a) => renderNode(a, 0))}
+            {groupBy === 'assembly' && project.assemblies.filter((a) => !a.parentId).map((a) => renderNode(a, 0))}
+            {groupBy !== 'assembly' && groupBoards(project.assemblies, groupBy, project.customMaterials, lang).map((g) => {
+              const open = !closedGroups.has(g.key)
+              return (
+                <div key={g.key} className="mb-1" data-testid={`part-group-${g.key}`}>
+                  <button
+                    type="button"
+                    aria-expanded={open}
+                    onClick={() => setClosedGroups((prev) => {
+                      const next = new Set(prev)
+                      if (next.has(g.key)) next.delete(g.key); else next.add(g.key)
+                      return next
+                    })}
+                    className="w-full flex items-center gap-1.5 px-1.5 py-1 rounded text-xs font-medium text-chrome-text hover:bg-chrome-surface"
+                  >
+                    <Icon name={open ? 'chevronDown' : 'chevronRight'} className="w-3 h-3" strokeWidth={2.25} />
+                    <span className="inline-block w-2.5 h-2.5 rounded-sm shrink-0" style={{ backgroundColor: g.color }} />
+                    <span className="flex-1 text-left truncate">{g.labelIsKey ? t(g.label) : g.label}</span>
+                    <span className="text-[10px] font-mono text-chrome-muted tabular-nums">{g.items.length}</span>
+                  </button>
+                  {open && g.items.map(({ assemblyId, board }) => (
+                    <div
+                      key={board.id}
+                      ref={(el) => {
+                        if (el) boardItemRefs.current.set(board.id, el)
+                        else boardItemRefs.current.delete(board.id)
+                      }}
+                      title={`${assemblyPath(project.assemblies, assemblyId)} · ${board.width}×${board.height}×${board.depth}mm`}
+                      className={`ml-4 text-xs px-2 py-1 rounded cursor-pointer flex items-center gap-1.5 ${
+                        selectedBoardIds.includes(board.id)
+                          ? 'bg-action/25 text-chrome-text'
+                          : 'text-chrome-secondary hover:bg-chrome-surface hover:text-chrome-text'
+                      }`}
+                      onClick={(e) => {
+                        if (e.ctrlKey || e.metaKey) toggleBoardSelection(assemblyId, board.id)
+                        else selectBoard(assemblyId, board.id)
+                      }}
+                    >
+                      <span className="inline-block w-2 h-2 rounded-sm shrink-0 border border-white/30" style={{ backgroundColor: board.color }} />
+                      <div className="flex-1 min-w-0">
+                        <div className="truncate leading-tight">{board.name}</div>
+                        <div className={`text-[10px] font-mono leading-tight ${selectedBoardIds.includes(board.id) ? 'text-info' : 'text-chrome-hint'}`}>
+                          {board.width}×{board.height}×{board.depth}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )
+            })}
 
             {project.assemblies.length === 0 && (
               <button

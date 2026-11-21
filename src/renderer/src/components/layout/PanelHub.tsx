@@ -49,7 +49,7 @@ export function PanelHub() {
   const setShowCost           = useUIStore((s) => s.setShowCostPanel)
   const setShowShopDrawings   = useUIStore((s) => s.setShowShopDrawingsPanel)
   const setShowChatPanel      = useUIStore((s) => s.setShowChatPanel)
-  const setAssemblyMode       = useUIStore((s) => s.setAssemblyMode)
+  const setWorkspace          = useUIStore((s) => s.setWorkspace)
 
   const open = (fn: (v: boolean) => void) => {
     fn(true)
@@ -216,7 +216,7 @@ export function PanelHub() {
           labelEn: t('montage.modeTitle', { lng: 'en' }),
           descDe: t('montage.modeDesc', { lng: 'de' }),
           descEn: t('montage.modeDesc', { lng: 'en' }),
-          action: () => open(setAssemblyMode)
+          action: () => open(() => setWorkspace('assembly'))
         }
       ]
     }

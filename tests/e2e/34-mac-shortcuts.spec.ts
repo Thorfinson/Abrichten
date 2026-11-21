@@ -76,9 +76,10 @@ test.describe('macOS shortcuts', () => {
     await page.keyboard.press('Meta+a')
     expect(await ui(page, (s) => s.selectedBoardIds.length)).toBe(boardCount)
 
-    // ⌘ + a plain-letter shortcut does nothing: R, F, J, T, B stay off
+    // ⌘ + a plain-letter shortcut does nothing: R, F, J, T, B stay off, and ⌘4 picks no tool
+    // (⌘1 / ⌘2 switch the workspace, 35-workspaces)
     const before = await ui(page, (s) => ({ mode: s.transformMode, drawer: s.showAssemblyDrawer, tool: s.activeTool }))
-    for (const key of ['Meta+r', 'Meta+t', 'Meta+b', 'Meta+2']) await page.keyboard.press(key)
+    for (const key of ['Meta+r', 'Meta+t', 'Meta+b', 'Meta+4']) await page.keyboard.press(key)
     expect(await ui(page, (s) => ({ mode: s.transformMode, drawer: s.showAssemblyDrawer, tool: s.activeTool }))).toEqual(before)
   })
 

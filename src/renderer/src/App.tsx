@@ -27,6 +27,7 @@ import { MaterialsPanel } from './components/panels/MaterialsPanel'
 import { WelcomeDialog } from './components/onboarding/WelcomeDialog'
 import { FloatingPropertiesCard } from './components/overlays/FloatingPropertiesCard'
 import { AssemblyModePanel } from './components/panels/AssemblyModePanel'
+import { AssemblyBand, AssemblyStepList, AssemblyTimeline } from './components/panels/AssemblyWorkspace'
 import { ContextHUD } from './components/overlays/ContextHUD'
 import { ShortcutsOverlay } from './components/overlays/ShortcutsOverlay'
 import { QuadLayout } from './components/layout/QuadLayout'
@@ -46,6 +47,7 @@ export default function App() {
   const unsaved = useProjectStore(isProjectDirty)
   const showChatPanel = useUIStore((s) => s.showChatPanel)
   const viewLayout    = useUIStore((s) => s.viewLayout)
+  const workspace     = useUIStore((s) => s.workspace)
 
   // Restore project from IndexedDB on startup (an unreadable save is kept as a backup)
   useEffect(() => { restoreAutoSave() }, [])
@@ -60,10 +62,13 @@ export default function App() {
     <div className="flex flex-col h-screen w-screen bg-chrome-deep text-gray-900 select-none">
       {/* Top toolbar */}
       <Toolbar />
+      {/* Assembly workspace: which step is shown, how to leave */}
+      <AssemblyBand />
 
       <div className="flex-1 flex min-h-0">
-        {/* Assembly tree: its own column, pushes tabs and canvas aside */}
+        {/* Parts column (tree or groups); in the assembly workspace the list of steps */}
         <AssemblyDrawer />
+        <AssemblyStepList />
 
         <main className="flex-1 flex flex-col min-w-0">
           {/* View tabs */}
@@ -75,14 +80,19 @@ export default function App() {
             {/* Floating cards over the canvas (z-30) */}
             <ToolStrip />
             <FloatingPropertiesCard />
-            <AssemblyModePanel />
             <ContextHUD />
+            <AssemblyTimeline />
             {/* Static legend (renders only while the static overlay is on) */}
-            <div className="absolute bottom-3 left-1/2 -translate-x-1/2 z-30">
-              <StaticLegend />
-            </div>
+            {workspace !== 'assembly' && (
+              <div className="absolute bottom-3 left-1/2 -translate-x-1/2 z-30">
+                <StaticLegend />
+              </div>
+            )}
           </div>
         </main>
+
+        {/* Right column of the assembly workspace: the shown step */}
+        <AssemblyModePanel />
       </div>
 
       {/* Status bar, with the unsaved-changes marker */}
