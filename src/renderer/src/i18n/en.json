@@ -279,7 +279,25 @@
     "unit": "Unit",
     "fetchModels": "Fetch Models",
     "loadingModels": "Loading models...",
-    "fetchError": "Failed to load models"
+    "fetchError": "Failed to load models",
+    "inputDevice": "Input device",
+    "inputAuto": "Automatic",
+    "inputMouse": "Mouse",
+    "inputTrackpad": "Trackpad",
+    "inputHintAuto": "Tells for every gesture whether a mouse wheel or a trackpad sent it: the wheel zooms as before, two fingers pan, pinch zooms.",
+    "inputHintMouse": "As before: the wheel zooms, the middle button orbits in 3D (2D: pans), the right button pans.",
+    "inputHintTrackpad": "Two fingers pan, pinch zooms to the pointer, {{alt}} + two fingers or {{alt}} + drag orbits in 3D, ⇧{{alt}} + drag pans."
+  },
+  "input": {
+    "trackpad": "Trackpad",
+    "twoFinger": "2 fingers",
+    "pan": "Pan the view",
+    "pinch": "Pinch",
+    "zoomToPointer": "Zoom to the pointer",
+    "orbit3d": "Orbit 3D",
+    "drag": "drag",
+    "orbit3dPan2d": "Orbit 3D (2D: pan)",
+    "settingHint": "Mouse or trackpad: Settings → General"
   },
   "actions": {
     "save": "Save",

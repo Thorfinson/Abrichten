@@ -279,7 +279,25 @@
     "unit": "Einheit",
     "fetchModels": "Modelle laden",
     "loadingModels": "Lade Modelle...",
-    "fetchError": "Fehler beim Laden der Modelle"
+    "fetchError": "Fehler beim Laden der Modelle",
+    "inputDevice": "Eingabegerät",
+    "inputAuto": "Automatisch",
+    "inputMouse": "Maus",
+    "inputTrackpad": "Trackpad",
+    "inputHintAuto": "Erkennt bei jeder Geste, ob ein Mausrad oder ein Trackpad sie sendet: das Mausrad zoomt wie bisher, zwei Finger schieben, Pinch zoomt.",
+    "inputHintMouse": "Wie bisher: Mausrad zoomt, mittlere Taste dreht in 3D (2D: schiebt), rechte Taste schiebt.",
+    "inputHintTrackpad": "Zwei Finger schieben, Pinch zoomt zum Zeiger, {{alt}} + zwei Finger oder {{alt}} + Ziehen dreht in 3D, ⇧{{alt}} + Ziehen schiebt."
+  },
+  "input": {
+    "trackpad": "Trackpad",
+    "twoFinger": "2 Finger",
+    "pan": "Ansicht schieben",
+    "pinch": "Pinch",
+    "zoomToPointer": "Zoom zum Zeiger",
+    "orbit3d": "3D drehen",
+    "drag": "Ziehen",
+    "orbit3dPan2d": "3D drehen (2D: schieben)",
+    "settingHint": "Maus oder Trackpad: Einstellungen → Allgemein"
   },
   "actions": {
     "save": "Speichern",

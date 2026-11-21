@@ -27,13 +27,14 @@ import { CANVAS } from './canvasTheme'
 
 /** Syncs the current R3F camera to an external ref (for use outside the Canvas) */
 function CameraSync({ cameraRef, view }: { cameraRef: React.RefObject<THREE.Camera | null>; view?: ViewMode }) {
-  const { camera, scene, size, gl } = useThree()
+  const { camera, scene, size, gl, controls } = useThree()
   ;(cameraRef as React.MutableRefObject<THREE.Camera | null>).current = camera
   // Test/debug: expose R3F state on window so Playwright (etc.) can compute
   // projected screen positions of any mesh in the scene. In quad layout each
-  // quadrant is also reachable by its view via __r3fViews.
+  // quadrant is also reachable by its view via __r3fViews. `controls`: the
+  // 3D view's OrbitControls (orbit target), null in the ortho views.
   if (typeof window !== 'undefined') {
-    const state = { camera, scene, size, gl, THREE }
+    const state = { camera, scene, size, gl, controls, THREE }
     ;(window as any).__r3f = state
     if (view) ((window as any).__r3fViews ??= {})[view] = state
   }
@@ -83,8 +84,8 @@ export function UnifiedCanvas({ forceView }: { forceView?: ViewMode } = {}) {
           useUIStore.getState().deselectAll()
         }}
       >
-        {/* Camera management (ortho/perspective switching, zoom, pan) */}
-        <CameraController orbitRef={orbitRef} />
+        {/* Camera management (ortho/perspective switching, zoom, pan, trackpad gestures) */}
+        <CameraController orbitRef={orbitRef} containerRef={canvasContainerRef} />
         <CameraSync cameraRef={cameraRef} view={forceView} />
 
         {/* Lighting — three divides diffuse light by π, so these add up to
@@ -155,7 +156,8 @@ export function UnifiedCanvas({ forceView }: { forceView?: ViewMode } = {}) {
         {/* OrbitControls only for 3D perspective view.
             Left-button reserved for selection + TC gizmos (Blender-style).
             Middle button rotates, right button pans. Damping turned off so
-            middle-drag feels responsive instead of "lagging" after release. */}
+            middle-drag feels responsive instead of "lagging" after release.
+            Trackpad gestures and ⌥-drag are CameraController's. */}
         {activeView === '3d' && (
           <OrbitControls
             ref={orbitRef}

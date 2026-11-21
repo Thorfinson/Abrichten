@@ -2,6 +2,7 @@ import { createContext, useContext } from 'react'
 import { create } from 'zustand'
 import type { ToolMode, ViewMode, Measurement } from '../types/measurement'
 import { useProjectStore } from './useProjectStore'
+import { isInputDevice, type InputDevice } from '../utils/canvasInput'
 
 export type TransformMode = 'translate' | 'rotate' | 'scale'
 
@@ -130,6 +131,9 @@ export interface UIState {
   /** The static legend is folded to its title row — remembered like hudCollapsed */
   staticLegendCollapsed: boolean
   setStaticLegendCollapsed: (collapsed: boolean) => void
+  /** How wheel and ⌥-drag move the camera: mouse, trackpad or decided per gesture (utils/canvasInput) — remembered */
+  inputDevice: InputDevice
+  setInputDevice: (device: InputDevice) => void
   /** Close the topmost open modal (see topModal) */
   closeTopModal: () => void
 }
@@ -155,6 +159,14 @@ export function topModal(s: UIState): ModalId | null {
 
 const HUD_COLLAPSED_KEY = 'abrichten-hud-collapsed'
 const LEGEND_COLLAPSED_KEY = 'abrichten-static-legend-collapsed'
+const INPUT_DEVICE_KEY = 'abrichten-input-device'
+
+function storedInputDevice(): InputDevice {
+  try {
+    const v = typeof localStorage !== 'undefined' ? localStorage.getItem(INPUT_DEVICE_KEY) : null
+    return isInputDevice(v) ? v : 'auto'
+  } catch { return 'auto' }
+}
 
 function storedFlag(key: string): boolean {
   try { return typeof localStorage !== 'undefined' && localStorage.getItem(key) === '1' } catch { return false }
@@ -218,6 +230,7 @@ export const useUIStore = create<UIState>((set, get) => ({
   showGrid: true,
   hudCollapsed: storedFlag(HUD_COLLAPSED_KEY),
   staticLegendCollapsed: storedFlag(LEGEND_COLLAPSED_KEY),
+  inputDevice: storedInputDevice(),
 
   setActiveView: (view) => set({ activeView: view }),
   setActiveTool: (tool) => set({ activeTool: tool }),
@@ -310,6 +323,10 @@ export const useUIStore = create<UIState>((set, get) => ({
   setStaticLegendCollapsed: (collapsed) => {
     try { localStorage.setItem(LEGEND_COLLAPSED_KEY, collapsed ? '1' : '0') } catch { /* session only */ }
     set({ staticLegendCollapsed: collapsed })
+  },
+  setInputDevice: (device) => {
+    try { localStorage.setItem(INPUT_DEVICE_KEY, device) } catch { /* session only */ }
+    set({ inputDevice: device })
   },
   closeTopModal: () => {
     const top = topModal(get())

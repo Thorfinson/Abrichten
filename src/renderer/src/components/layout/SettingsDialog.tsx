@@ -5,6 +5,7 @@ import { useProjectStore } from '../../store/useProjectStore'
 import { fetchVisionModels, type OpenRouterModel } from '../../services/openrouter'
 import { loadEnvConfig } from '../../config/env'
 import { Dialog, Button, FIELD_CLASS, segmentClass } from '../ui/Dialog'
+import { INPUT_DEVICES, ALT_KEY, type InputDevice } from '../../utils/canvasInput'
 
 const STORAGE_KEY = 'abrichten-settings'
 
@@ -68,6 +69,13 @@ export function getCsvDelimiter(): Settings['csvDelimiter'] {
 
 type SectionId = 'general' | 'export' | 'ai' | 'shortcuts'
 
+const INPUT_LABEL: Record<InputDevice, string> = {
+  auto: 'settings.inputAuto', mouse: 'settings.inputMouse', trackpad: 'settings.inputTrackpad'
+}
+const INPUT_HINT: Record<InputDevice, string> = {
+  auto: 'settings.inputHintAuto', mouse: 'settings.inputHintMouse', trackpad: 'settings.inputHintTrackpad'
+}
+
 const SHORTCUTS = [
   { key: 'Ctrl+Z / Ctrl+Shift+Z', actionDe: 'Rückgängig / Wiederholen', actionEn: 'Undo / Redo' },
   { key: 'Ctrl+S', actionDe: 'Speichern', actionEn: 'Save' },
@@ -93,6 +101,8 @@ export function SettingsDialog() {
   const setSettingsOpen = useUIStore((s) => s.setSettingsOpen)
   const setLanguage = useProjectStore((s) => s.setLanguage)
   const project = useProjectStore((s) => s.project)
+  const inputDevice = useUIStore((s) => s.inputDevice)
+  const setInputDevice = useUIStore((s) => s.setInputDevice)
 
   const [settings, setSettings] = useState<Settings>(defaultSettings)
   const [models, setModels] = useState<OpenRouterModel[]>([])
@@ -201,6 +211,25 @@ export function SettingsDialog() {
                   </button>
                 ))}
               </div>
+            </div>
+
+            {/* Input device: how wheel and ⌥-drag move the camera (applies at once, like the language) */}
+            <div>
+              <span className={fieldLabel}>{t('settings.inputDevice')}</span>
+              <div className="flex gap-2" role="group" aria-label={t('settings.inputDevice')}>
+                {INPUT_DEVICES.map((d) => (
+                  <button
+                    key={d}
+                    type="button"
+                    onClick={() => setInputDevice(d)}
+                    aria-pressed={inputDevice === d}
+                    className={segmentClass(inputDevice === d)}
+                  >
+                    {t(INPUT_LABEL[d])}
+                  </button>
+                ))}
+              </div>
+              <p className="mt-1.5 text-xs text-chrome-hint">{t(INPUT_HINT[inputDevice], { alt: ALT_KEY })}</p>
             </div>
 
           </div>

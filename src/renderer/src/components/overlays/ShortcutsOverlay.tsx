@@ -1,6 +1,7 @@
 import { useTranslation } from 'react-i18next'
 import { useUIStore } from '../../store/useUIStore'
 import { useDialogFocus } from '../../hooks/useKeyboard'
+import { ALT_KEY, CMD_KEY } from '../../utils/canvasInput'
 
 function ShortcutRow({ keys, label }: { keys: string; label: string }) {
   return (
@@ -23,7 +24,8 @@ function GroupHeader({ label }: { label: string }) {
 
 /**
  * Full-screen shortcut reference overlay. Toggled by the `?` key.
- * Every entry mirrors a handler in hooks/useKeyboard.ts (Ctrl+K: CommandPalette).
+ * Every entry mirrors a handler in hooks/useKeyboard.ts (Ctrl+K: CommandPalette);
+ * mouse and trackpad gestures mirror CameraController / utils/canvasInput.
  */
 export function ShortcutsOverlay() {
   const { t, i18n } = useTranslation()
@@ -107,6 +109,15 @@ export function ShortcutsOverlay() {
             <ShortcutRow keys={de ? 'Rechts' : 'Right'}     label={de ? 'Ziehen: Ansicht schieben' : 'Drag: pan'} />
             <ShortcutRow keys={de ? 'Mitte' : 'Middle'}     label={de ? 'Ziehen: 3D drehen (2D: schieben)' : 'Drag: orbit 3D (2D: pan)'} />
             <ShortcutRow keys={de ? 'Ctrl+Klick' : 'Ctrl+click'} label={de ? 'Mehrfachauswahl' : 'Add to selection'} />
+
+            <GroupHeader label={t('input.trackpad')} />
+            <ShortcutRow keys={t('input.twoFinger')}                     label={t('input.pan')} />
+            <ShortcutRow keys={t('input.pinch')}                         label={t('input.zoomToPointer')} />
+            <ShortcutRow keys={`${CMD_KEY} + ${t('input.twoFinger')}`}   label="Zoom" />
+            <ShortcutRow keys={`${ALT_KEY} + ${t('input.twoFinger')}`}   label={t('input.orbit3d')} />
+            <ShortcutRow keys={`${ALT_KEY} + ${t('input.drag')}`}        label={t('input.orbit3dPan2d')} />
+            <ShortcutRow keys={`⇧${ALT_KEY} + ${t('input.drag')}`}       label={t('input.pan')} />
+            <p className="mt-1 text-[10px] text-chrome-hint">{t('input.settingHint')}</p>
           </div>
         </div>
 

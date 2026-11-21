@@ -5,6 +5,9 @@ import { useUIStore, useCanvasView } from '../store/useUIStore'
 import { useProjectStore } from '../store/useProjectStore'
 import type { ViewMode } from '../types/measurement'
 import { fitBounds } from './layout/layoutRules'
+import { WheelClassifier, cameraDragFor, wheelPixels, zoomFactor, type CameraDrag } from '../utils/canvasInput'
+import { isDragActive } from '../utils/transformLock'
+import { isHoveringGizmo } from '../utils/gizmoHover'
 
 /**
  * Orthographic camera configuration per 2D view.
@@ -30,13 +33,26 @@ const FIT_PAD_MM = 60
 /** … and for the tool strip, HUD and cards floating over the canvas (px per side) */
 const FIT_MARGIN_X_PX = 72
 const FIT_MARGIN_Y_PX = 48
+/** Ortho zoom per mouse wheel notch */
+const WHEEL_ZOOM_STEP = 1.08
+/** Pointer travel (px) above which a ⌥-drag swallows the click at its end */
+const CLICK_MAX_TRAVEL_PX = 4
+
+const Y_UP = new THREE.Vector3(0, 1, 0)
 
 /**
  * Manages camera switching based on activeView.
  * Orthographic cameras for front/side/top, perspective for 3D.
- * Handles zoom (scroll) and pan (right-click drag) for ortho views.
+ * Ortho views: wheel zooms towards the cursor, middle / right drag pans.
+ * 3D: OrbitControls (middle orbits, right pans, wheel dollies).
+ * Trackpad (utils/canvasInput): two-finger scroll pans, pinch zooms towards
+ * the cursor, ⌥ + scroll or ⌥ + drag orbits in 3D, ⇧⌥ + drag pans.
  */
-export function CameraController({ orbitRef }: { orbitRef?: React.RefObject<any> }) {
+export function CameraController({ orbitRef, containerRef }: {
+  orbitRef?: React.RefObject<any>
+  /** The element around the R3F canvas (UnifiedCanvas) — ⌥-drag listens there */
+  containerRef?: React.RefObject<HTMLDivElement | null>
+}) {
   const activeView = useCanvasView()
   const fitViewTrigger = useUIStore((s) => s.fitViewTrigger)
   const { set, size, camera: defaultCamera, gl } = useThree()
@@ -209,44 +225,225 @@ export function CameraController({ orbitRef }: { orbitRef?: React.RefObject<any>
     }
   }, [fitViewTrigger]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Wheel zoom toward mouse pointer for ortho views
+  /** NDC of a client position on this canvas */
+  const toNdc = (clientX: number, clientY: number): THREE.Vector2 => {
+    const rect = gl.domElement.getBoundingClientRect()
+    return new THREE.Vector2(
+      ((clientX - rect.left) / rect.width) * 2 - 1,
+      -((clientY - rect.top) / rect.height) * 2 + 1
+    )
+  }
+
+  /** Put an ortho camera at its view target now, not only next frame — so a
+   *  second wheel event in the same frame unprojects with the moved camera. */
+  const syncOrtho = (view: Exclude<ViewMode, '3d'>): void => {
+    const cam = orthoCameras[view]
+    const config = ORTHO_CONFIGS[view]
+    const { target } = viewState.current[view]
+    cam.position.set(target.x + config.position[0], target.y + config.position[1], target.z + config.position[2])
+    cam.lookAt(target)
+    cam.updateMatrixWorld()
+  }
+
+  /** Ortho: zoom by `factor`, keeping the world point under the cursor in place. */
+  const zoomOrthoAt = (view: Exclude<ViewMode, '3d'>, factor: number, clientX: number, clientY: number): void => {
+    const cam = orthoCameras[view]
+    const vs = viewState.current[view]
+    const ndc = toNdc(clientX, clientY)
+    const before = new THREE.Vector3(ndc.x, ndc.y, 0).unproject(cam)
+    cam.zoom = Math.max(ORTHO_ZOOM_MIN, Math.min(ORTHO_ZOOM_MAX, cam.zoom * factor))
+    cam.updateProjectionMatrix()
+    const after = new THREE.Vector3(ndc.x, ndc.y, 0).unproject(cam)
+    vs.target.add(before.sub(after))
+    vs.zoom = cam.zoom
+    syncOrtho(view)
+  }
+
+  /** Ortho: move the view as if the content were dragged by (dx, dy) screen px. */
+  const panOrthoBy = (view: Exclude<ViewMode, '3d'>, dx: number, dy: number): void => {
+    const cam = orthoCameras[view]
+    const right = new THREE.Vector3().setFromMatrixColumn(cam.matrixWorld, 0).normalize()
+    const up = new THREE.Vector3().setFromMatrixColumn(cam.matrixWorld, 1).normalize()
+    viewState.current[view].target
+      .addScaledVector(right, -dx / cam.zoom)
+      .addScaledVector(up, dy / cam.zoom)
+    syncOrtho(view)
+  }
+
+  /** OrbitControls while they drive the orbit camera, else null. */
+  const orbitControls = (): any => {
+    const c = orbitRef?.current
+    return c && c.object === perspCameraRef.current && c.enabled !== false ? c : null
+  }
+
+  /** 3D: orbit around the target like a middle-button drag by (dx, dy) px. */
+  const orbit3d = (dx: number, dy: number): void => {
+    const c = orbitControls()
+    if (!c) return
+    const cam = c.object as THREE.PerspectiveCamera
+    const h = gl.domElement.clientHeight || 1
+    const toYUp = new THREE.Quaternion().setFromUnitVectors(cam.up, Y_UP)
+    const offset = cam.position.clone().sub(c.target).applyQuaternion(toYUp)
+    const s = new THREE.Spherical().setFromVector3(offset)
+    s.theta -= (2 * Math.PI * dx) / h
+    s.phi = Math.max(c.minPolarAngle, Math.min(c.maxPolarAngle, s.phi - (2 * Math.PI * dy) / h))
+    s.makeSafe()
+    offset.setFromSpherical(s).applyQuaternion(toYUp.invert())
+    cam.position.copy(c.target).add(offset)
+    c.update()
+  }
+
+  /** 3D: pan like a right-button drag by (dx, dy) px — the target plane follows the pointer. */
+  const pan3d = (dx: number, dy: number): void => {
+    const c = orbitControls()
+    if (!c) return
+    const cam = c.object as THREE.PerspectiveCamera
+    const h = gl.domElement.clientHeight || 1
+    const perPx = (2 * cam.position.distanceTo(c.target) * Math.tan(THREE.MathUtils.degToRad(cam.fov / 2))) / h
+    const move = new THREE.Vector3(1, 0, 0).applyQuaternion(cam.quaternion).multiplyScalar(-dx * perPx)
+      .addScaledVector(new THREE.Vector3(0, 1, 0).applyQuaternion(cam.quaternion), dy * perPx)
+    cam.position.add(move)
+    c.target.add(move)
+    c.update()
+  }
+
+  /** 3D: dolly by `factor` towards the point under the cursor (on the plane through the target). */
+  const dolly3dAt = (factor: number, clientX: number, clientY: number): void => {
+    const c = orbitControls()
+    if (!c) return
+    const cam = c.object as THREE.PerspectiveCamera
+    const dist = cam.position.distanceTo(c.target)
+    const next = Math.max(c.minDistance, Math.min(c.maxDistance, dist / factor))
+    const k = 1 - next / dist
+    if (!Number.isFinite(k) || k === 0) return
+    const ray = new THREE.Raycaster()
+    ray.setFromCamera(toNdc(clientX, clientY), cam)
+    const plane = new THREE.Plane().setFromNormalAndCoplanarPoint(cam.getWorldDirection(new THREE.Vector3()), c.target)
+    const p = ray.ray.intersectPlane(plane, new THREE.Vector3()) ?? c.target.clone()
+    // Scaling camera and target about p keeps the view direction and p under the cursor
+    cam.position.lerp(p, k)
+    c.target.lerp(p, k)
+    c.update()
+  }
+
+  // Wheel: a mouse notch zooms as it always did (ortho: towards the cursor,
+  // 3D: OrbitControls); trackpad gestures pan, orbit or zoom (canvasInput).
+  // Capture phase, so the trackpad gestures are taken before OrbitControls'
+  // own wheel listener on the same canvas.
+  const wheelClassifier = useMemo(() => new WheelClassifier(), [])
   useEffect(() => {
     const canvas = gl.domElement
 
     const onWheel = (e: WheelEvent) => {
-      if (activeView === '3d') return
+      const intent = wheelClassifier.classify(e, useUIStore.getState().inputDevice, activeView)
+      if (intent === 'wheel') {
+        if (activeView === '3d') return // OrbitControls dollies
+        e.preventDefault()
+        zoomOrthoAt(activeView, e.deltaY < 0 ? WHEEL_ZOOM_STEP : 1 / WHEEL_ZOOM_STEP, e.clientX, e.clientY)
+        return
+      }
       e.preventDefault()
-      const cam = orthoCameras[activeView]
-      if (!cam) return
-
-      const vs = viewState.current[activeView]
-      const oldZoom = cam.zoom
-      const factor = 1.08
-      const newZoom = e.deltaY < 0 ? oldZoom * factor : oldZoom / factor
-      const clampedZoom = Math.max(ORTHO_ZOOM_MIN, Math.min(ORTHO_ZOOM_MAX, newZoom))
-
-      // Zoom toward mouse: find world position under mouse, keep it fixed
-      const rect = canvas.getBoundingClientRect()
-      const ndcX = ((e.clientX - rect.left) / rect.width) * 2 - 1
-      const ndcY = -((e.clientY - rect.top) / rect.height) * 2 + 1
-
-      // Unproject mouse to world at old zoom
-      const mouseWorld = new THREE.Vector3(ndcX, ndcY, 0).unproject(cam)
-      // Apply new zoom
-      cam.zoom = clampedZoom
-      cam.updateProjectionMatrix()
-      // Unproject same NDC at new zoom
-      const mouseWorldNew = new THREE.Vector3(ndcX, ndcY, 0).unproject(cam)
-      // Adjust target so world point under mouse stays fixed
-      vs.target.add(mouseWorld.sub(mouseWorldNew))
-      vs.zoom = clampedZoom
-
-      cam.updateProjectionMatrix()
+      e.stopImmediatePropagation()
+      const { dx, dy } = wheelPixels(e)
+      if (intent === 'zoom') {
+        const f = zoomFactor(dy)
+        if (activeView === '3d') dolly3dAt(f, e.clientX, e.clientY)
+        else zoomOrthoAt(activeView, f, e.clientX, e.clientY)
+        return
+      }
+      // A drag in progress (gizmo, board, marquee, ⌥-drag): a pan or orbit —
+      // e.g. the momentum of the last scroll — would pull the view from under it
+      if (isDragActive() || e.buttons !== 0) return
+      // Scrolling moves the view, i.e. the content goes the other way
+      if (intent === 'orbit') orbit3d(-dx, -dy)
+      else if (activeView === '3d') pan3d(-dx, -dy)
+      else panOrthoBy(activeView, -dx, -dy)
     }
 
-    canvas.addEventListener('wheel', onWheel, { passive: false })
-    return () => canvas.removeEventListener('wheel', onWheel)
-  }, [activeView, gl, orthoCameras])
+    canvas.addEventListener('wheel', onWheel, { passive: false, capture: true })
+    return () => canvas.removeEventListener('wheel', onWheel, { capture: true })
+  }, [activeView, gl, orthoCameras]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ⌥-drag with the left button / one finger moves the camera (canvasInput.cameraDragFor).
+  // 3D: taken in the capture phase before R3F, TransformControls and
+  // OrbitControls see it — no selection, no gizmo — unless it starts on a
+  // TransformControls handle. 2D: taken only when it reaches the container,
+  // i.e. no board or gizmo stopped it (⌥ on a board still drags it without snapping).
+  useEffect(() => {
+    const container = containerRef?.current
+    if (!container) return
+    const canvas = gl.domElement
+    let drag: { kind: CameraDrag; pointerId: number; x: number; y: number; travel: number; cursor: string } | null = null
+    let swallowClick = false
+
+    const onMove = (e: PointerEvent): void => {
+      if (!drag || e.pointerId !== drag.pointerId) return
+      const dx = e.clientX - drag.x
+      const dy = e.clientY - drag.y
+      drag.x = e.clientX
+      drag.y = e.clientY
+      drag.travel += Math.abs(dx) + Math.abs(dy)
+      if (dx === 0 && dy === 0) return
+      if (activeView !== '3d') panOrthoBy(activeView, dx, dy)
+      else if (drag.kind === 'orbit') orbit3d(dx, dy)
+      else pan3d(dx, dy)
+    }
+    const end = (): void => {
+      document.removeEventListener('pointermove', onMove)
+      document.removeEventListener('pointerup', onUp)
+      document.removeEventListener('pointercancel', onUp)
+      if (!drag) return
+      try { canvas.releasePointerCapture(drag.pointerId) } catch { /* already released */ }
+      canvas.style.cursor = drag.cursor
+      drag = null
+    }
+    function onUp(e: PointerEvent): void {
+      if (!drag || e.pointerId !== drag.pointerId) return
+      // 3D: R3F never saw the press, so its click must not land either
+      swallowClick = activeView === '3d' || drag.travel > CLICK_MAX_TRAVEL_PX
+      end()
+    }
+    const begin = (e: PointerEvent, kind: CameraDrag): void => {
+      drag = { kind, pointerId: e.pointerId, x: e.clientX, y: e.clientY, travel: 0, cursor: canvas.style.cursor }
+      try { canvas.setPointerCapture(e.pointerId) } catch { /* pointer already gone */ }
+      canvas.style.cursor = 'grabbing'
+      document.addEventListener('pointermove', onMove)
+      document.addEventListener('pointerup', onUp)
+      document.addEventListener('pointercancel', onUp)
+    }
+
+    const onDownCapture = (e: PointerEvent): void => {
+      swallowClick = false
+      if (activeView !== '3d' || drag || e.target !== canvas) return
+      const kind = cameraDragFor(e, '3d', useUIStore.getState().inputDevice)
+      if (!kind || isHoveringGizmo() || isDragActive() || !orbitControls()) return
+      e.stopPropagation()
+      e.preventDefault()
+      begin(e, kind)
+    }
+    const onDownBubble = (e: PointerEvent): void => {
+      if (activeView === '3d' || drag || e.target !== canvas) return
+      const kind = cameraDragFor(e, activeView, useUIStore.getState().inputDevice)
+      if (!kind || isDragActive()) return
+      begin(e, kind)
+    }
+    const onClickCapture = (e: MouseEvent): void => {
+      if (!swallowClick) return
+      swallowClick = false
+      e.stopPropagation()
+      e.preventDefault()
+    }
+
+    container.addEventListener('pointerdown', onDownCapture, true)
+    container.addEventListener('pointerdown', onDownBubble)
+    container.addEventListener('click', onClickCapture, true)
+    return () => {
+      container.removeEventListener('pointerdown', onDownCapture, true)
+      container.removeEventListener('pointerdown', onDownBubble)
+      container.removeEventListener('click', onClickCapture, true)
+      end()
+    }
+  }, [activeView, gl, orthoCameras, containerRef]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Right-click / middle-click pan for ortho views
   useEffect(() => {

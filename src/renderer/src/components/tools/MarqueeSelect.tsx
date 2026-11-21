@@ -2,6 +2,7 @@ import { useState, useCallback, useEffect, useRef } from 'react'
 import { useUIStore, useCanvasView } from '../../store/useUIStore'
 import { useProjectStore } from '../../store/useProjectStore'
 import type { ViewMode } from '../../types/measurement'
+import { cameraDragFor } from '../../utils/canvasInput'
 import * as THREE from 'three'
 
 /** Axis mapping per ortho view: which world axes map to screen X and Y */
@@ -138,6 +139,8 @@ export function MarqueeSelect({ canvasRef, cameraRef }: MarqueeSelectProps) {
     if (e.button !== 0) return
     if (activeTool !== 'select') return
     if (!isOrtho) return
+    // ⌥-drag pans the view (CameraController) instead
+    if (cameraDragFor(e, activeView, useUIStore.getState().inputDevice)) return
 
     // Don't start marquee if the click is on a board (R3F canvas handles that via stopPropagation)
     // We detect this by checking if the event target is the canvas element itself
@@ -193,7 +196,7 @@ export function MarqueeSelect({ canvasRef, cameraRef }: MarqueeSelectProps) {
 
     document.addEventListener('pointermove', onMove)
     document.addEventListener('pointerup', onUp)
-  }, [activeTool, isOrtho, canvasRef])
+  }, [activeTool, isOrtho, activeView, canvasRef])
 
   // Attach pointer listener to the canvas container
   useEffect(() => {
