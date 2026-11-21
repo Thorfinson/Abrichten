@@ -7,6 +7,7 @@ import { assemblyInstructionHtml, fastenerLabel, type Translate } from '../../ut
 import { renderAssemblySnapshots } from '../../utils/assemblySnapshots'
 import { assemblyPath } from '../../utils/assemblyTree'
 import { cuttingDims } from '../../utils/cuttingDims'
+import { partLabels } from '../../utils/partLabel'
 import { formatNumber } from '../../utils/units'
 import { printHtml } from '../../utils/printHtml'
 import { keyCombo } from '../../utils/shortcutKeys'
@@ -63,6 +64,7 @@ export function AssemblyModePanel() {
   const store = useProjectStore.getState
 
   const plan = useMemo(() => planAssembly(project), [project.assemblies, project.assemblySteps])
+  const labels = useMemo(() => partLabels(project.assemblies), [project.assemblies])
   const total = plan.steps.length
   const index = Math.min(stepIndex, Math.max(0, total - 1))
 
@@ -225,7 +227,7 @@ export function AssemblyModePanel() {
                         onClick={() => selectBoard(p.assemblyId, p.board.id)}
                         title={assemblyPath(project.assemblies, p.assemblyId)}
                       >
-                        {p.board.name} <span className="text-white/40 font-mono">{dims(p)}</span>
+                        <span className="font-mono text-white/70">{labels.get(p.board.id)}</span> {p.board.name} <span className="text-white/40 font-mono">{dims(p)}</span>
                       </button>
                       <select
                         value={current.step.id}
@@ -276,7 +278,7 @@ export function AssemblyModePanel() {
               {plan.unplanned.map((p) => (
                 <li key={p.board.id} className="flex items-center gap-1.5">
                   <span className="flex-1 min-w-0 truncate" title={assemblyPath(project.assemblies, p.assemblyId)}>
-                    {p.board.name} <span className="text-white/40 font-mono">{dims(p)}</span>
+                    <span className="font-mono text-white/70">{labels.get(p.board.id)}</span> {p.board.name} <span className="text-white/40 font-mono">{dims(p)}</span>
                   </span>
                   {current && (
                     <button type="button" className={BTN} onClick={() => store().assignBoardsToStep([p.board.id], current.step.id)}>

@@ -2,13 +2,14 @@ import type { Board, Project } from '../types/furniture'
 import { getMaterialById } from '../data/materials'
 import { fastenerLines, partLines, type AssemblyPlan, type FastenerLine, type PartLine } from './assemblySteps'
 import { roleKey } from './boardRole'
+import { joinLabels, partLabels } from './partLabel'
 import { escapeHtml } from './textSafety'
 import { formatNumber } from './units'
 
 /**
  * The printable assembly instruction (IKEA style): a cover page with the whole
- * model, all parts (numbered) and all fixings, then one page per step with its
- * picture, its parts (by the cover's numbers) and the fixings it needs. Every
+ * model, all parts (with their labels, "Herd 2", utils/partLabel) and all fixings,
+ * then one page per step with its picture, its parts and the fixings it needs. Every
  * text is escaped; pictures are accepted only as PNG/JPEG data URLs, so the
  * document needs nothing from outside (utils/printHtml).
  */
@@ -51,16 +52,16 @@ export function assemblyInstructionHtml(
   const picture = (src: string | undefined, alt: string): string =>
     src && SAFE_IMAGE.test(src) ? `<img src="${src}" alt="${e(alt)}">` : ''
 
-  // Part numbers: the position on the cover's list, shared by every step
+  // Part labels ("Herd 2", utils/partLabel): the same as in the cutting list and on the parts
   const boardsOf = (list: { board: Board }[]): Board[] => list.map((p) => p.board)
   const allParts = partLines([...plan.steps.flatMap((s) => boardsOf(s.boards)), ...boardsOf(plan.unplanned)])
-  const partNr = new Map<string, number>()
-  allParts.forEach((p, i) => p.boardIds.forEach((id) => partNr.set(id, i + 1)))
+  const labels = partLabels(project.assemblies)
+  const labelOf = (p: PartLine): string => joinLabels(p.boardIds.map((id) => labels.get(id) ?? ''))
 
   const dimHeader = `${t('dlg.length')} × ${t('dlg.width')} × ${t('dlg.thickness')} (${unit})`
   const partsTable = (lines: PartLine[], full: boolean): string => `<table><thead><tr>
-<th class="r">${e(t('montage.nr'))}</th><th class="r">${e(t('cutting.qty'))}</th><th>${e(t('board.name'))}</th><th>${e(dimHeader)}</th>${full ? `<th>${e(t('board.material'))}</th><th>${e(t('role.label'))}</th>` : ''}
-</tr></thead><tbody>${lines.map((p) => `<tr><td class="r">${partNr.get(p.boardIds[0]) ?? ''}</td><td class="r"><b>${p.qty} ×</b></td><td>${e(p.name)}</td><td>${e(dims(p))}</td>${
+<th>${e(t('montage.nr'))}</th><th class="r">${e(t('cutting.qty'))}</th><th>${e(t('board.name'))}</th><th>${e(dimHeader)}</th>${full ? `<th>${e(t('board.material'))}</th><th>${e(t('role.label'))}</th>` : ''}
+</tr></thead><tbody>${lines.map((p) => `<tr><td class="nr">${e(labelOf(p))}</td><td class="r"><b>${p.qty} ×</b></td><td>${e(p.name)}</td><td>${e(dims(p))}</td>${
     full ? `<td>${e(material(p.materialId))}</td><td>${p.role ? e(t(roleKey(p.role))) : ''}</td>` : ''}</tr>`).join('')}</tbody></table>`
   const fastenerList = (lines: FastenerLine[], empty: string): string => lines.length === 0
     ? `<p class="muted">${e(empty)}</p>`
@@ -111,6 +112,7 @@ table{border-collapse:collapse;width:100%}
 th,td{border:1px solid #ccc;padding:3px 5px;text-align:left;vertical-align:top}
 th{background:#f0f0f0}
 .r{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+.nr{white-space:nowrap;font-weight:bold}
 .cols{display:grid;grid-template-columns:3fr 2fr;gap:12px}
 ul.fx{list-style:none;padding:0;margin:0}
 ul.fx li{padding:3px 0;border-bottom:1px solid #eee}

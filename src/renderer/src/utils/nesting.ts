@@ -196,16 +196,40 @@ export function nestBoards(
   return { groups, totalSheets, overallEfficiency }
 }
 
-export function nestingToSvg(sheet: NestingSheet, scale = 0.15): string {
+/** Average glyph width as a share of the font size (sans-serif), to fit text into a part */
+const GLYPH = 0.6
+
+/**
+ * One sheet as SVG. Each part shows its label ("Herd 2", utils/partLabel) as large
+ * as the part allows, and below it as much of its name as fits.
+ * `labels`: part labels by board id; without one the name stands alone, as before.
+ */
+export function nestingToSvg(sheet: NestingSheet, scale = 0.15, labels?: Map<string, string>): string {
   const W = sheet.width * scale
   const H = sheet.height * scale
   const rects = sheet.placed.map((p) => {
     const x = p.x * scale, y = p.y * scale
     const w = p.w * scale, h = p.h * scale
-    const label = escapeHtml(p.name.slice(0, 18)) // rendered via innerHTML in NestingPanel
+    const cx = (x + w / 2).toFixed(1)
     const rotMark = p.rotated ? ' ↺' : ''
-    return `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${w.toFixed(1)}" height="${h.toFixed(1)}" fill="#dbeafe" stroke="#2563eb" stroke-width="0.5"/>
-<text x="${(x + w / 2).toFixed(1)}" y="${(y + h / 2).toFixed(1)}" font-size="6" text-anchor="middle" dominant-baseline="middle" fill="#1e40af">${label}${rotMark}</text>`
+    const box = `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${w.toFixed(1)}" height="${h.toFixed(1)}" fill="#dbeafe" stroke="#2563eb" stroke-width="0.5"/>`
+    const label = labels?.get(p.boardId)
+    // rendered via innerHTML in NestingPanel: every text is escaped
+    if (!label) {
+      return `${box}
+<text x="${cx}" y="${(y + h / 2).toFixed(1)}" font-size="6" text-anchor="middle" dominant-baseline="middle" fill="#1e40af">${escapeHtml(p.name.slice(0, 18))}${rotMark}</text>`
+    }
+    const labelText = label + rotMark
+    const big = Math.max(3, Math.min(16, h * 0.45, (w * 0.9) / (labelText.length * GLYPH)))
+    const small = Math.min(5, big * 0.6)
+    const nameFits = h >= big + small * 2.2
+    const nameChars = Math.floor((w * 0.92) / (small * GLYPH))
+    const name = p.name.length > nameChars ? `${p.name.slice(0, Math.max(0, nameChars - 1))}…` : p.name
+    const labelY = nameFits ? y + h / 2 - small * 0.6 : y + h / 2
+    return `${box}
+<text x="${cx}" y="${labelY.toFixed(1)}" font-size="${big.toFixed(1)}" font-weight="bold" text-anchor="middle" dominant-baseline="middle" fill="#1e3a8a">${escapeHtml(labelText)}</text>${
+  nameFits && nameChars >= 4 ? `
+<text x="${cx}" y="${(labelY + big * 0.55 + small * 0.9).toFixed(1)}" font-size="${small.toFixed(1)}" text-anchor="middle" dominant-baseline="middle" fill="#1e40af">${escapeHtml(name)}</text>` : ''}`
   }).join('\n')
 
   return `<?xml version="1.0" encoding="UTF-8"?>

@@ -9,6 +9,7 @@ import { exportDxf } from '../../utils/dxf'
 import { boardFace } from '../../utils/boardFace'
 import { printHtml } from '../../utils/printHtml'
 import { cuttingDims } from '../../utils/cuttingDims'
+import { partLabels } from '../../utils/partLabel'
 import { Dialog, Button } from '../ui/Dialog'
 import type { TFunction } from 'i18next'
 import type { Board, Material, Project } from '../../types/furniture'
@@ -28,7 +29,8 @@ function fitText(text: string, widthPx: number, fontPx: number): string {
   return text.length > max ? `${text.slice(0, max - 1)}…` : text
 }
 
-function boardSvg(board: Board, projectName: string, lang: 'de' | 'en', customMaterials?: Material[]): string {
+/** `label`: the part label ("Herd 2", utils/partLabel), in the title block's right column */
+function boardSvg(board: Board, projectName: string, lang: 'de' | 'en', customMaterials?: Material[], label = ''): string {
   // Show the face (boardFace): the two dimensions besides the thickness
   const face = boardFace(board)
   const rawW = face.u
@@ -52,6 +54,9 @@ function boardSvg(board: Board, projectName: string, lang: 'de' | 'en', customMa
 
   // usable width of the wide title-block column; the texts are cut to it
   const colA = svgW * 0.75 - 8
+  const colB = svgW * 0.25 - 8
+  // the part label as large as the narrow column allows
+  const labelPx = Math.max(5, Math.min(9, colB / (Math.max(1, label.length) * 0.56)))
   const matLine = `${materialName(board, lang, customMaterials)} · t=${face.thickness}mm · ${face.u} × ${face.v} mm`
 
   // Grain arrow (along the first face axis = horizontal, second = vertical)
@@ -104,8 +109,8 @@ function boardSvg(board: Board, projectName: string, lang: 'de' | 'en', customMa
   <line x1="${svgW * 0.75}" y1="${tbY}" x2="${svgW * 0.75}" y2="${tbY + tbH}" stroke="#ccc" stroke-width="0.4"/>
   <text x="4" y="${tbY + 8}" font-size="6" fill="#666">${lang === 'de' ? 'Bauteil' : 'Part'}</text>
   <text x="4" y="${tbY + 18}" font-size="7.5" font-weight="bold" fill="#1e3a5f">${escapeHtml(fitText(board.name, colA, 7.5))}</text>
-  <text x="${svgW * 0.75 + 4}" y="${tbY + 8}" font-size="6" fill="#666">Rev</text>
-  <text x="${svgW * 0.75 + 4}" y="${tbY + 18}" font-size="8" font-weight="bold" fill="#333">1</text>
+  <text x="${svgW * 0.75 + 4}" y="${tbY + 8}" font-size="6" fill="#666">${lang === 'de' ? 'Nr.' : 'No.'}</text>
+  <text x="${svgW * 0.75 + 4}" y="${tbY + 18}" font-size="${labelPx.toFixed(1)}" font-weight="bold" fill="#111">${escapeHtml(fitText(label, colB, labelPx))}</text>
   <text x="4" y="${tbY + 30}" font-size="6" fill="#1e3a5f">${escapeHtml(fitText(projectName, colA, 6))}</text>
   <text x="4" y="${tbY + 39}" font-size="6" fill="#666">${escapeHtml(fitText(matLine, colA, 6))}</text>
   <text x="${svgW * 0.75 + 4}" y="${tbY + 30}" font-size="6" fill="#666">${dateStr}</text>
@@ -127,8 +132,9 @@ function shopDrawingsHtml(project: Project, lang: 'de' | 'en', t: TFunction): st
     a.boards.map((b) => ({ board: b, assemblyName: assemblyPath(project.assemblies, a.id) }))
   )
 
+  const labels = partLabels(project.assemblies)
   const rows = allBoards.map(({ board, assemblyName }) => {
-    const svg = boardSvg(board, project.name, lang, project.customMaterials)
+    const svg = boardSvg(board, project.name, lang, project.customMaterials, labels.get(board.id))
     const matName = escapeHtml(materialName(board, lang, project.customMaterials))
     const face = boardFace(board)
     const eb = board.edgeBanding ?? {}
@@ -145,12 +151,12 @@ function shopDrawingsHtml(project: Project, lang: 'de' | 'en', t: TFunction): st
 </div>`
   }).join('')
 
-  const head = [t('board.name'), t('board.material'), t('dlg.length'), t('dlg.width'), t('dlg.thickness'), t('cutting.grain')]
+  const head = [t('partLabel.nr'), t('board.name'), t('board.material'), t('dlg.length'), t('dlg.width'), t('dlg.thickness'), t('cutting.grain')]
   const assemblyGroups = activeAssemblies(project).map((a) => {
     const boards = a.boards.map((b) => {
       const d = cuttingDims(b)
       const matName = escapeHtml(materialName(b, lang, project.customMaterials))
-      return `<tr><td>${escapeHtml(b.name)}</td><td>${matName}</td><td class="n">${d.length}</td><td class="n">${d.width}</td><td class="n">${d.thickness}</td><td>${escapeHtml(grainText(b))}</td></tr>`
+      return `<tr><td style="white-space:nowrap;font-weight:bold">${escapeHtml(labels.get(b.id) ?? '')}</td><td>${escapeHtml(b.name)}</td><td>${matName}</td><td class="n">${d.length}</td><td class="n">${d.width}</td><td class="n">${d.thickness}</td><td>${escapeHtml(grainText(b))}</td></tr>`
     }).join('')
     return `<h3>${escapeHtml(assemblyPath(project.assemblies, a.id))}</h3><table><tr>${head.map((h) => `<th>${escapeHtml(h)}</th>`).join('')}</tr>${boards}</table>`
   }).join('')
@@ -198,7 +204,7 @@ export function ShopDrawingsPanel() {
 
   const handleDxf = () => {
     const boards = activeAssemblies(project).flatMap((a) => a.boards)
-    const content = exportDxf(boards)
+    const content = exportDxf(boards, partLabels(project.assemblies))
     const filename = `${project.name}_shop_drawings.dxf`
     if ((window as any).electronAPI?.fileExport) {
       ;(window as any).electronAPI.fileExport(content, filename)

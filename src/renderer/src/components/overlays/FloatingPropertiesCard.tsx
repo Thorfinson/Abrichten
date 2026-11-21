@@ -11,6 +11,7 @@ import { BoardLoadField, BoardWeightField } from './BoardLoadField'
 import { boardFace, edgeBandingLengthMm } from '../../utils/boardFace'
 import { worldAligned } from '../../utils/projection'
 import { roleKey } from '../../utils/boardRole'
+import { partLabel } from '../../utils/partLabel'
 import { BOARD_ROLES, type Board, type BoardCutout, type BoardRole, type EdgeBanding, type Fastener, type MaterialCategory, type Vec3 } from '../../types/furniture'
 
 /** Dark <option>/<optgroup> styling so native dropdowns are readable on the
@@ -486,6 +487,9 @@ export function FloatingPropertiesCard() {
           className="w-3 h-3 rounded-sm shrink-0 border border-white/20"
           style={{ background: board.color }}
         />
+        <span className="shrink-0 font-mono text-[10px] text-white/60" data-testid="card-part-label" title={t('partLabel.nrTitle')}>
+          {partLabel(assembly, board)}
+        </span>
         <CommitInput
           key={board.id}
           type="text"

@@ -492,6 +492,19 @@
     "paramInvalidName": "Name muss mit Buchstabe oder _ beginnen und darf nur Buchstaben, Ziffern und _ enthalten.",
     "paramRemoveUnlinks": "Löschen – {{count}} Bauteil(e) verlieren die Formel mit {{name}}, ihre Maße bleiben."
   },
+  "partLabel": {
+    "nr": "Nr.",
+    "nrTitle": "Teilenummer: Kurzwort der Baugruppe und Nummer im Fach, z. B. „Herd 2“. Überall gleich: Teileliste, Zuschnittliste, Plattenbelegung, Zeichnungen, Montageanleitung.",
+    "shortName": "Kurzwort",
+    "shortNameTitle": "Kurzwort für die Teilenummern dieser Baugruppe ({{example}} …). Klicken zum Ändern; leer = erstes Wort des Namens.",
+    "editShortName": "Kurzwort ändern",
+    "doubled": "„{{word}}“ hat noch eine Baugruppe – die Teilenummern wären doppelt. Klicken zum Ändern.",
+    "taken": "Das Kurzwort „{{word}}“ hat schon eine andere Baugruppe.",
+    "renumber": "Teilenummern neu vergeben",
+    "renumberHint": "Zählt die Teile jeder Baugruppe neu durch (1, 2, 3 …), ohne Lücken. Gedacht für kurz vor dem Drucken.",
+    "renumberConfirm": "Alle Teilenummern neu vergeben? Teile, die schon beschriftet sind, passen danach nicht mehr zu den Listen.",
+    "renumbered": "Teilenummern neu vergeben. Rückgängig mit {{undo}}."
+  },
   "fileChanged": {
     "title": "Datei außerhalb der App geändert",
     "question": "Die Datei ist neuer als der gespeicherte Stand – neu laden?",

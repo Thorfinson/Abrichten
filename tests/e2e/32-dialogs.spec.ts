@@ -70,7 +70,8 @@ test.describe('Dialogs', () => {
     // 2660 + 1070 on one 4 m bar (3980 usable), 1780 on the next
     await expect(plan.getByTestId('bar-row')).toHaveCount(2)
     await expect(plan.getByTestId('bar-row').first()).toContainText('2660 + 1070')
-    await expect(plan.getByTestId('bar-row').first()).toContainText('Latte A · Latte B')
+    // each piece with its part label (the sample cabinet has six parts, so the battens are 7–9)
+    await expect(plan.getByTestId('bar-row').first()).toContainText('Wandschrank 7 Latte A · Wandschrank 8 Latte B')
     // in cm: the headers and the numbers follow the unit from the status bar
     await page.evaluate(() => window.__projectStore.getState().setDisplayUnit('cm'))
     await expect(plan.getByTestId('bar-row').first()).toContainText('266 + 107')
@@ -115,8 +116,11 @@ test.describe('Dialogs', () => {
 
     await open(page, 'setShowBoringPanel')
     const boring = page.getByRole('dialog', { name: /32mm/ })
-    const sides = await boring.locator('tbody tr td:nth-child(3)').allInnerTexts()
+    // columns: No., assembly, name, side, …
+    const sides = await boring.locator('tbody tr td:nth-child(4)').allInnerTexts()
     expect(new Set(sides.map((s) => s.trim()))).toEqual(new Set(['links', 'rechts']))
+    const labels = await boring.locator('tbody tr td:nth-child(1)').allInnerTexts()
+    expect(new Set(labels.map((s) => s.trim()))).toEqual(new Set(['Wandschrank 1', 'Wandschrank 2']))
   })
 
   test('nesting optimises on open and again when an input changes', async ({ page }) => {

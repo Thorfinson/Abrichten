@@ -26,6 +26,8 @@ export const DEFAULT_BAR_SETTINGS: BarSettings = { stockMm: 4000, kerfMm: 5, tri
 /** One part to cut, with its cutting dimensions (utils/cuttingDims). */
 export interface BarPart {
   name: string
+  /** Part label(s), "Unterbau 12" (utils/partLabel); shown in front of the name */
+  labels?: string[]
   materialId: string
   length: number
   width: number

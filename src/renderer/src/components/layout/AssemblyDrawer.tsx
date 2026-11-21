@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useProjectStore, type AssemblyDrop } from '../../store/useProjectStore'
 import { useUIStore } from '../../store/useUIStore'
@@ -10,6 +10,8 @@ import { subtreeIds, ancestorIds, assemblyPath } from '../../utils/assemblyTree'
 import { computeJointPosition } from '../../utils/geometry'
 import { useDialogFocus } from '../../hooks/useKeyboard'
 import { groupBoards } from '../../utils/boardGroups'
+import { doubledShortNames, partLabels, shortNameOf, MAX_SHORT_NAME } from '../../utils/partLabel'
+import { setShortNameTold } from '../../services/partNumbers'
 import type { DrawerGroupBy } from '../../store/useUIStore'
 import { Icon } from './Icon'
 
@@ -79,6 +81,10 @@ export function AssemblyDrawer() {
   const [presetMenuOpen, setPresetMenuOpen] = useState<string | null>(null)
   const [assemblyMenu, setAssemblyMenu] = useState<{ id: string; x: number; y: number } | null>(null)
   const [renamingAssemblyId, setRenamingAssemblyId] = useState<string | null>(null)
+  const [editingShortId, setEditingShortId] = useState<string | null>(null)
+  // part labels ("Herd 2") and short words two assemblies share (their labels would repeat)
+  const labels = useMemo(() => partLabels(project.assemblies), [project.assemblies])
+  const doubled = useMemo(() => doubledShortNames(project.assemblies), [project.assemblies])
   const [customFormAssemblyId, setCustomFormAssemblyId] = useState<string | null>(null)
   const [customW, setCustomW] = useState('600')
   const [customH, setCustomH] = useState('18')
@@ -199,6 +205,11 @@ export function AssemblyDrawer() {
     const trimmed = value.trim()
     if (trimmed) renameAssembly(id, trimmed)
     setRenamingAssemblyId(null)
+  }
+
+  const handleShortNameCommit = (id: string, value: string) => {
+    setShortNameTold(id, value)
+    setEditingShortId(null)
   }
 
   const handleAddCustomBoard = (assemblyId: string) => {
@@ -410,10 +421,45 @@ export function AssemblyDrawer() {
               }}
             />
           ) : (
-            <span className={`flex-1 truncate ${assembly.visible === false ? 'opacity-50' : ''}`}>
+            <span className={`flex-1 truncate ${assembly.visible === false ? 'opacity-50' : ''}`} title={assembly.name}>
               {assembly.name}
             </span>
           )}
+          {/* Short word of the part labels ("Herd" → Herd 1, Herd 2 …); only where there are parts */}
+          {assembly.boards.length > 0 && (editingShortId === assembly.id ? (
+            <input
+              autoFocus
+              type="text"
+              defaultValue={shortNameOf(assembly)}
+              maxLength={MAX_SHORT_NAME}
+              aria-label={t('partLabel.shortName')}
+              className="w-20 shrink-0 text-[10px] font-mono bg-chrome-deep text-chrome-text border border-action-hover rounded px-1 py-0 outline-none"
+              onClick={(e) => e.stopPropagation()}
+              onBlur={(e) => handleShortNameCommit(assembly.id, e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
+                if (e.key === 'Escape') { e.preventDefault(); setEditingShortId(null) }
+                e.stopPropagation()
+              }}
+            />
+          ) : (() => {
+            const word = shortNameOf(assembly)
+            const twice = doubled.has(word.toLocaleLowerCase('de'))
+            return (
+              <button
+                type="button"
+                data-testid={`short-name-${assembly.id}`}
+                onClick={(e) => { e.stopPropagation(); setEditingShortId(assembly.id) }}
+                className={`shrink-0 max-w-[6rem] truncate rounded px-1 text-[10px] font-mono font-normal ${
+                  twice ? 'bg-accent-dim/70 text-accent-text' : 'bg-chrome-surface text-chrome-muted hover:text-chrome-text'
+                }`}
+                title={twice ? t('partLabel.doubled', { word }) : t('partLabel.shortNameTitle', { example: `${word} 1, ${word} 2` })}
+                aria-label={`${t('partLabel.shortName')}: ${word}`}
+              >
+                {word}
+              </button>
+            )
+          })())}
         </div>
 
         {open && (
@@ -466,7 +512,7 @@ export function AssemblyDrawer() {
                     <div className={`text-[10px] font-mono leading-tight ${
                       selectedBoardIds.includes(board.id) ? 'text-info' : 'text-chrome-hint'
                     }`}>
-                      {board.width}×{board.height}×{board.depth}
+                      <span className="text-chrome-secondary" data-testid="part-label">{labels.get(board.id)}</span> · {board.width}×{board.height}×{board.depth}
                     </div>
                   </div>
                 </div>
@@ -645,7 +691,7 @@ export function AssemblyDrawer() {
                       <div className="flex-1 min-w-0">
                         <div className="truncate leading-tight">{board.name}</div>
                         <div className={`text-[10px] font-mono leading-tight ${selectedBoardIds.includes(board.id) ? 'text-info' : 'text-chrome-hint'}`}>
-                          {board.width}×{board.height}×{board.depth}
+                          <span className="text-chrome-secondary" data-testid="part-label">{labels.get(board.id)}</span> · {board.width}×{board.height}×{board.depth}
                         </div>
                       </div>
                     </div>
@@ -679,6 +725,14 @@ export function AssemblyDrawer() {
           >
             {t('sidebar.renameAssembly')}
           </button>
+          {(project.assemblies.find((a) => a.id === assemblyMenu.id)?.boards.length ?? 0) > 0 && (
+            <button
+              onClick={() => { setEditingShortId(assemblyMenu.id); setAssemblyMenu(null) }}
+              className="w-full text-left px-4 py-1.5 text-sm hover:bg-chrome-surface"
+            >
+              {t('partLabel.editShortName')}
+            </button>
+          )}
           <button
             onClick={() => {
               toggleAssemblyVisibility(assemblyMenu.id)

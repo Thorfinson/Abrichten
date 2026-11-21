@@ -17,6 +17,8 @@ import { planBars, DEFAULT_BAR_SETTINGS, type BarSettings } from '../../utils/ba
 import { BarCutPlan, barPlanHtml, barPlanCsvRows, type LengthFormat } from './BarCutPlan'
 import { groupByRole, roleKey } from '../../utils/boardRole'
 import { BOARD_ROLES, type Board, type BoardRole } from '../../types/furniture'
+import { joinLabels, partLabels, partOrder } from '../../utils/partLabel'
+import { renumberPartsAsked } from '../../services/partNumbers'
 
 function edgeBandingLabel(board: Board): string {
   const eb = board.edgeBanding
@@ -35,7 +37,10 @@ type SortDir = 'asc' | 'desc'
 type RoleFilter = '' | 'none' | BoardRole
 
 interface Row {
+  /** Sort key of the part label: assembly in tree order, then its number (utils/partLabel) */
   nr: number
+  /** Part label(s), "Herd 2"; several when identical parts are grouped */
+  labels: string[]
   assemblyName: string
   name: string
   materialId: string
@@ -105,14 +110,15 @@ export function CuttingList() {
   // Build raw rows: length × width × thickness, the way the part is cut
   const rawRows = useMemo<Row[]>(() => {
     const result: Row[] = []
-    let nr = 0
+    const labels = partLabels(project.assemblies)
+    const order = partOrder(project.assemblies)
     for (const assembly of activeAssemblies(project)) {
       for (const board of assembly.boards) {
-        nr++
         const mat = getMaterialById(board.materialId, project.customMaterials)
         const dims = cuttingDims(board)
         result.push({
-          nr,
+          nr: order.get(board.id) ?? 0,
+          labels: [labels.get(board.id) ?? ''],
           assemblyName: assemblyPath(project.assemblies, assembly.id),
           name: board.name,
           materialId: board.materialId,
@@ -161,7 +167,9 @@ export function CuttingList() {
     for (const r of filtered) {
       const key = `${r.materialId}|${r.length}|${r.width}|${r.thickness}|${r.grain}|${r.ebLabel}|${r.role ?? ''}`
       const prev = map.get(key)
-      map.set(key, prev ? { ...prev, qty: prev.qty + 1, ebMm: prev.ebMm + r.ebMm } : { ...r, qty: 1 })
+      map.set(key, prev
+        ? { ...prev, qty: prev.qty + 1, ebMm: prev.ebMm + r.ebMm, nr: Math.min(prev.nr, r.nr), labels: [...prev.labels, ...r.labels] }
+        : { ...r, qty: 1 })
     }
     return Array.from(map.values())
   }, [filtered, groupIdentical])
@@ -184,8 +192,6 @@ export function CuttingList() {
   // By part role: sections in role order, sorted within each; numbering, print and CSV follow this order
   const roleGroups = useMemo(() => (groupRole ? groupByRole(sorted, (r) => r.role) : [{ role: undefined, items: sorted }]), [sorted, groupRole])
   const shown = useMemo(() => roleGroups.flatMap((g) => g.items), [roleGroups])
-  /** Row number before each group: the numbering runs on across the sections */
-  const groupStart = roleGroups.map((_, gi) => roleGroups.slice(0, gi).reduce((n, g) => n + g.items.length, 0))
 
   const totalEdgeBandingMm = sorted.reduce((sum, r) => sum + r.ebMm, 0)
 
@@ -261,11 +267,9 @@ export function CuttingList() {
     ]
     const sep = getCsvDelimiter()
     const csvRows = [headers.map(csvCell).join(sep)]
-    let rowNr = 0
     for (const r of rows) {
-      rowNr++
       csvRows.push([
-        rowNr, r.assemblyName, r.name, r.material,
+        joinLabels(r.labels), r.assemblyName, r.name, r.material,
         dim(r.length), dim(r.width), dim(r.thickness), grainLabel(r.grain), r.ebLabel,
         ...(rolesUsed ? [roleLabel(r.role)] : []),
         ...(groupIdentical ? [r.qty ?? 1] : [])
@@ -287,15 +291,14 @@ export function CuttingList() {
 
   const handlePrint = () => {
     const colHeaders = [
-      '#', t('board.name'), t('cutting.assembly'), t('board.material'), ...dimHeaders,
+      t('partLabel.nr'), t('board.name'), t('cutting.assembly'), t('board.material'), ...dimHeaders,
       t('cutting.grain'), t('cutting.edgeBanding'), ...(rolesUsed ? [t('role.label')] : []), ...(groupIdentical ? [t('cutting.qty')] : [])
     ]
-    const numeric = new Set([0, 4, 5, 6, ...(groupIdentical ? [columnCount - 1] : [])])   // #, length, width, thickness, quantity: right-aligned
-    let rowNr = 0
+    const numeric = new Set([4, 5, 6, ...(groupIdentical ? [columnCount - 1] : [])])   // length, width, thickness, quantity: right-aligned
     const rows = roleGroups.flatMap((g) => [
       ...(groupRole ? [`<tr class="g"><td colspan="${columnCount}">${escapeHtml(`${roleLabel(g.role)} · ${t('role.pieces', { count: pieceCount(g.items) })}`)}</td></tr>`] : []),
       ...g.items.map((r) => {
-        const cols: (string | number)[] = [++rowNr, r.name, r.assemblyName, r.material, dim(r.length), dim(r.width), dim(r.thickness), grainLabel(r.grain), r.ebLabel]
+        const cols: (string | number)[] = [joinLabels(r.labels), r.name, r.assemblyName, r.material, dim(r.length), dim(r.width), dim(r.thickness), grainLabel(r.grain), r.ebLabel]
         if (rolesUsed) cols.push(roleLabel(r.role))
         if (groupIdentical) cols.push(r.qty ?? 1)
         return `<tr>${cols.map((c, ci) => `<td${numeric.has(ci) ? ' class="n"' : ''}>${escapeHtml(String(c))}</td>`).join('')}</tr>`
@@ -306,7 +309,7 @@ export function CuttingList() {
 <title>${escapeHtml(project.name)} - ${escapeHtml(title)}</title>
 <style>body{font:12px sans-serif;margin:20px}h1{font-size:14px;margin-bottom:8px}
 table{border-collapse:collapse;width:100%}th,td{border:1px solid #ccc;padding:4px 6px;text-align:left}
-td.n{text-align:right;font-variant-numeric:tabular-nums}th{background:#f0f0f0}tr.g td{background:#f7f7f7;font-weight:bold}h2{font-size:13px;margin:18px 0 4px}h3{font-size:12px;margin:12px 0 4px}small{color:#666}
+td.n{text-align:right;font-variant-numeric:tabular-nums}td:first-child{white-space:nowrap;font-weight:bold}th{background:#f0f0f0}tr.g td{background:#f7f7f7;font-weight:bold}h2{font-size:13px;margin:18px 0 4px}h3{font-size:12px;margin:12px 0 4px}small{color:#666}
 @media print{@page{size:A4;margin:15mm}}</style></head>
 <body><h1>${escapeHtml(project.name)} — ${escapeHtml(title)}</h1>
 <table><thead><tr>${colHeaders.map((h) => `<th>${escapeHtml(h)}</th>`).join('')}</tr></thead>
@@ -337,7 +340,7 @@ ${barPlanHtml(barGroups, barSettings, lengthFormat, t)}
 
   const handleExportDxf = () => {
     const allBoards = activeAssemblies(project).flatMap((a) => a.boards)
-    const dxfContent = exportDxf(allBoards)
+    const dxfContent = exportDxf(allBoards, partLabels(project.assemblies))
     const filename = `${project.name}.dxf`
     try {
       if ((window as any).electronAPI?.fileExport) {
@@ -363,7 +366,7 @@ ${barPlanHtml(barGroups, barSettings, lengthFormat, t)}
       title={t('cutting.title')}
       titleId="cutting-list-title"
       onClose={() => setShowCuttingList(false)}
-      className="w-[1000px]"
+      className="w-[1120px]"
       bodyClassName="flex flex-col"
       headerExtra={<>
         {exportToast && (
@@ -442,17 +445,18 @@ ${barPlanHtml(barGroups, barSettings, lengthFormat, t)}
           </label>
         </>}
         <span className="ml-auto text-[11px] text-chrome-hint">{t('dlg.cutHint')}</span>
+        <Button size="sm" onClick={renumberPartsAsked} title={t('partLabel.renumberHint')}>{t('partLabel.renumber')}</Button>
       </div>
 
       {/* Table */}
-      <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-4">
+      <div className="min-h-0 flex-1 overflow-auto px-4 pb-4">
         {empty ? (
           <p className="pt-4 text-sm italic text-chrome-hint">{t('cutting.noBoards')}</p>
         ) : (
           <table className="w-full border-collapse text-xs">
             <thead className="sticky top-0 z-10">
               <tr>
-                <SortTh col="nr"           label={t('cutting.nr')}       sortCol={sortCol} sortDir={sortDir} onSort={handleSort} align="right" />
+                <SortTh col="nr"           label={t('partLabel.nr')}     sortCol={sortCol} sortDir={sortDir} onSort={handleSort} title={t('partLabel.nrTitle')} />
                 <SortTh col="assemblyName" label={t('cutting.assembly')} sortCol={sortCol} sortDir={sortDir} onSort={handleSort} />
                 <SortTh col="name"         label={t('board.name')}       sortCol={sortCol} sortDir={sortDir} onSort={handleSort} />
                 <SortTh col="material"     label={t('board.material')}   sortCol={sortCol} sortDir={sortDir} onSort={handleSort} />
@@ -465,7 +469,7 @@ ${barPlanHtml(barGroups, barSettings, lengthFormat, t)}
                 {groupIdentical && <th className={`${TH_CLASS} text-right`}>{t('cutting.qty')}</th>}
               </tr>
             </thead>
-            {roleGroups.map((g, gi) => (
+            {roleGroups.map((g) => (
               <tbody key={g.role ?? 'none'}>
                 {groupRole && (
                   <tr data-testid="role-group">
@@ -477,7 +481,7 @@ ${barPlanHtml(barGroups, barSettings, lengthFormat, t)}
                 )}
                 {g.items.map((r, i) => (
                   <tr key={i} className="hover:bg-chrome-surface/40">
-                    <td className={`${num} text-chrome-muted`}>{groupStart[gi] + i + 1}</td>
+                    <td className={`${TD_CLASS} whitespace-nowrap font-mono text-chrome-text`} data-testid="cut-label">{joinLabels(r.labels)}</td>
                     <td className={`${TD_CLASS} text-chrome-secondary`}>{r.assemblyName}</td>
                     <td className={TD_CLASS}>{r.name}</td>
                     <td className={`${TD_CLASS} text-chrome-secondary`}>{r.material}</td>
