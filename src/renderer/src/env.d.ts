@@ -22,6 +22,10 @@ interface Window {
     fileSave: (data: string, defaultName: string) => Promise<string | null>
     fileOpen: () => Promise<{ path: string; content: string } | null>
     fileExport: (content: string, defaultName: string) => Promise<string | null>
+    /** The project file last opened or saved, when it was changed outside the app since (null otherwise) */
+    lastFileChanged: () => Promise<{ path: string; content: string; modifiedAt: number } | null>
+    /** The user answered about that change (loaded or kept): it is not reported again */
+    lastFileSeen: () => Promise<void>
   }
   /** Set while there are unsaved changes; the main process calls it when the user discards them on close. */
   __abrichtenDiscard?: () => Promise<void>

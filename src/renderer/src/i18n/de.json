@@ -492,6 +492,15 @@
     "paramInvalidName": "Name muss mit Buchstabe oder _ beginnen und darf nur Buchstaben, Ziffern und _ enthalten.",
     "paramRemoveUnlinks": "Löschen – {{count}} Bauteil(e) verlieren die Formel mit {{name}}, ihre Maße bleiben."
   },
+  "fileChanged": {
+    "title": "Datei außerhalb der App geändert",
+    "question": "Die Datei ist neuer als der gespeicherte Stand – neu laden?",
+    "changedAt": "„{{name}}“ wurde am {{date}} um {{time}} außerhalb von Abrichten geändert. Die App zeigt gerade ihren eigenen gespeicherten Stand, nicht die Datei.",
+    "unsavedWarning": "In der App gibt es ungesicherte Änderungen. Beim Laden der Datei gehen sie verloren.",
+    "keep": "Stand der App behalten",
+    "load": "Datei laden",
+    "invalid": "„{{name}}“ wurde außerhalb der App geändert, lässt sich aber nicht laden ({{reason}}). Die App zeigt ihren gespeicherten Stand."
+  },
   "ui": {
     "close": "Schließen",
     "deselect": "Auswahl aufheben (Esc)",

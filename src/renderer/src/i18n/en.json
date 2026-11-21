@@ -492,6 +492,15 @@
     "paramInvalidName": "Names start with a letter or _ and contain only letters, digits and _.",
     "paramRemoveUnlinks": "Delete – {{count}} board(s) lose their formula with {{name}}; their sizes stay."
   },
+  "fileChanged": {
+    "title": "File changed outside the app",
+    "question": "The file is newer than the saved state – reload it?",
+    "changedAt": "“{{name}}” was changed outside Abrichten on {{date}} at {{time}}. The app is showing its own saved state, not the file.",
+    "unsavedWarning": "The app has unsaved changes. They are lost when you load the file.",
+    "keep": "Keep the app’s state",
+    "load": "Load file",
+    "invalid": "“{{name}}” was changed outside the app but does not load ({{reason}}). The app shows its saved state."
+  },
   "ui": {
     "close": "Close",
     "deselect": "Deselect (Esc)",

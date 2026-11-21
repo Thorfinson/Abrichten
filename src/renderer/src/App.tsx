@@ -25,6 +25,7 @@ import { StaticSummaryPanel } from './components/panels/StaticSummaryPanel'
 import { MeasurementPanel } from './components/panels/MeasurementPanel'
 import { MaterialsPanel } from './components/panels/MaterialsPanel'
 import { WelcomeDialog } from './components/onboarding/WelcomeDialog'
+import { ChangedFileDialog } from './components/onboarding/ChangedFileDialog'
 import { FloatingPropertiesCard } from './components/overlays/FloatingPropertiesCard'
 import { AssemblyModePanel } from './components/panels/AssemblyModePanel'
 import { AssemblyBand, AssemblyStepList, AssemblyTimeline } from './components/panels/AssemblyWorkspace'
@@ -123,6 +124,7 @@ export default function App() {
       <MeasurementPanel />
       <MaterialsPanel />
       <WelcomeDialog />
+      <ChangedFileDialog />
       <SaveToast />
     </div>
   )

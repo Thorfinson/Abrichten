@@ -3,6 +3,7 @@ import { create } from 'zustand'
 import type { ToolMode, ViewMode, Measurement } from '../types/measurement'
 import { useProjectStore } from './useProjectStore'
 import { isInputDevice, type InputDevice } from '../utils/canvasInput'
+import type { ChangedProjectFile } from '../utils/changedFile'
 
 export type TransformMode = 'translate' | 'rotate' | 'scale'
 
@@ -66,6 +67,8 @@ export interface UIState {
   hasSeenWelcome: boolean
   // Export status
   exportStatus: string | null
+  /** Startup question: the last opened/saved file changed outside the app (services/projectFile.ts) */
+  changedFile: ChangedProjectFile | null
   // Joint creation dialog
   showJointDialog: boolean
   // Assembly bounding dimensions overlay
@@ -116,6 +119,7 @@ export interface UIState {
   setCollisionGraceMm: (mm: number) => void
   setHasSeenWelcome: () => void
   setExportStatus: (msg: string | null) => void
+  setChangedFile: (file: ChangedProjectFile | null) => void
   setShowJointDialog: (show: boolean) => void
   toggleAssemblyDims: () => void
   setSnapIndicatorPos: (pos: { x: number; y: number; z: number } | null) => void
@@ -164,11 +168,12 @@ const MODAL_FLAGS = [
   'showMeasurementPanel', 'showMaterialsPanel', 'showPanelHub'
 ] as const satisfies readonly (keyof UIState)[]
 
-export type ModalId = (typeof MODAL_FLAGS)[number] | 'contextMenu' | 'welcome'
+export type ModalId = (typeof MODAL_FLAGS)[number] | 'contextMenu' | 'welcome' | 'changedFile'
 
-/** The topmost open modal — context menu, dialog, panel or the welcome screen — or null. */
+/** The topmost open modal — context menu, dialog, panel, the startup question or the welcome screen — or null. */
 export function topModal(s: UIState): ModalId | null {
   if (s.contextMenu) return 'contextMenu'
+  if (s.changedFile) return 'changedFile'
   const flag = MODAL_FLAGS.find((f) => s[f])
   if (flag) return flag
   return s.hasSeenWelcome ? null : 'welcome'
@@ -239,6 +244,7 @@ export const useUIStore = create<UIState>((set, get) => ({
   collisionGraceMm: 0.5,
   hasSeenWelcome: typeof localStorage !== 'undefined' && !!localStorage.getItem('abrichten-welcomed'),
   exportStatus: null,
+  changedFile: null,
   showJointDialog: false,
   showAssemblyDims: false,
   snapIndicatorPos: null,
@@ -342,6 +348,7 @@ export const useUIStore = create<UIState>((set, get) => ({
     // long messages (e.g. a failed auto-save restore) stay readable; a newer toast is never cut short
     if (msg) setTimeout(() => { if (get().exportStatus === msg) set({ exportStatus: null }) }, Math.max(3000, msg.length * 60))
   },
+  setChangedFile: (file) => set({ changedFile: file }),
   setShowJointDialog: (show) => set({ showJointDialog: show }),
   toggleAssemblyDims: () => set((s) => ({ showAssemblyDims: !s.showAssemblyDims })),
   setSnapIndicatorPos: (pos) => set({ snapIndicatorPos: pos }),
@@ -363,6 +370,8 @@ export const useUIStore = create<UIState>((set, get) => ({
   closeTopModal: () => {
     const top = topModal(get())
     if (top === 'contextMenu') set({ contextMenu: null })
+    // Esc on the startup question: undecided, so the next start asks again
+    else if (top === 'changedFile') set({ changedFile: null })
     else if (top === 'welcome') get().setHasSeenWelcome()
     else if (top) set({ [top]: false })
   },

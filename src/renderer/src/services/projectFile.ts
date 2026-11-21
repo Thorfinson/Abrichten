@@ -3,8 +3,7 @@ import { useProjectStore, isProjectDirty } from '../store/useProjectStore'
 import { useUIStore } from '../store/useUIStore'
 import { loadProjectFromDB, backupAutoSave } from './storage'
 import { validateProject } from '../utils/validateProject'
-
-const MAX_FILE_CHARS = 50_000_000 // ponytail: sanity cap, a real project is well under 1 MB
+import { checkChangedFile, fileNameOf, MAX_FILE_CHARS } from '../utils/changedFile'
 
 /**
  * Native open dialog → validate → load. Shared by toolbar, palette and Ctrl+O
@@ -81,6 +80,8 @@ let restoring: Promise<void> | null = null
  * Startup restore from the IndexedDB auto-save. An auto-save that no longer
  * validates is moved to a backup key before anything can overwrite it, and
  * the user is told; the app then starts with an empty project.
+ * Then, if the last opened or saved file was changed outside the app since,
+ * the app asks whether to load it (askIfFileChanged).
  * Runs once per app start (React StrictMode mounts effects twice in dev).
  */
 export function restoreAutoSave(): Promise<void> {
@@ -104,4 +105,38 @@ async function restore(): Promise<void> {
       ? i18n.t('store.restoreFailedBackup', { reason, backup })
       : i18n.t('store.restoreFailed', { reason }))
   }
+  await askIfFileChanged()
+}
+
+/**
+ * The start shows the auto-save, not the file. When the file last opened or
+ * saved holds a newer version of the same project (changed by a script, another
+ * program, a sync), the startup question offers it (ChangedFileDialog). A file
+ * that no longer loads is reported; the app keeps its state.
+ */
+async function askIfFileChanged(): Promise<void> {
+  try {
+    const changed = await window.electronAPI?.lastFileChanged?.()
+    if (!changed) return
+    const check = checkChangedFile(useProjectStore.getState().project.id, changed.content)
+    if (check.kind === 'ask') {
+      useUIStore.getState().setChangedFile({ path: changed.path, modifiedAt: changed.modifiedAt, project: check.project })
+    } else if (check.kind === 'invalid') {
+      useUIStore.getState().setExportStatus(i18n.t('fileChanged.invalid', { name: fileNameOf(changed.path), reason: check.reason }))
+    }
+  } catch (err) {
+    console.error('Checking the last project file failed:', err)
+  }
+}
+
+/** Startup question answered: "Datei laden" (true) or "Stand der App behalten" (false). */
+export function answerChangedFile(load: boolean): void {
+  const file = useUIStore.getState().changedFile
+  if (!file) return
+  if (load) {
+    useProjectStore.getState().loadProject(file.project)
+    useUIStore.getState().deselectAll()
+  }
+  useUIStore.getState().setChangedFile(null)
+  window.electronAPI?.lastFileSeen?.().catch((err) => console.error('Marking the project file as seen failed:', err))
 }
