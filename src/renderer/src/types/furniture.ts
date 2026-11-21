@@ -143,6 +143,17 @@ export interface Material {
   grain: boolean
 }
 
+/** One step of the assembly instruction (Montageanleitung): the boards installed in it,
+ *  in the order of the steps. Fasteners are not stored: a joint belongs to the step in
+ *  which the second of its two boards is installed (utils/assemblySteps.ts). */
+export interface AssemblyStep {
+  id: string
+  title: string
+  note?: string
+  /** Boards installed in this step; a board is in at most one step */
+  boardIds: string[]
+}
+
 export interface CustomHardwareItem {
   id: string
   name: string
@@ -165,6 +176,8 @@ export interface Project {
   materialPrices?: Record<string, number>  // price per m² in currency
   customMaterials?: Material[]
   customHardware?: CustomHardwareItem[]
+  /** Assembly instruction steps in order; boards in no step are not planned yet */
+  assemblySteps?: AssemblyStep[]
   laborHours?: number
   laborRate?: number    // per hour
   overheadPct?: number  // 0–1

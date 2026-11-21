@@ -49,6 +49,7 @@ export function PanelHub() {
   const setShowCost           = useUIStore((s) => s.setShowCostPanel)
   const setShowShopDrawings   = useUIStore((s) => s.setShowShopDrawingsPanel)
   const setShowChatPanel      = useUIStore((s) => s.setShowChatPanel)
+  const setAssemblyMode       = useUIStore((s) => s.setAssemblyMode)
 
   const open = (fn: (v: boolean) => void) => {
     fn(true)
@@ -208,6 +209,14 @@ export function PanelHub() {
           descDe: 'Druckfertige Bauteil-Zeichnungen',
           descEn: 'Print-ready part drawings',
           action: () => open(setShowShopDrawings)
+        },
+        {
+          icon: 'assembly',
+          labelDe: t('montage.modeTitle', { lng: 'de' }),
+          labelEn: t('montage.modeTitle', { lng: 'en' }),
+          descDe: t('montage.modeDesc', { lng: 'de' }),
+          descEn: t('montage.modeDesc', { lng: 'en' }),
+          action: () => open(setAssemblyMode)
         }
       ]
     }

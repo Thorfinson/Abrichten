@@ -1,7 +1,8 @@
 import type {
   Project, Assembly, Board, BoardCutout, Joint, JointType, Fastener, FastenerType, HeadType, FastenerMaterial,
-  AttachedHardware, Vec3, GrainDirection, Material, MaterialCategory, CustomHardwareItem, PlacedLoad
+  AttachedHardware, Vec3, GrainDirection, Material, MaterialCategory, CustomHardwareItem, PlacedLoad, AssemblyStep
 } from '../types/furniture'
+import { cleanSteps } from './assemblySteps'
 import { sanitizeParents } from './assemblyTree'
 import { isBoardRole } from './boardRole'
 import { isParamName } from './formulaEval'
@@ -56,6 +57,7 @@ export function validateProject(raw: unknown): Project {
     createdAt: str(raw.createdAt, new Date().toISOString()),
     updatedAt: str(raw.updatedAt, new Date().toISOString()),
     assemblies,
+    assemblySteps: Array.isArray(raw.assemblySteps) ? validateSteps(raw.assemblySteps, boardIds) : undefined,
     parameters: numberRecord(raw.parameters, isParamName),
     materialPrices: numberRecord(raw.materialPrices),
     customMaterials: Array.isArray(raw.customMaterials) ? raw.customMaterials.flatMap(validateMaterial) : undefined,
@@ -115,6 +117,28 @@ export function validateBoard(b: unknown, path: string): Board {
     heightFormula: optStr(b.heightFormula),
     depthFormula: optStr(b.depthFormula)
   }
+}
+
+/**
+ * Assembly steps: unusable entries are dropped, ids made unique, titles single-line;
+ * a board must exist and is kept only in the first step that lists it.
+ */
+function validateSteps(raw: unknown[], boardIds: Set<string>): AssemblyStep[] {
+  const ids = new Set<string>()
+  const steps = raw.flatMap((s, i): AssemblyStep[] => {
+    if (!isRecord(s)) return []
+    let id = str(s.id, crypto.randomUUID())
+    if (ids.has(id)) id = crypto.randomUUID()
+    ids.add(id)
+    return [{
+      ...s,
+      id,
+      title: cleanName(s.title, `Schritt ${i + 1}`),
+      note: optStr(s.note) || undefined,
+      boardIds: Array.isArray(s.boardIds) ? s.boardIds.filter((b): b is string => typeof b === 'string') : []
+    }]
+  })
+  return cleanSteps(steps, boardIds)
 }
 
 /** Joints with unknown boards or no usable position are dropped rather than repaired. */

@@ -1,8 +1,9 @@
 import { create } from 'zustand'
 import { temporal } from 'zundo'
-import type { Project, Assembly, Board, BoardRole, Joint, Unit, Vec3, Material, CustomHardwareItem } from '../types/furniture'
-import { validateProject, isDimension, MAX_QUANTITY } from '../utils/validateProject'
+import type { Project, Assembly, AssemblyStep, Board, BoardRole, Joint, Unit, Vec3, Material, CustomHardwareItem } from '../types/furniture'
+import { validateProject, isDimension, cleanName, MAX_QUANTITY } from '../utils/validateProject'
 import { isBoardRole } from '../utils/boardRole'
+import { cleanSteps } from '../utils/assemblySteps'
 import { subtreeIds } from '../utils/assemblyTree'
 import { evalFormula, isParamName, formulaParams, renameFormulaParam } from '../utils/formulaEval'
 
@@ -58,6 +59,30 @@ function mapAllBoards(list: Assembly[], fn: (b: Board) => Board): Assembly[] {
 function patch(b: Board, updates: Partial<Board>): Board {
   return Object.entries(updates).every(([k, v]) => b[k as keyof Board] === v) ? b : { ...b, ...updates }
 }
+
+/** The state with these boards taken out of the assembly steps (a removed board leaves its step). */
+function withoutStepBoards<T extends Pick<ProjectState, 'project'>>(next: T, ids: Set<string>): T {
+  const steps = next.project.assemblySteps
+  if (!steps?.some((st) => st.boardIds.some((id) => ids.has(id)))) return next
+  const assemblySteps = steps.map((st) => (st.boardIds.some((id) => ids.has(id)) ? { ...st, boardIds: st.boardIds.filter((id) => !ids.has(id)) } : st))
+  return { ...next, project: { ...next.project, assemblySteps } }
+}
+
+/** The state with new assembly steps, or the same state when the list is unchanged. */
+function withSteps(s: ProjectState, assemblySteps: AssemblyStep[]): ProjectState | Pick<ProjectState, 'project'> {
+  return assemblySteps === (s.project.assemblySteps ?? EMPTY_STEPS) ? s : { project: { ...s.project, updatedAt: now(), assemblySteps } }
+}
+const EMPTY_STEPS: AssemblyStep[] = []
+
+/** `fn` applied to the step with `id`; the same list when it is missing or unchanged. */
+function mapStep(list: AssemblyStep[], id: string, fn: (st: AssemblyStep) => AssemblyStep): AssemblyStep[] {
+  const i = list.findIndex((st) => st.id === id)
+  if (i < 0) return list
+  const next = fn(list[i])
+  return next === list[i] ? list : list.map((st, k) => (k === i ? next : st))
+}
+
+const allBoardIds = (p: Project): Set<string> => new Set(p.assemblies.flatMap((a) => a.boards.map((b) => b.id)))
 
 const FORMULA_FIELDS = [['width', 'widthFormula'], ['height', 'heightFormula'], ['depth', 'depthFormula']] as const
 
@@ -166,6 +191,19 @@ interface ProjectState {
 
   // Hardware on boards
   addHardwareToBoard: (assemblyId: string, boardId: string, hardwareId: string, quantity: number) => void
+
+  // Assembly steps (Montage): one undo step each, no-op when nothing changes
+  /** Replaces all steps (e.g. by the suggested order); unknown and repeated boards are dropped. */
+  setAssemblySteps: (steps: AssemblyStep[]) => void
+  /** A new, empty step at `atIndex` (default: the end); returns its id. */
+  addAssemblyStep: (title: string, atIndex?: number) => string
+  /** Title (single line, never empty) and note (empty = none). */
+  updateAssemblyStep: (id: string, updates: Partial<Pick<AssemblyStep, 'title' | 'note'>>) => void
+  /** Its boards become unplanned. */
+  removeAssemblyStep: (id: string) => void
+  moveAssemblyStep: (id: string, toIndex: number) => void
+  /** Puts the boards into the step, out of any other; null = not planned. Unknown boards are ignored. */
+  assignBoardsToStep: (boardIds: string[], stepId: string | null) => void
 }
 
 export type AssemblyDrop = 'before' | 'after' | 'inside'
@@ -244,13 +282,13 @@ export const useProjectStore = create<ProjectState>()(
           if (!s.project.assemblies.some((a) => a.id === id)) return s
           const gone = subtreeIds(s.project.assemblies, id)
           const goneBoards = new Set(s.project.assemblies.filter((a) => gone.has(a.id)).flatMap((a) => a.boards.map((b) => b.id)))
-          return {
+          return withoutStepBoards({
             project: {
               ...s.project,
               updatedAt: now(),
               assemblies: s.project.assemblies.filter((a) => !gone.has(a.id)).map((a) => pruneJoints(a, goneBoards))
             }
-          }
+          }, goneBoards)
         }),
 
       renameAssembly: (id, name) =>
@@ -357,9 +395,9 @@ export const useProjectStore = create<ProjectState>()(
           const from = s.project.assemblies.find((a) => a.id === assemblyId)
           const removed = new Set(from?.boards.filter((b) => boardIds.includes(b.id)).map((b) => b.id))
           if (removed.size === 0) return s
-          return withAssemblies(s, s.project.assemblies.map((a) =>
+          return withoutStepBoards(withAssemblies(s, s.project.assemblies.map((a) =>
             a.id === assemblyId ? withoutBoards(a, removed) : pruneJoints(a, removed)
-          ))
+          )), removed)
         }),
 
       duplicateBoards: (assemblyId, boardIds) => {
@@ -580,6 +618,61 @@ export const useProjectStore = create<ProjectState>()(
             { hardwareId, quantity: Math.min(MAX_QUANTITY, Math.max(0, Math.round(quantity) || 0)) }
           ]
         }), new Set([boardId]))))),
+
+      setAssemblySteps: (steps) =>
+        set((s) => withSteps(s, cleanSteps(steps, allBoardIds(s.project)))),
+
+      addAssemblyStep: (title, atIndex) => {
+        const id = uid()
+        set((s) => {
+          const list = s.project.assemblySteps ?? []
+          const at = atIndex === undefined ? list.length : Math.max(0, Math.min(list.length, Math.round(atIndex)))
+          const step: AssemblyStep = { id, title: cleanName(title, `${list.length + 1}`), boardIds: [] }
+          return withSteps(s, [...list.slice(0, at), step, ...list.slice(at)])
+        })
+        return id
+      },
+
+      updateAssemblyStep: (id, updates) =>
+        set((s) => withSteps(s, mapStep(s.project.assemblySteps ?? EMPTY_STEPS, id, (st) => {
+          const title = updates.title === undefined ? st.title : cleanName(updates.title, st.title)
+          const note = updates.note === undefined ? st.note : updates.note.trim() ? updates.note : undefined
+          return title === st.title && note === st.note ? st : { ...st, title, note }
+        }))),
+
+      removeAssemblyStep: (id) =>
+        set((s) => {
+          const list = s.project.assemblySteps ?? EMPTY_STEPS
+          return list.some((st) => st.id === id) ? withSteps(s, list.filter((st) => st.id !== id)) : s
+        }),
+
+      moveAssemblyStep: (id, toIndex) =>
+        set((s) => {
+          const list = s.project.assemblySteps ?? EMPTY_STEPS
+          const from = list.findIndex((st) => st.id === id)
+          const to = Math.max(0, Math.min(list.length - 1, Math.round(toIndex)))
+          if (from < 0 || from === to || !Number.isFinite(to)) return s
+          const rest = list.filter((st) => st.id !== id)
+          return withSteps(s, [...rest.slice(0, to), list[from], ...rest.slice(to)])
+        }),
+
+      assignBoardsToStep: (boardIds, stepId) =>
+        set((s) => {
+          const list = s.project.assemblySteps ?? EMPTY_STEPS
+          if (stepId !== null && !list.some((st) => st.id === stepId)) return s
+          const known = allBoardIds(s.project)
+          const ids = [...new Set(boardIds.filter((id) => known.has(id)))]
+          if (ids.length === 0) return s
+          const moving = new Set(ids)
+          const next = list.map((st) => {
+            if (st.id === stepId) {
+              const add = ids.filter((id) => !st.boardIds.includes(id))
+              return add.length ? { ...st, boardIds: [...st.boardIds, ...add] } : st
+            }
+            return st.boardIds.some((id) => moving.has(id)) ? { ...st, boardIds: st.boardIds.filter((id) => !moving.has(id)) } : st
+          })
+          return next.every((st, i) => st === list[i]) ? s : withSteps(s, next)
+        }),
 
     }),
     {

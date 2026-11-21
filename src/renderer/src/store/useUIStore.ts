@@ -132,6 +132,13 @@ export interface UIState {
   setStaticLegendCollapsed: (collapsed: boolean) => void
   /** Close the topmost open modal (see topModal) */
   closeTopModal: () => void
+  /** Assembly mode (Montage): the 3D view shows the steps one at a time. Not a modal. */
+  assemblyMode: boolean
+  /** Step shown in assembly mode (index into project.assemblySteps) */
+  assemblyStep: number
+  /** Turning it on clears the selection (it may sit on parts the step view hides) */
+  setAssemblyMode: (on: boolean) => void
+  setAssemblyStep: (index: number) => void
 }
 
 /** Modal panel flags, topmost first (z-index order) so Esc closes the one on top. */
@@ -218,6 +225,10 @@ export const useUIStore = create<UIState>((set, get) => ({
   showGrid: true,
   hudCollapsed: storedFlag(HUD_COLLAPSED_KEY),
   staticLegendCollapsed: storedFlag(LEGEND_COLLAPSED_KEY),
+  assemblyMode: false,
+  assemblyStep: 0,
+  setAssemblyMode: (on) => set(on ? { assemblyMode: true, selectedBoardIds: [] } : { assemblyMode: false }),
+  setAssemblyStep: (index) => set({ assemblyStep: Number.isFinite(index) ? Math.max(0, Math.round(index)) : 0 }),
 
   setActiveView: (view) => set({ activeView: view }),
   setActiveTool: (tool) => set({ activeTool: tool }),
