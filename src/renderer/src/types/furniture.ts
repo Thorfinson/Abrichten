@@ -6,6 +6,23 @@ export type FastenerType = 'wood_screw' | 'confirmat' | 'dowel_pin' | 'biscuit' 
 export type HeadType = 'countersunk' | 'pan' | 'hex'
 export type FastenerMaterial = 'steel' | 'stainless' | 'brass'
 
+/**
+ * What a part is, the way a cabinetmaker sorts it: decides material, edge and
+ * surface requirements. Independent of the assembly tree (which is per cabinet
+ * or compartment), so a project can be built by compartment and still be listed
+ * and costed by role. The order is the order of the lists.
+ *  visible      Sichtteil: front, end panel, filler/cover strip
+ *  carcass      Korpus: bottoms, tops, sides, middle sides, shelves
+ *  back         Rückwand
+ *  substructure Unterkonstruktion: frame, battens, rails
+ *  drawer       Schubkasten-Kasten (the box, not its front)
+ *  worktop      Arbeitsplatte and what carries it
+ *  plinth       Sockel
+ *  appliance    Einbaugerät (oven, fridge … as a placeholder part)
+ */
+export const BOARD_ROLES = ['visible', 'carcass', 'back', 'substructure', 'drawer', 'worktop', 'plinth', 'appliance'] as const
+export type BoardRole = (typeof BOARD_ROLES)[number]
+
 export interface EdgeBanding {
   e1?: boolean  // front face edge (along width)
   e2?: boolean  // back face edge (along width)
@@ -59,6 +76,8 @@ export interface Board {
   materialId: string
   color: string
   grainDirection?: GrainDirection
+  /** Part role (Bauteilart) for lists and costing; missing = not assigned */
+  role?: BoardRole
   edgeBanding?: EdgeBanding
   cutouts?: BoardCutout[]
   hardware?: AttachedHardware[]

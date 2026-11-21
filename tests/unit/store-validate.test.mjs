@@ -121,3 +121,20 @@ test('validateBoard is exported for other entry points (AI import)', () => {
   assert.throws(() => validateBoard(board({ width: 'abc' }), 'ai[0]'), /ai\[0\]\.width/)
   assert.equal(validateBoard(board({ name: 'x\ty' }), 'ai[0]').name, 'x y')
 })
+
+test('part roles: known ones kept, unknown values dropped, files without a role load unchanged', () => {
+  const roles = ['visible', 'carcass', 'back', 'substructure', 'drawer', 'worktop', 'plinth', 'appliance']
+  const p = validateProject(project({}, [
+    ...roles.map((role) => board({ id: role, role })),
+    board({ id: 'x1', role: 'front' }), board({ id: 'x2', role: 42 }), board({ id: 'x3', role: { evil: 1 } }), board({ id: 'x4', role: 'Carcass' })
+  ]))
+  assert.deepEqual(p.assemblies[0].boards.map((b) => b.role), [...roles, undefined, undefined, undefined, undefined])
+
+  // saved and loaded again: the role survives, and an old file gains no field
+  const reloaded = validateProject(JSON.parse(JSON.stringify(p)))
+  assert.equal(firstBoard(reloaded).role, 'visible')
+  const old = validateProject(project())
+  assert.equal(firstBoard(old).role, undefined)
+  assert.ok(!JSON.stringify(old).includes('"role"'))
+  assert.equal(validateBoard(board({ role: 'plinth' }), 'ai[0]').role, 'plinth')
+})

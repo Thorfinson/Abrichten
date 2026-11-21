@@ -1,7 +1,8 @@
 import { create } from 'zustand'
 import { temporal } from 'zundo'
-import type { Project, Assembly, Board, Joint, Unit, Vec3, Material, CustomHardwareItem } from '../types/furniture'
+import type { Project, Assembly, Board, BoardRole, Joint, Unit, Vec3, Material, CustomHardwareItem } from '../types/furniture'
 import { validateProject, isDimension, MAX_QUANTITY } from '../utils/validateProject'
+import { isBoardRole } from '../utils/boardRole'
 import { subtreeIds } from '../utils/assemblyTree'
 import { evalFormula, isParamName, formulaParams, renameFormulaParam } from '../utils/formulaEval'
 
@@ -125,6 +126,8 @@ interface ProjectState {
   removeBoards: (assemblyId: string, boardIds: string[]) => void
   duplicateBoards: (assemblyId: string, boardIds: string[]) => string[]
   nudgeBoards: (assemblyId: string, boardIds: string[], delta: Vec3) => void
+  /** Part role of the given boards in one undo step; undefined clears it. Unknown roles are refused. */
+  setBoardsRole: (assemblyId: string, boardIds: string[], role: BoardRole | undefined) => void
 
   // Board (move between assemblies)
   moveBoardToAssembly: (fromAssemblyId: string, boardId: string, toAssemblyId: string) => void
@@ -403,6 +406,13 @@ export const useProjectStore = create<ProjectState>()(
             z: b.position.z + delta.z
           }
         }), idSet))))
+      },
+
+      setBoardsRole: (assemblyId, boardIds, role) => {
+        // the file validator would drop an unknown role on the next load
+        if (role !== undefined && !isBoardRole(role)) return
+        set((s) => withAssemblies(s, mapAssembly(s.project.assemblies, assemblyId, (a) =>
+          mapBoards(a, (b) => patch(b, { role }), new Set(boardIds)))))
       },
 
       moveBoardToAssembly: (fromAssemblyId, boardId, toAssemblyId) =>

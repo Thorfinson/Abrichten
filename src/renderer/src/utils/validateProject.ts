@@ -3,6 +3,7 @@ import type {
   AttachedHardware, Vec3, GrainDirection, Material, MaterialCategory, CustomHardwareItem, PlacedLoad
 } from '../types/furniture'
 import { sanitizeParents } from './assemblyTree'
+import { isBoardRole } from './boardRole'
 import { isParamName } from './formulaEval'
 
 /** Largest accepted size or |position| in mm (100 m). Beyond it the boring and nesting loops blow up. */
@@ -101,6 +102,7 @@ export function validateBoard(b: unknown, path: string): Board {
     materialId: str(b.materialId, 'spanplatte'),
     color: color(b.color, '#D2B48C'),
     grainDirection: GRAIN_DIRECTIONS.includes(b.grainDirection as GrainDirection) ? (b.grainDirection as GrainDirection) : undefined,
+    role: isBoardRole(b.role) ? b.role : undefined,
     edgeBanding: isRecord(b.edgeBanding) ? (b.edgeBanding as Board['edgeBanding']) : undefined,
     cutouts: Array.isArray(b.cutouts) ? b.cutouts.flatMap(validateCutout) : undefined,
     hardware: Array.isArray(b.hardware) ? b.hardware.filter(isHardware) : undefined,

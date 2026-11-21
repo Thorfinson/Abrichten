@@ -10,7 +10,8 @@ import { openJointEditor } from '../panels/JointDialog'
 import { BoardLoadField, BoardWeightField } from './BoardLoadField'
 import { boardFace, edgeBandingLengthMm } from '../../utils/boardFace'
 import { worldAligned } from '../../utils/projection'
-import type { Board, BoardCutout, EdgeBanding, Fastener, MaterialCategory, Vec3 } from '../../types/furniture'
+import { roleKey } from '../../utils/boardRole'
+import { BOARD_ROLES, type Board, type BoardCutout, type BoardRole, type EdgeBanding, type Fastener, type MaterialCategory, type Vec3 } from '../../types/furniture'
 
 /** Dark <option>/<optgroup> styling so native dropdowns are readable on the
  *  glass card (Chromium renders option lists with the OS-default white bg,
@@ -229,6 +230,33 @@ function GrainPicker({ board, hasGrain, onChange }: { board: Board; hasGrain: bo
   )
 }
 
+const MIXED_ROLE = '__mixed'
+
+/** Part role (Bauteilart) dropdown; `mixed` when the selected boards differ (shown, not selectable). */
+function RolePicker({ value, mixed = false, onChange }: { value: BoardRole | undefined; mixed?: boolean; onChange: (r: BoardRole | undefined) => void }) {
+  const { t } = useTranslation()
+  return (
+    <div>
+      <select
+        value={mixed ? MIXED_ROLE : value ?? ''}
+        onChange={(e) => {
+          const v = e.target.value
+          if (v !== MIXED_ROLE) onChange(v === '' ? undefined : (v as BoardRole))
+        }}
+        className="w-full text-[10px] bg-white/8 border border-white/15 text-white rounded px-1.5 py-1 outline-none"
+        aria-label={t('role.label')}
+      >
+        {mixed && <option value={MIXED_ROLE} disabled className={OPTION_DARK}>{t('role.mixed')}</option>}
+        <option value="" className={OPTION_DARK}>{t('role.none')}</option>
+        {BOARD_ROLES.map((r) => (
+          <option key={r} value={r} className={OPTION_DARK}>{t(roleKey(r))}</option>
+        ))}
+      </select>
+      {value && !mixed && <div className="text-[9px] text-white/40 mt-0.5">{t(`role.hint_${value}`)}</div>}
+    </div>
+  )
+}
+
 /**
  * Floating glass card anchored to bottom-right of the canvas.
  * Appears only when one or more boards are selected; hosts the most
@@ -245,6 +273,7 @@ export function FloatingPropertiesCard() {
   const removeBoard          = useProjectStore((s) => s.removeBoard)
   const removeBoards         = useProjectStore((s) => s.removeBoards)
   const moveBoardsToAssembly = useProjectStore((s) => s.moveBoardsToAssembly)
+  const setBoardsRole        = useProjectStore((s) => s.setBoardsRole)
   const removeJoint          = useProjectStore((s) => s.removeJoint)
 
   const selectedBoardIds    = useUIStore((s) => s.selectedBoardIds)
@@ -298,6 +327,7 @@ export function FloatingPropertiesCard() {
     const count = selectedBoards.length
     const handleDupAll = () => { duplicateBoards(assembly.id, selectedBoardIds); deselectAll() }
     const handleDelAll = () => { removeBoards(assembly.id, selectedBoardIds); deselectAll() }
+    const roles = new Set(selectedBoards.map((b) => b.role))
 
     return (
       <div
@@ -319,6 +349,18 @@ export function FloatingPropertiesCard() {
 
         {/* Building group */}
         {assemblyPicker}
+
+        {/* Part role for all selected boards */}
+        {count > 0 && (
+          <div className="px-3 py-1">
+            <div className="text-[9px] font-bold text-white/30 uppercase tracking-widest mb-1.5">{t('role.label')}</div>
+            <RolePicker
+              value={roles.size === 1 ? selectedBoards[0].role : undefined}
+              mixed={roles.size > 1}
+              onChange={(role) => setBoardsRole(assembly.id, selectedBoards.map((b) => b.id), role)}
+            />
+          </div>
+        )}
 
         {/* Actions */}
         <div className="flex gap-1 p-2">
@@ -527,11 +569,11 @@ export function FloatingPropertiesCard() {
           </div>
         </Section>
 
-        {/* Material + grain */}
+        {/* Material + grain + part role */}
         <Section
           {...sectionProps('material')}
           title={lang === 'de' ? 'Material' : 'Material'}
-          summary={mat ? (lang === 'de' ? mat.name : mat.nameEn) : board.materialId}
+          summary={(mat ? (lang === 'de' ? mat.name : mat.nameEn) : board.materialId) + (board.role ? ` · ${t(roleKey(board.role))}` : '')}
         >
           <div className="flex items-center gap-2">
             <span
@@ -569,6 +611,8 @@ export function FloatingPropertiesCard() {
             hasGrain={mat?.grain ?? false}
             onChange={(grainDirection) => handleUpdate({ grainDirection })}
           />
+          <div className="text-[9px] text-white/40 mt-2 mb-1">{t('role.label')}</div>
+          <RolePicker value={board.role} onChange={(role) => setBoardsRole(assembly.id, [board.id], role)} />
           {/* Weight of the part for the load simulation (statics mode; an appliance from its datasheet) */}
           {showStaticOverlay && (
             <div className="mt-2">
