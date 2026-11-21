@@ -10,7 +10,9 @@ import { faceAreaSqm } from '../../utils/boardFace'
 import { csvCell, escapeHtml } from '../../utils/textSafety'
 import { printHtml } from '../../utils/printHtml'
 import { getCsvDelimiter } from '../layout/SettingsDialog'
-import { Dialog, Button, FIELD_CLASS, TH_CLASS, TD_CLASS, SECTION_LABEL_CLASS } from '../ui/Dialog'
+import { Dialog, Button, FIELD_CLASS, TH_CLASS, TD_CLASS, CHECK_CLASS, SECTION_LABEL_CLASS } from '../ui/Dialog'
+import { groupByRole, roleKey, type RoleGroup } from '../../utils/boardRole'
+import type { BoardRole } from '../../types/furniture'
 
 /** Format a number as currency, locale-aware */
 function formatCurrency(value: number, lang: 'de' | 'en'): string {
@@ -28,6 +30,16 @@ function formatArea(value: number, lang: 'de' | 'en'): string {
   })
 }
 
+interface MatRow { materialId: string; role?: BoardRole; name: string; areaSqm: number; cost: number }
+interface HwRow { hardwareId: string; role?: BoardRole; name: string; qty: number; unitPrice: number; cost: number }
+/** One line of the print and the CSV: material and hardware in one list */
+type CostLine = { kind: 'material'; row: MatRow } | { kind: 'hardware'; row: HwRow }
+
+/** All rows as one group, or one group per part role (with `byRole`) */
+const groupsOf = <T extends { role?: BoardRole }>(rows: T[], byRole: boolean): RoleGroup<T>[] =>
+  byRole ? groupByRole(rows, (r) => r.role) : [{ role: undefined, items: rows }]
+const sumCost = (rows: { cost: number }[]): number => rows.reduce((s, r) => s + r.cost, 0)
+
 /** Small tag telling a guide price ("Richtwert") from the project's own price */
 function PriceTag({ source }: { source: PriceSource }) {
   const { t } = useTranslation()
@@ -35,6 +47,16 @@ function PriceTag({ source }: { source: PriceSource }) {
   return source === 'default'
     ? <span className="ml-1.5 rounded bg-accent-dim/60 px-1 py-px text-[10px] font-medium text-accent-text" title={t('dlg.guidePriceTitle')}>{t('dlg.guidePrice')}</span>
     : <span className="ml-1.5 rounded bg-chrome-surface px-1 py-px text-[10px] font-medium text-chrome-secondary">{t('dlg.ownPrice')}</span>
+}
+
+/** Section row above a role's lines: its name and what its lines add up to */
+function RoleHeaderRow({ label, total }: { label: string; total: string }) {
+  return (
+    <tr data-testid="role-group" className="bg-chrome-surface/60 text-chrome-text">
+      <th colSpan={3} scope="rowgroup" className="border-b border-chrome-border px-2 py-1 text-left text-xs font-semibold">{label}</th>
+      <td className="border-b border-chrome-border px-2 py-1 text-right font-mono text-xs font-semibold tabular-nums">{total}</td>
+    </tr>
+  )
 }
 
 export function CostPanel() {
@@ -46,6 +68,7 @@ export function CostPanel() {
   const showCostPanel = useUIStore((s) => s.showCostPanel)
   const setShowCostPanel = useUIStore((s) => s.setShowCostPanel)
   const [editingPrices, setEditingPrices] = useState(false)
+  const [byRoleState, setByRole] = useState(false)
 
   if (!showCostPanel) return null
 
@@ -57,25 +80,39 @@ export function CostPanel() {
   const laborRate    = project.laborRate     ?? 0
   const overheadPct  = project.overheadPct  ?? 0
 
+  // ── By part role ─────────────────────────────────────────────────────────
+  // Offered once a part has a role; then every row is per role as well
+  const active = activeAssemblies(project)
+  const rolesUsed = active.some((a) => a.boards.some((b) => b.role))
+  const byRole = rolesUsed && byRoleState
+  /** Map key per material / hardware item, per role too when grouped (roles contain no '|') */
+  const keyOf = (role: BoardRole | undefined, id: string): string => (byRole ? `${role ?? ''}|${id}` : id)
+  const roleLabel = (role: BoardRole | undefined): string => t(roleKey(role))
+
   // ── Material cost ────────────────────────────────────────────────────────
   // Maps, not objects keyed by id: ids come from project files.
   // Boards with an unknown material (older files) still count, under their raw id.
-  const usageMap = new Map<string, { name: string; areaSqm: number; cost: number }>()
-  for (const assembly of activeAssemblies(project)) {
+  const usageMap = new Map<string, MatRow>()
+  for (const assembly of active) {
     for (const board of assembly.boards) {
       const mat = getMaterialById(board.materialId, customMaterials)
       const areaSqm = faceAreaSqm(board)
-      const prev = usageMap.get(board.materialId) ?? {
+      const role = byRole ? board.role : undefined
+      const key = keyOf(role, board.materialId)
+      const prev = usageMap.get(key) ?? {
+        materialId: board.materialId,
+        role,
         name: mat ? (lang === 'de' ? mat.name : mat.nameEn) : `${board.materialId} (${t('calc.unknownMaterial')})`,
         areaSqm: 0,
         cost: 0
       }
-      usageMap.set(board.materialId, { ...prev, areaSqm: prev.areaSqm + areaSqm, cost: prev.cost + areaSqm * priceOf(board.materialId).price })
+      usageMap.set(key, { ...prev, areaSqm: prev.areaSqm + areaSqm, cost: prev.cost + areaSqm * priceOf(board.materialId).price })
     }
   }
-  const matRows = [...usageMap.entries()]
-  const totalMaterialCost = matRows.reduce((s, [, v]) => s + v.cost, 0)
-  const usesGuidePrices = matRows.some(([id]) => priceOf(id).source === 'default')
+  const matRows = [...usageMap.values()]
+  const usedMaterials = new Map(matRows.map((r) => [r.materialId, r.name]))
+  const totalMaterialCost = sumCost(matRows)
+  const usesGuidePrices = matRows.some((r) => priceOf(r.materialId).source === 'default')
 
   // Price editor: materials in use first, then the other project and built-in
   // materials (a project material overrides a built-in one with the same id)
@@ -84,25 +121,34 @@ export function CostPanel() {
     ...materials.filter((m) => !customMaterials.some((c) => c.id === m.id)).map((m) => ({ id: m.id, name: lang === 'de' ? m.name : m.nameEn }))
   ]
   const priceEditorRows = [
-    ...matRows.map(([id, v]) => ({ id, name: allMaterials.find((m) => m.id === id)?.name ?? v.name })),
-    ...allMaterials.filter((m) => !usageMap.has(m.id))
+    ...[...usedMaterials].map(([id, name]) => ({ id, name: allMaterials.find((m) => m.id === id)?.name ?? name })),
+    ...allMaterials.filter((m) => !usedMaterials.has(m.id))
   ]
 
-  // ── Hardware cost ────────────────────────────────────────────────────────
-  const hwMap = new Map<string, { name: string; qty: number; unitPrice: number; total: number }>()
-  for (const assembly of activeAssemblies(project)) {
+  // ── Hardware cost (counted under the role of the board it is attached to) ─
+  const hwMap = new Map<string, HwRow>()
+  for (const assembly of active) {
     for (const board of assembly.boards) {
       for (const attached of board.hardware ?? []) {
         const hw = hardwareItems.find((h) => h.id === attached.hardwareId)
           ?? project.customHardware?.find((h) => h.id === attached.hardwareId)   // project-defined hardware counts too
         if (!hw) continue
-        const prev = hwMap.get(hw.id) ?? { name: lang === 'de' ? hw.name : hw.nameEn, qty: 0, unitPrice: hw.unitPrice, total: 0 }
-        hwMap.set(hw.id, { ...prev, qty: prev.qty + attached.quantity, total: prev.total + attached.quantity * hw.unitPrice })
+        const role = byRole ? board.role : undefined
+        const key = keyOf(role, hw.id)
+        const prev = hwMap.get(key) ?? { hardwareId: hw.id, role, name: lang === 'de' ? hw.name : hw.nameEn, qty: 0, unitPrice: hw.unitPrice, cost: 0 }
+        hwMap.set(key, { ...prev, qty: prev.qty + attached.quantity, cost: prev.cost + attached.quantity * hw.unitPrice })
       }
     }
   }
-  const hwRows = [...hwMap.entries()]
-  const totalHardwareCost = hwRows.reduce((s, [, v]) => s + v.total, 0)
+  const hwRows = [...hwMap.values()]
+  const totalHardwareCost = sumCost(hwRows)
+  const matGroups = groupsOf(matRows, byRole)
+  const hwGroups = groupsOf(hwRows, byRole)
+  // print and CSV: per role its material, then its hardware
+  const lineGroups = groupsOf<CostLine & { role?: BoardRole }>([
+    ...matRows.map((row) => ({ kind: 'material' as const, row, role: row.role })),
+    ...hwRows.map((row) => ({ kind: 'hardware' as const, row, role: row.role }))
+  ], byRole)
 
   // ── Labor & overhead ─────────────────────────────────────────────────────
   const laborSubtotal = laborHours * laborRate
@@ -120,18 +166,21 @@ export function CostPanel() {
   const money = (v: number) => `${cur}${formatCurrency(v, lang)}`
   const guideMark = (id: string) => (priceOf(id).source === 'default' ? ' *' : '')
 
+  const hwType = lang === 'de' ? 'Beschlag' : 'Hardware'
+
   const handlePrint = () => {
-    const matSection = matRows.map(([id, v]) =>
-      `<tr><td>Material</td><td>${escapeHtml(v.name)}</td><td>${formatArea(v.areaSqm, lang)} m²</td><td>${escapeHtml(money(v.cost))}${guideMark(id)}</td></tr>`
-    ).join('')
-    const hwSection = hwRows.map(([, v]) =>
-      `<tr><td>${lang === 'de' ? 'Beschlag' : 'Hardware'}</td><td>${escapeHtml(v.name)}</td><td>${escapeHtml(String(v.qty))}</td><td>${escapeHtml(money(v.total))}</td></tr>`
+    const printLine = (l: CostLine): string => l.kind === 'material'
+      ? `<tr><td>Material</td><td>${escapeHtml(l.row.name)}</td><td>${formatArea(l.row.areaSqm, lang)} m²</td><td>${escapeHtml(money(l.row.cost))}${guideMark(l.row.materialId)}</td></tr>`
+      : `<tr><td>${hwType}</td><td>${escapeHtml(l.row.name)}</td><td>${escapeHtml(String(l.row.qty))}</td><td>${escapeHtml(money(l.row.cost))}</td></tr>`
+    const body = lineGroups.map((g) =>
+      (byRole ? `<tr class="g"><td colspan="3">${escapeHtml(roleLabel(g.role))}</td><td>${escapeHtml(money(sumCost(g.items.map((l) => l.row))))}</td></tr>` : '') +
+      g.items.map(printLine).join('')
     ).join('')
     const html = `<!DOCTYPE html><html><head><meta charset="utf-8">
 <title>${escapeHtml(project.name)} - ${lang === 'de' ? 'Kosten' : 'Cost'}</title>
 <style>body{font:12px sans-serif;margin:20px}h1{font-size:14px;margin-bottom:4px}
 table{border-collapse:collapse;width:100%}th,td{border:1px solid #ccc;padding:4px 6px;text-align:left}
-th{background:#f0f0f0}tfoot td{font-weight:bold;background:#e8f0fe}p{color:#666;font-size:10px}
+th{background:#f0f0f0}tr.g td{font-weight:bold;background:#f7f7f7}tfoot td{font-weight:bold;background:#e8f0fe}p{color:#666;font-size:10px}
 @media print{@page{size:A4;margin:15mm}}</style></head>
 <body><h1>${escapeHtml(project.name)} — ${lang === 'de' ? 'Kostenkalkulation' : 'Cost Summary'}</h1>
 <table><thead><tr>
@@ -139,7 +188,7 @@ th{background:#f0f0f0}tfoot td{font-weight:bold;background:#e8f0fe}p{color:#666;
 <th>${lang === 'de' ? 'Name' : 'Name'}</th>
 <th>${lang === 'de' ? 'Menge' : 'Quantity'}</th>
 <th>${lang === 'de' ? 'Kosten' : 'Cost'}</th>
-</tr></thead><tbody>${matSection}${hwSection}</tbody>
+</tr></thead><tbody>${body}</tbody>
 <tfoot><tr><td colspan="3">${lang === 'de' ? 'Gesamt' : 'Total'}</td><td>${escapeHtml(money(grandTotal))}</td></tr></tfoot>
 </table>${usesGuidePrices ? `<p>* ${escapeHtml(t('dlg.guidePriceNote'))}</p>` : ''}</body></html>`
     printHtml(html)
@@ -147,22 +196,27 @@ th{background:#f0f0f0}tfoot td{font-weight:bold;background:#e8f0fe}p{color:#666;
 
   const handleExportCsv = () => {
     const rows: unknown[][] = []
-    rows.push(lang === 'de' ? ['Typ', 'Name', 'Menge', 'Einheitspreis', 'Gesamt'] : ['Type', 'Name', 'Quantity', 'Unit Price', 'Total'])
-    for (const [matId, v] of matRows) {
-      const p = priceOf(matId)
-      const unit = p.source === 'default' ? `${money(p.price)} (${t('dlg.guidePrice')})` : money(p.price)
-      rows.push(['Material', v.name, `${formatArea(v.areaSqm, lang)} m²`, unit, money(v.cost)])
-    }
-    for (const [, v] of hwRows) {
-      rows.push([lang === 'de' ? 'Beschlag' : 'Hardware', v.name, v.qty, money(v.unitPrice), money(v.total)])
+    // grouped: a role column after the type
+    const push = (cells: unknown[], role = ''): void => { rows.push(byRole ? [cells[0], role, ...cells.slice(1)] : cells) }
+    push(lang === 'de' ? ['Typ', 'Name', 'Menge', 'Einheitspreis', 'Gesamt'] : ['Type', 'Name', 'Quantity', 'Unit Price', 'Total'], t('role.label'))
+    for (const g of lineGroups) {
+      for (const l of g.items) {
+        if (l.kind === 'material') {
+          const p = priceOf(l.row.materialId)
+          const unit = p.source === 'default' ? `${money(p.price)} (${t('dlg.guidePrice')})` : money(p.price)
+          push(['Material', l.row.name, `${formatArea(l.row.areaSqm, lang)} m²`, unit, money(l.row.cost)], roleLabel(g.role))
+        } else {
+          push([hwType, l.row.name, l.row.qty, money(l.row.unitPrice), money(l.row.cost)], roleLabel(g.role))
+        }
+      }
     }
     if (laborSubtotal > 0) {
-      rows.push([lang === 'de' ? 'Arbeit' : 'Labor', `${laborHours}h × ${money(laborRate)}`, '', '', money(laborSubtotal)])
+      push([lang === 'de' ? 'Arbeit' : 'Labor', `${laborHours}h × ${money(laborRate)}`, '', '', money(laborSubtotal)])
     }
     if (overheadAmount > 0) {
-      rows.push(['Overhead', `${(overheadPct * 100).toFixed(0)}%`, '', '', money(overheadAmount)])
+      push(['Overhead', `${(overheadPct * 100).toFixed(0)}%`, '', '', money(overheadAmount)])
     }
-    rows.push(['', '', '', '', money(grandTotal)])
+    push(['', '', '', '', money(grandTotal)])
     const sep = getCsvDelimiter()
     const csv = rows.map((r) => r.map(csvCell).join(sep)).join('\n')
     const filename = `${project.name}_cost.csv`
@@ -215,7 +269,7 @@ th{background:#f0f0f0}tfoot td{font-weight:bold;background:#e8f0fe}p{color:#666;
                 const p = priceOf(mat.id)
                 return (
                   <label key={mat.id} className="flex items-center gap-2">
-                    <span className={`flex-1 truncate text-xs ${usageMap.has(mat.id) ? 'text-chrome-text' : 'text-chrome-muted'}`}>{mat.name}</span>
+                    <span className={`flex-1 truncate text-xs ${usedMaterials.has(mat.id) ? 'text-chrome-text' : 'text-chrome-muted'}`}>{mat.name}</span>
                     {/* guide values in accent, own prices tagged: the editor stays quiet for the common case */}
                     {p.source === 'project' && <span className="text-[10px] text-chrome-hint">{t('dlg.ownPrice')}</span>}
                     <input
@@ -247,7 +301,15 @@ th{background:#f0f0f0}tfoot td{font-weight:bold;background:#e8f0fe}p{color:#666;
           <p className="text-xs italic text-chrome-hint">{t('cutting.noBoards')}</p>
         ) : (
           <section>
-            <h3 className={`${SECTION_LABEL_CLASS} mb-1.5`}>{t('cost.materialCost')}</h3>
+            <div className="mb-1.5 flex items-center justify-between gap-3">
+              <h3 className={SECTION_LABEL_CLASS}>{t('cost.materialCost')}</h3>
+              {rolesUsed && (
+                <label className="flex cursor-pointer select-none items-center gap-1.5 text-xs text-chrome-secondary" title={t('role.groupTitle')}>
+                  <input type="checkbox" checked={byRole} onChange={(e) => setByRole(e.target.checked)} className={CHECK_CLASS} />
+                  {t('role.groupBy')}
+                </label>
+              )}
+            </div>
             <table className="w-full border-collapse text-xs">
               <thead>
                 <tr>
@@ -257,23 +319,26 @@ th{background:#f0f0f0}tfoot td{font-weight:bold;background:#e8f0fe}p{color:#666;
                   <th className={`${TH_CLASS} text-right`}>{t('cost.total')}</th>
                 </tr>
               </thead>
-              <tbody>
-                {matRows.map(([matId, v]) => {
-                  const p = priceOf(matId)
-                  return (
-                    <tr key={matId} className="hover:bg-chrome-surface/40">
-                      <td className={TD_CLASS}>{v.name}</td>
-                      <td className={num}>{formatArea(v.areaSqm, lang)}</td>
-                      <td className={`${TD_CLASS} text-right`}>
-                        {p.price
-                          ? <><span className="font-mono tabular-nums">{money(p.price)}</span><PriceTag source={p.source} /></>
-                          : <span className="italic text-chrome-hint">{t('cost.noPrice')}</span>}
-                      </td>
-                      <td className={`${num} font-medium`}>{v.cost > 0 ? money(v.cost) : '—'}</td>
-                    </tr>
-                  )
-                })}
-              </tbody>
+              {matGroups.map((g) => (
+                <tbody key={g.role ?? 'none'}>
+                  {byRole && <RoleHeaderRow label={roleLabel(g.role)} total={money(sumCost(g.items))} />}
+                  {g.items.map((v) => {
+                    const p = priceOf(v.materialId)
+                    return (
+                      <tr key={v.materialId} className="hover:bg-chrome-surface/40">
+                        <td className={TD_CLASS}>{v.name}</td>
+                        <td className={num}>{formatArea(v.areaSqm, lang)}</td>
+                        <td className={`${TD_CLASS} text-right`}>
+                          {p.price
+                            ? <><span className="font-mono tabular-nums">{money(p.price)}</span><PriceTag source={p.source} /></>
+                            : <span className="italic text-chrome-hint">{t('cost.noPrice')}</span>}
+                        </td>
+                        <td className={`${num} font-medium`}>{v.cost > 0 ? money(v.cost) : '—'}</td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              ))}
               <tfoot>
                 <tr className="font-semibold">
                   <td className="px-2 py-1.5" colSpan={3}>{t('cost.materialCost')}</td>
@@ -300,16 +365,19 @@ th{background:#f0f0f0}tfoot td{font-weight:bold;background:#e8f0fe}p{color:#666;
                   <th className={`${TH_CLASS} text-right`}>{t('cost.total')}</th>
                 </tr>
               </thead>
-              <tbody>
-                {hwRows.map(([hwId, v]) => (
-                  <tr key={hwId} className="hover:bg-chrome-surface/40">
-                    <td className={TD_CLASS}>{v.name}</td>
-                    <td className={num}>{v.qty}</td>
-                    <td className={num}>{money(v.unitPrice)}</td>
-                    <td className={`${num} font-medium`}>{money(v.total)}</td>
-                  </tr>
-                ))}
-              </tbody>
+              {hwGroups.map((g) => (
+                <tbody key={g.role ?? 'none'}>
+                  {byRole && <RoleHeaderRow label={roleLabel(g.role)} total={money(sumCost(g.items))} />}
+                  {g.items.map((v) => (
+                    <tr key={v.hardwareId} className="hover:bg-chrome-surface/40">
+                      <td className={TD_CLASS}>{v.name}</td>
+                      <td className={num}>{v.qty}</td>
+                      <td className={num}>{money(v.unitPrice)}</td>
+                      <td className={`${num} font-medium`}>{money(v.cost)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              ))}
               <tfoot>
                 <tr className="font-semibold">
                   <td className="px-2 py-1.5" colSpan={3}>{t('cost.hardwareCost')}</td>

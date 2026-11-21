@@ -6,6 +6,23 @@ export type FastenerType = 'wood_screw' | 'confirmat' | 'dowel_pin' | 'biscuit' 
 export type HeadType = 'countersunk' | 'pan' | 'hex'
 export type FastenerMaterial = 'steel' | 'stainless' | 'brass'
 
+/**
+ * What a part is, the way a cabinetmaker sorts it: decides material, edge and
+ * surface requirements. Independent of the assembly tree (which is per cabinet
+ * or compartment), so a project can be built by compartment and still be listed
+ * and costed by role. The order is the order of the lists.
+ *  visible      Sichtteil: front, end panel, filler/cover strip
+ *  carcass      Korpus: bottoms, tops, sides, middle sides, shelves
+ *  back         Rückwand
+ *  substructure Unterkonstruktion: frame, battens, rails
+ *  drawer       Schubkasten-Kasten (the box, not its front)
+ *  worktop      Arbeitsplatte and what carries it
+ *  plinth       Sockel
+ *  appliance    Einbaugerät (oven, fridge … as a placeholder part)
+ */
+export const BOARD_ROLES = ['visible', 'carcass', 'back', 'substructure', 'drawer', 'worktop', 'plinth', 'appliance'] as const
+export type BoardRole = (typeof BOARD_ROLES)[number]
+
 export interface EdgeBanding {
   e1?: boolean  // front face edge (along width)
   e2?: boolean  // back face edge (along width)
@@ -59,6 +76,8 @@ export interface Board {
   materialId: string
   color: string
   grainDirection?: GrainDirection
+  /** Part role (Bauteilart) for lists and costing; missing = not assigned */
+  role?: BoardRole
   edgeBanding?: EdgeBanding
   cutouts?: BoardCutout[]
   hardware?: AttachedHardware[]
@@ -124,6 +143,17 @@ export interface Material {
   grain: boolean
 }
 
+/** One step of the assembly instruction (Montageanleitung): the boards installed in it,
+ *  in the order of the steps. Fasteners are not stored: a joint belongs to the step in
+ *  which the second of its two boards is installed (utils/assemblySteps.ts). */
+export interface AssemblyStep {
+  id: string
+  title: string
+  note?: string
+  /** Boards installed in this step; a board is in at most one step */
+  boardIds: string[]
+}
+
 export interface CustomHardwareItem {
   id: string
   name: string
@@ -146,6 +176,8 @@ export interface Project {
   materialPrices?: Record<string, number>  // price per m² in currency
   customMaterials?: Material[]
   customHardware?: CustomHardwareItem[]
+  /** Assembly instruction steps in order; boards in no step are not planned yet */
+  assemblySteps?: AssemblyStep[]
   laborHours?: number
   laborRate?: number    // per hour
   overheadPct?: number  // 0–1

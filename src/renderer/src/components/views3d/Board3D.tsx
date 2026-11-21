@@ -8,6 +8,7 @@ import { snapToGrid } from '../../utils/geometry'
 import { snapBoardToBoards, FACE_SNAP_PX, type SnapAxis } from '../../utils/snap'
 import { computeWorldSizeForPixels } from '../../utils/screenSize'
 import { buildBoardGeometry } from '../../utils/boardGeometry'
+import { boardStepState } from '../../utils/assemblySteps'
 import { getMaterialById } from '../../data/materials'
 import { beginTransform, endTransform } from '../../utils/transformLock'
 import { setHoveringGizmo, isHoveringGizmo } from '../../utils/gizmoHover'
@@ -74,7 +75,22 @@ function snapCandidates(moving: string[]): Board[] {
 
 /** Memoized: the store keeps unchanged boards' object identity, so a drag or
  *  edit re-renders only the board that changed instead of every board. */
-export const Board3D = memo(function Board3D({ board, assemblyId, orbitRef, highlight = false, dimmed = false, jointCount = 0 }: Board3DProps) {
+/**
+ * A board in the scene. In assembly mode (Montage) it follows the step shown:
+ * installed in an earlier step → ghosted like an X-ray backdrop, in this step →
+ * highlighted like an X-ray group, not installed yet → not drawn. Same rendering
+ * as the assembly X-ray, decided per board.
+ */
+export const Board3D = memo(function Board3D(props: Board3DProps) {
+  const current = useUIStore((s) => (s.assemblyMode ? s.assemblyStep : -1))
+  const steps = useProjectStore((s) => s.project.assemblySteps)
+  const state = boardStepState(steps, current, props.board.id)
+  if (state === 'hidden') return null
+  if (state === 'normal') return <Board3DBody {...props} />
+  return <Board3DBody {...props} highlight={state === 'current'} dimmed={state === 'earlier'} />
+})
+
+const Board3DBody = memo(function Board3DBody({ board, assemblyId, orbitRef, highlight = false, dimmed = false, jointCount = 0 }: Board3DProps) {
   const { t } = useTranslation()
   const meshRef = useRef<THREE.Mesh>(null)
   const transformRef = useRef<any>(null)
