@@ -2,6 +2,7 @@ import { useTranslation } from 'react-i18next'
 import { useUIStore } from '../../store/useUIStore'
 import { useDialogFocus } from '../../hooks/useKeyboard'
 import { ALT_KEY, CMD_KEY } from '../../utils/canvasInput'
+import { keyCombo } from '../../utils/shortcutKeys'
 
 function ShortcutRow({ keys, label }: { keys: string; label: string }) {
   return (
@@ -26,6 +27,7 @@ function GroupHeader({ label }: { label: string }) {
  * Full-screen shortcut reference overlay. Toggled by the `?` key.
  * Every entry mirrors a handler in hooks/useKeyboard.ts (Ctrl+K: CommandPalette);
  * mouse and trackpad gestures mirror CameraController / utils/canvasInput.
+ * Ctrl / Alt read ⌘ / ⌥ on macOS (utils/shortcutKeys).
  */
 export function ShortcutsOverlay() {
   const { t, i18n } = useTranslation()
@@ -67,18 +69,18 @@ export function ShortcutsOverlay() {
             <GroupHeader label={de ? 'Allgemein' : 'General'} />
             <ShortcutRow keys="F"          label={de ? 'Ansicht einpassen' : 'Fit view'} />
             <ShortcutRow keys="S"          label={de ? 'Einrasten (Snap) ein/aus' : 'Snapping on/off'} />
-            <ShortcutRow keys="Alt+G"      label={de ? 'Raster ein/aus' : 'Grid on/off'} />
+            <ShortcutRow keys={keyCombo('G', ['alt'])} label={de ? 'Raster ein/aus' : 'Grid on/off'} />
             <ShortcutRow keys="B"          label={de ? 'Baugruppen-Leiste' : 'Assembly tree'} />
-            <ShortcutRow keys="Ctrl+K"     label={de ? 'Befehlspalette' : 'Command palette'} />
+            <ShortcutRow keys={keyCombo('K', ['cmd'])} label={de ? 'Befehlspalette' : 'Command palette'} />
             <ShortcutRow keys="?"          label={de ? 'Dieses Fenster' : 'This overlay'} />
             <ShortcutRow keys="Esc"        label={de ? 'Aufheben / Abbrechen' : 'Deselect / cancel'} />
             <ShortcutRow keys="+ / −"      label={t('ui.labelSize')} />
 
             <GroupHeader label={de ? 'Datei' : 'File'} />
-            <ShortcutRow keys="Ctrl+O"     label={de ? 'Projekt öffnen' : 'Open project'} />
-            <ShortcutRow keys="Ctrl+S"     label={de ? 'Speichern' : 'Save'} />
-            <ShortcutRow keys="Ctrl+Z"     label={de ? 'Rückgängig' : 'Undo'} />
-            <ShortcutRow keys="Ctrl+⇧+Z"   label={de ? 'Wiederholen (auch Ctrl+Y)' : 'Redo (also Ctrl+Y)'} />
+            <ShortcutRow keys={keyCombo('O', ['cmd'])} label={de ? 'Projekt öffnen' : 'Open project'} />
+            <ShortcutRow keys={keyCombo('S', ['cmd'])} label={de ? 'Speichern' : 'Save'} />
+            <ShortcutRow keys={keyCombo('Z', ['cmd'])} label={de ? 'Rückgängig' : 'Undo'} />
+            <ShortcutRow keys={keyCombo('Z', ['cmd', 'shift'])} label={`${de ? 'Wiederholen (auch' : 'Redo (also'} ${keyCombo('Y', ['cmd'])})`} />
           </div>
 
           <div>
@@ -91,7 +93,7 @@ export function ShortcutsOverlay() {
             <ShortcutRow keys="D"          label={de ? 'Duplizieren' : 'Duplicate'} />
             <ShortcutRow keys={del}        label={de ? 'Löschen' : 'Delete'} />
             <ShortcutRow keys="J"          label={de ? 'Verbinden (2 Teile)' : 'Join (2 boards)'} />
-            <ShortcutRow keys="Ctrl+A"     label={de ? 'Ganze Baugruppe wählen' : 'Select the whole assembly'} />
+            <ShortcutRow keys={keyCombo('A', ['cmd'])} label={de ? 'Ganze Baugruppe wählen' : 'Select the whole assembly'} />
             <ShortcutRow keys="⇧+F10"      label={t('ui.boardMenu')} />
           </div>
 
@@ -99,16 +101,16 @@ export function ShortcutsOverlay() {
             <GroupHeader label={de ? 'Werkzeuge & Ansichten' : 'Tools & Views'} />
             <ShortcutRow keys="1 / 2"      label={`${t('tools.select')} / ${t('tools.measure')}`} />
             <ShortcutRow keys="3 / 4"      label={`${t('tools.angle')} / ${t('tools.area')}`} />
-            <ShortcutRow keys="Alt+1"      label={t('views.front')} />
-            <ShortcutRow keys="Alt+2"      label={t('views.side')} />
-            <ShortcutRow keys="Alt+3"      label={t('views.top')} />
-            <ShortcutRow keys="Alt+4"      label={t('views.3d')} />
+            <ShortcutRow keys={keyCombo('1', ['alt'])} label={t('views.front')} />
+            <ShortcutRow keys={keyCombo('2', ['alt'])} label={t('views.side')} />
+            <ShortcutRow keys={keyCombo('3', ['alt'])} label={t('views.top')} />
+            <ShortcutRow keys={keyCombo('4', ['alt'])} label={t('views.3d')} />
 
             <GroupHeader label={de ? 'Maus' : 'Mouse'} />
             <ShortcutRow keys={de ? 'Rad' : 'Wheel'}        label="Zoom" />
             <ShortcutRow keys={de ? 'Rechts' : 'Right'}     label={de ? 'Ziehen: Ansicht schieben' : 'Drag: pan'} />
             <ShortcutRow keys={de ? 'Mitte' : 'Middle'}     label={de ? 'Ziehen: 3D drehen (2D: schieben)' : 'Drag: orbit 3D (2D: pan)'} />
-            <ShortcutRow keys={de ? 'Ctrl+Klick' : 'Ctrl+click'} label={de ? 'Mehrfachauswahl' : 'Add to selection'} />
+            <ShortcutRow keys={`${CMD_KEY}+${de ? 'Klick' : 'click'}`} label={de ? 'Mehrfachauswahl' : 'Add to selection'} />
 
             <GroupHeader label={t('input.trackpad')} />
             <ShortcutRow keys={t('input.twoFinger')}                     label={t('input.pan')} />

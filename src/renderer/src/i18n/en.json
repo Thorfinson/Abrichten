@@ -97,7 +97,7 @@
     "keysHint": "← → to step",
     "noSteps": "No assembly steps yet.",
     "suggest": "Suggest an order",
-    "suggestTitle": "Build steps from the part roles (replaces the current ones; Ctrl+Z undoes it)",
+    "suggestTitle": "Build steps from the part roles (replaces the current ones; {{shortcut}} undoes it)",
     "addStep": "+ Step",
     "addStepTitle": "Insert a new step after this one",
     "newStep": "New step",
@@ -585,7 +585,7 @@
     "welcomeTagline": "Plan furniture and kitchens – from the design to the cutting list.",
     "welcomeEmpty": "Empty project",
     "welcomeShortcuts": "Shortcuts",
-    "welcomePaletteHint": "Ctrl+K opens the command palette at any time."
+    "welcomePaletteHint": "{{shortcut}} opens the command palette at any time."
   },
   "layout": {
     "toolbar": {
@@ -618,15 +618,15 @@
       "snapTitle": "Snapping on/off (S)",
       "snapSize": "Snap grid size",
       "grid": "Grid",
-      "gridTitle": "Show grid (Alt+G)",
+      "gridTitle": "Show grid ({{shortcut}})",
       "unit": "Unit",
       "cursor": "Position under the cursor (mm)",
       "unsaved": "Unsaved changes",
-      "unsavedTitle": "The project changed since it was last saved to a file (Ctrl+S)",
+      "unsavedTitle": "The project changed since it was last saved to a file ({{shortcut}})",
       "saved": "Auto-saved ✓",
       "savedTitle": "Auto-saved to local storage",
       "saveFailed": "Auto-save failed",
-      "saveFailedTitle": "Auto-saving to local storage failed. Save the project to a file (Ctrl+S)."
+      "saveFailedTitle": "Auto-saving to local storage failed. Save the project to a file ({{shortcut}})."
     }
   },
   "sim": {

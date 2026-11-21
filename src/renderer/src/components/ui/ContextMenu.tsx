@@ -188,13 +188,13 @@ export function ContextMenu() {
   // The shortcut hints shown on the items (D, Del) work while the menu is open.
   const handleMenuKeyDown = (e: React.KeyboardEvent) => {
     const inSub = subMenuRef.current?.contains(document.activeElement) ?? false
-    if ((e.key === 'd' || e.key === 'D') && !e.ctrlKey && !e.altKey) {
+    if ((e.key === 'd' || e.key === 'D') && !e.ctrlKey && !e.metaKey && !e.altKey) {
       e.preventDefault()
       handleDuplicate()
     } else if (e.key === 'Delete') {
       e.preventDefault()
       handleDelete()
-    } else if ((e.key === 'j' || e.key === 'J') && canJoin && !e.ctrlKey && !e.altKey) {
+    } else if ((e.key === 'j' || e.key === 'J') && canJoin && !e.ctrlKey && !e.metaKey && !e.altKey) {
       e.preventDefault()
       handleJoint()
     } else if (moveFocus(inSub ? subMenuRef.current : menuRef.current, e.key)) {

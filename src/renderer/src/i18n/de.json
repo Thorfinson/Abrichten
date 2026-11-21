@@ -97,7 +97,7 @@
     "keysHint": "← → blättern",
     "noSteps": "Noch keine Montageschritte.",
     "suggest": "Reihenfolge vorschlagen",
-    "suggestTitle": "Schritte aus den Bauteilarten bilden (ersetzt die bisherigen; Strg+Z macht es rückgängig)",
+    "suggestTitle": "Schritte aus den Bauteilarten bilden (ersetzt die bisherigen; {{shortcut}} macht es rückgängig)",
     "addStep": "+ Schritt",
     "addStepTitle": "Neuen Schritt nach diesem einfügen",
     "newStep": "Neuer Schritt",
@@ -585,7 +585,7 @@
     "welcomeTagline": "Möbel und Küchen planen – vom Entwurf bis zur Zuschnittliste.",
     "welcomeEmpty": "Leeres Projekt",
     "welcomeShortcuts": "Tastenkürzel",
-    "welcomePaletteHint": "Strg+K öffnet jederzeit die Befehlspalette."
+    "welcomePaletteHint": "{{shortcut}} öffnet jederzeit die Befehlspalette."
   },
   "layout": {
     "toolbar": {
@@ -618,15 +618,15 @@
       "snapTitle": "Einrasten (Snap) ein/aus (S)",
       "snapSize": "Rasterweite zum Einrasten",
       "grid": "Raster",
-      "gridTitle": "Raster anzeigen (Alt+G)",
+      "gridTitle": "Raster anzeigen ({{shortcut}})",
       "unit": "Einheit",
       "cursor": "Position unter dem Mauszeiger (mm)",
       "unsaved": "Ungespeicherte Änderungen",
-      "unsavedTitle": "Das Projekt wurde seit dem letzten Speichern als Datei geändert (Strg+S)",
+      "unsavedTitle": "Das Projekt wurde seit dem letzten Speichern als Datei geändert ({{shortcut}})",
       "saved": "Automatisch gesichert ✓",
       "savedTitle": "Automatisch im lokalen Speicher gesichert",
       "saveFailed": "Automatisches Speichern fehlgeschlagen",
-      "saveFailedTitle": "Die automatische Sicherung im lokalen Speicher ist fehlgeschlagen. Speichere das Projekt als Datei (Strg+S)."
+      "saveFailedTitle": "Die automatische Sicherung im lokalen Speicher ist fehlgeschlagen. Speichere das Projekt als Datei ({{shortcut}})."
     }
   },
   "sim": {

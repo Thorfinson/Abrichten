@@ -2,12 +2,13 @@ import { useTranslation } from 'react-i18next'
 import { useUIStore } from '../../store/useUIStore'
 import type { ViewMode } from '../../types/measurement'
 import { Icon } from './Icon'
+import { keyCombo } from '../../utils/shortcutKeys'
 
 const views: { key: ViewMode; labelKey: string; shortcut: string; axes: string }[] = [
-  { key: 'front', labelKey: 'views.front', shortcut: 'Alt+1', axes: 'XY' },
-  { key: 'side',  labelKey: 'views.side',  shortcut: 'Alt+2', axes: 'ZY' },
-  { key: 'top',   labelKey: 'views.top',   shortcut: 'Alt+3', axes: 'XZ' },
-  { key: '3d',    labelKey: 'views.3d',    shortcut: 'Alt+4', axes: '' },
+  { key: 'front', labelKey: 'views.front', shortcut: keyCombo('1', ['alt']), axes: 'XY' },
+  { key: 'side',  labelKey: 'views.side',  shortcut: keyCombo('2', ['alt']), axes: 'ZY' },
+  { key: 'top',   labelKey: 'views.top',   shortcut: keyCombo('3', ['alt']), axes: 'XZ' },
+  { key: '3d',    labelKey: 'views.3d',    shortcut: keyCombo('4', ['alt']), axes: '' },
 ]
 
 export function ViewTabs() {

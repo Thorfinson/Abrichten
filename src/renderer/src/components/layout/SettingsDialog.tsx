@@ -6,6 +6,7 @@ import { fetchVisionModels, type OpenRouterModel } from '../../services/openrout
 import { loadEnvConfig } from '../../config/env'
 import { Dialog, Button, FIELD_CLASS, segmentClass } from '../ui/Dialog'
 import { INPUT_DEVICES, ALT_KEY, type InputDevice } from '../../utils/canvasInput'
+import { keyCombo } from '../../utils/shortcutKeys'
 
 const STORAGE_KEY = 'abrichten-settings'
 
@@ -77,14 +78,14 @@ const INPUT_HINT: Record<InputDevice, string> = {
 }
 
 const SHORTCUTS = [
-  { key: 'Ctrl+Z / Ctrl+Shift+Z', actionDe: 'Rückgängig / Wiederholen', actionEn: 'Undo / Redo' },
-  { key: 'Ctrl+S', actionDe: 'Speichern', actionEn: 'Save' },
-  { key: 'Ctrl+O', actionDe: 'Öffnen', actionEn: 'Open' },
-  { key: 'D / Ctrl+D', actionDe: 'Duplizieren', actionEn: 'Duplicate' },
-  { key: 'Ctrl+A', actionDe: 'Alles auswählen', actionEn: 'Select all' },
+  { key: `${keyCombo('Z', ['cmd'])} / ${keyCombo('Z', ['cmd', 'shift'])}`, actionDe: 'Rückgängig / Wiederholen', actionEn: 'Undo / Redo' },
+  { key: keyCombo('S', ['cmd']), actionDe: 'Speichern', actionEn: 'Save' },
+  { key: keyCombo('O', ['cmd']), actionDe: 'Öffnen', actionEn: 'Open' },
+  { key: `D / ${keyCombo('D', ['cmd'])}`, actionDe: 'Duplizieren', actionEn: 'Duplicate' },
+  { key: keyCombo('A', ['cmd']), actionDe: 'Alles auswählen', actionEn: 'Select all' },
   { key: 'F', actionDe: 'Ansicht einpassen', actionEn: 'Fit view' },
-  { key: 'Ctrl+K', actionDe: 'Befehlspalette', actionEn: 'Command palette' },
-  { key: 'Alt+1/2/3/4', actionDe: 'Ansicht wechseln (Front/Seite/Oben/3D)', actionEn: 'Switch view (Front/Side/Top/3D)' },
+  { key: keyCombo('K', ['cmd']), actionDe: 'Befehlspalette', actionEn: 'Command palette' },
+  { key: `${keyCombo('1', ['alt'])}/2/3/4`, actionDe: 'Ansicht wechseln (Front/Seite/Oben/3D)', actionEn: 'Switch view (Front/Side/Top/3D)' },
   { key: '1/2/3/4', actionDe: 'Werkzeug wählen (Auswahl/Maß/Winkel/Fläche)', actionEn: 'Tool (Select/Measure/Angle/Area)' },
   { key: 'Delete / Backspace', actionDe: 'Ausgewählte löschen', actionEn: 'Delete selected' },
   { key: 'Arrow keys', actionDe: 'Bauteile verschieben (±1mm, Shift: ±10mm)', actionEn: 'Nudge boards (±1mm, Shift: ±10mm)' },

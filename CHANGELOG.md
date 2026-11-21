@@ -13,6 +13,7 @@
 - Custom materials are used by cost, statics and nesting.
 
 ### Fixed — editing
+- Keyboard shortcuts work on a Mac: `⌘S`, `⌘O`, `⌘Z`, `⇧⌘Z`, `⌘A`, `⌘D` and `⌘K` do what Ctrl does (Ctrl still works there too), and `⌥1`–`⌥4` (switch view) and `⌥G` (grid) fire although Option types a special character. `⌘` plus a letter no longer also runs that letter's plain shortcut. On macOS, the shortcut overview, the settings, tooltips and hints show `⌘` / `⌥` instead of Ctrl / Alt.
 - Boards that only touch are no longer reported as colliding when float rounding leaves them a hair inside each other (e.g. a board at 1435 mm, 52.3 mm wide, next to one at 1487.3 mm); overlaps below 0.01 mm count as touching.
 - Changing a parameter resizes every board that uses it; renaming onto an existing name is refused; deleting one keeps the sizes.
 - Dimension fields keep their formula when you only click in and out; `=H+20` and comma decimals work; invalid input is marked.

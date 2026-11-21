@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { useUIStore } from '../../store/useUIStore'
 import { Icon } from '../layout/Icon'
 import { isHudAutoCompact } from '../layout/layoutRules'
+import { IS_MAC } from '../../utils/canvasInput'
 
 function LedPill({
   label, active, warn, onClick
@@ -94,7 +95,7 @@ export function ContextHUD() {
   const rows: [string, string][] = context === 'none' ? [
     ['F',      lang === 'de' ? 'Ansicht einpassen' : 'Fit view'],
     ['1–4',    lang === 'de' ? 'Werkzeug wählen'   : 'Pick a tool'],
-    ['Ctrl K', lang === 'de' ? 'Alle Werkzeuge'    : 'All tools'],
+    [IS_MAC ? '⌘K' : 'Ctrl K', lang === 'de' ? 'Alle Werkzeuge'    : 'All tools'],
     ['B',      lang === 'de' ? 'Baugruppen'        : 'Assembly tree'],
     ['?',      lang === 'de' ? 'Alle Kürzel'       : 'All shortcuts'],
   ] : context === 'one' ? [

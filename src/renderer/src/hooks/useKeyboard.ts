@@ -1,10 +1,11 @@
 import { useEffect, useRef } from 'react'
 import { useUIStore, topModal } from '../store/useUIStore'
 import { useProjectStore } from '../store/useProjectStore'
-import type { ToolMode } from '../types/measurement'
+import type { ToolMode, ViewMode } from '../types/measurement'
 import { openProjectFile, saveProjectFile, confirmDiscardChanges } from '../services/projectFile'
 import { isDragActive, cancelTransform } from '../utils/transformLock'
 import { cancelDragHistory } from '../utils/dragHistory'
+import { isCmdKey, noCmdKey, keyName, digitOf, isLetterKey } from '../utils/shortcutKeys'
 
 /** A dialog the UI store doesn't track (e.g. the assembly drawer's joint
  *  dialog) is open — every modal in the app sets aria-modal. */
@@ -47,8 +48,14 @@ export function useKeyboard() {
       const tag = (e.target as HTMLElement)?.tagName
       if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return
 
+      // "Ctrl" below is Ctrl, or ⌘ on macOS; plain letters fire without either
+      // (utils/shortcutKeys). Letters compare in lower case: ⇧ / Caps Lock.
+      const cmd = isCmdKey(e)
+      const plain = noCmdKey(e)
+      const k = keyName(e)
+
       // Ctrl+S: save project — also while a modal is open (it changes nothing on screen)
-      if (e.ctrlKey && e.key === 's') {
+      if (cmd && k === 's') {
         e.preventDefault()
         void saveProjectFile()
         return
@@ -66,11 +73,12 @@ export function useKeyboard() {
         return
       }
 
-      // View switching: Alt+1/2/3/4
-      if (e.altKey && ['1', '2', '3', '4'].includes(e.key)) {
+      // View switching: Alt+1/2/3/4 — by physical key, ⌥1 types "¡" on macOS
+      const viewMap: Record<string, ViewMode> = { '1': 'front', '2': 'side', '3': 'top', '4': '3d' }
+      const digit = digitOf(e)
+      if (e.altKey && digit && viewMap[digit]) {
         e.preventDefault()
-        const viewMap: Record<string, any> = { '1': 'front', '2': 'side', '3': 'top', '4': '3d' }
-        ui.setActiveView(viewMap[e.key])
+        ui.setActiveView(viewMap[digit])
         return
       }
 
@@ -81,14 +89,14 @@ export function useKeyboard() {
         '3': 'angle',
         '4': 'area'
       }
-      if (!e.altKey && !e.ctrlKey && toolMap[e.key]) {
+      if (!e.altKey && plain && toolMap[e.key]) {
         e.preventDefault()
         ui.setActiveTool(toolMap[e.key])
         return
       }
 
       // J: open joint creation dialog when 2 boards selected
-      if ((e.key === 'j' || e.key === 'J') && !e.ctrlKey) {
+      if (k === 'j' && plain) {
         if (ui.selectedBoardIds.length === 2 && ui.selectedAssemblyId) {
           e.preventDefault()
           ui.setShowJointDialog(true)
@@ -97,7 +105,7 @@ export function useKeyboard() {
       }
 
       // Ctrl+A: select all boards in current assembly
-      if (e.ctrlKey && e.key === 'a') {
+      if (cmd && k === 'a') {
         e.preventDefault()
         if (ui.selectedAssemblyId) {
           ui.selectAllBoards(ui.selectedAssemblyId)
@@ -188,21 +196,21 @@ export function useKeyboard() {
       }
 
       // G: translate mode (3D) — not when Alt is held (Alt+G = grid toggle)
-      if ((e.key === 'g' || e.key === 'G') && !e.altKey) {
+      if (k === 'g' && plain && !e.altKey) {
         e.preventDefault()
         ui.setTransformMode('translate')
         return
       }
 
       // R: rotate mode (3D) — avoid Ctrl+R (browser reload)
-      if ((e.key === 'r' || e.key === 'R') && !e.ctrlKey) {
+      if (k === 'r' && plain) {
         e.preventDefault()
         ui.setTransformMode('rotate')
         return
       }
 
       // T: scale mode (axis-locked resize via arrow keys)
-      if ((e.key === 't' || e.key === 'T') && !e.ctrlKey && !e.altKey) {
+      if (k === 't' && plain && !e.altKey) {
         e.preventDefault()
         ui.setTransformMode('scale')
         return
@@ -214,43 +222,43 @@ export function useKeyboard() {
         ui.setZoom(ui.zoom * 1.1)
         return
       }
-      if (e.key === '-' && !e.ctrlKey) {
+      if (e.key === '-' && plain) {
         e.preventDefault()
         ui.setZoom(ui.zoom / 1.1)
         return
       }
 
       // Ctrl+Z: undo
-      if (e.ctrlKey && e.key === 'z' && !e.shiftKey) {
+      if (cmd && k === 'z' && !e.shiftKey) {
         e.preventDefault()
         useProjectStore.temporal.getState().undo()
         return
       }
 
       // Ctrl+Shift+Z or Ctrl+Y: redo
-      if ((e.ctrlKey && e.shiftKey && e.key === 'Z') || (e.ctrlKey && e.key === 'y')) {
+      if (cmd && ((k === 'z' && e.shiftKey) || k === 'y')) {
         e.preventDefault()
         useProjectStore.temporal.getState().redo()
         return
       }
 
       // F: fit view
-      if ((e.key === 'f' || e.key === 'F') && !e.ctrlKey) {
+      if (k === 'f' && plain) {
         e.preventDefault()
         ui.triggerFitView()
         return
       }
 
       // Ctrl+O: open project (with save-before-open guard)
-      if (e.ctrlKey && e.key === 'o') {
+      if (cmd && k === 'o') {
         e.preventDefault()
         if (!confirmDiscardChanges('open')) return
         void openProjectFile()
         return
       }
 
-      // D / Ctrl+D: duplicate selected boards
-      if ((e.key === 'd' || e.key === 'D') && !e.altKey && !e.metaKey) {
+      // D / Ctrl+D: duplicate selected boards (not Win+D, the system's)
+      if (k === 'd' && !e.altKey && (plain || cmd)) {
         e.preventDefault()
         if (ui.selectedBoardIds.length > 0 && ui.selectedAssemblyId) {
           if (ui.selectedBoardIds.length === 1) {
@@ -265,28 +273,28 @@ export function useKeyboard() {
       }
 
       // S: toggle snap
-      if ((e.key === 's' || e.key === 'S') && !e.ctrlKey) {
+      if (k === 's' && plain) {
         e.preventDefault()
         ui.toggleSnap()
         return
       }
 
-      // Alt+G: toggle grid
-      if ((e.key === 'g' || e.key === 'G') && e.altKey && !e.ctrlKey) {
+      // Alt+G: toggle grid — by physical key too, ⌥G types "©" on macOS
+      if (e.altKey && plain && isLetterKey(e, 'g')) {
         e.preventDefault()
         ui.toggleGrid()
         return
       }
 
       // B: toggle assembly drawer
-      if ((e.key === 'b' || e.key === 'B') && !e.ctrlKey && !e.altKey) {
+      if (k === 'b' && plain && !e.altKey) {
         e.preventDefault()
         ui.setShowAssemblyDrawer(!ui.showAssemblyDrawer)
         return
       }
 
       // ?: toggle shortcuts overlay
-      if (e.key === '?' && !e.ctrlKey) {
+      if (e.key === '?' && plain) {
         e.preventDefault()
         ui.setShowShortcutsOverlay(!ui.showShortcutsOverlay)
         return
