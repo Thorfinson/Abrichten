@@ -1,6 +1,7 @@
 import { app, shell, BrowserWindow, ipcMain, dialog, Menu, nativeTheme } from 'electron'
 import { dirname, extname, join } from 'path'
 import { readFile, writeFile } from 'fs/promises'
+import { LastFile } from './lastFile'
 
 /** URL schemes that links may hand to the operating system (system browser). */
 const EXTERNAL_PROTOCOLS = new Set(['https:'])
@@ -89,6 +90,13 @@ function createWindow(): void {
 }
 
 app.whenReady().then(() => {
+  // The project file last opened or saved: startup asks when it changed outside
+  // the app since (lastFile.ts), and the dialogs start in its folder again.
+  const lastFile = new LastFile(app.getPath('userData'))
+  void lastFile.read().then((known) => { if (known && !lastDir) lastDir = dirname(known.path) })
+  const remember = (path: string, content: string): Promise<void> =>
+    lastFile.remember(path, content).catch((err) => console.error('Remembering the project file failed:', err))
+
   // IPC: Datei speichern
   ipcMain.handle('file:save', async (_event, data: string, defaultName: string) => {
     const { canceled, filePath } = await dialog.showSaveDialog({
@@ -101,6 +109,7 @@ app.whenReady().then(() => {
     if (canceled || !filePath) return null
     await writeFile(filePath, data, 'utf-8')
     lastDir = dirname(filePath)
+    await remember(filePath, data)
     return filePath
   })
 
@@ -116,8 +125,14 @@ app.whenReady().then(() => {
     if (canceled || filePaths.length === 0) return null
     const content = await readFile(filePaths[0], 'utf-8')
     lastDir = dirname(filePaths[0])
+    await remember(filePaths[0], content)
     return { path: filePaths[0], content }
   })
+
+  // IPC: the last opened/saved project file, if it changed outside the app since
+  ipcMain.handle('file:lastChanged', () => lastFile.changed())
+  // IPC: the user answered about that change; don't report this version again
+  ipcMain.handle('file:lastSeen', () => lastFile.seen())
 
   // IPC: Export (CSV, DXF)
   ipcMain.handle('file:export', async (_event, content: string, defaultName: string) => {
