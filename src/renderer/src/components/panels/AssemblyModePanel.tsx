@@ -9,6 +9,7 @@ import { assemblyPath } from '../../utils/assemblyTree'
 import { cuttingDims } from '../../utils/cuttingDims'
 import { formatNumber } from '../../utils/units'
 import { printHtml } from '../../utils/printHtml'
+import { keyCombo } from '../../utils/shortcutKeys'
 
 const OPTION_DARK = 'bg-gray-800 text-white'
 const BTN = 'text-[10px] font-medium px-2 py-1 rounded bg-white/8 text-white/75 hover:bg-white/15 hover:text-white transition-colors disabled:opacity-35 disabled:pointer-events-none'
@@ -163,7 +164,7 @@ export function AssemblyModePanel() {
           <div className="space-y-2">
             <p className="text-[11px] text-white/60">{t('montage.noSteps')}</p>
             <div className="flex gap-1.5">
-              <button type="button" className={`${BTN} bg-action! text-action-text!`} onClick={suggest} title={t('montage.suggestTitle')}>
+              <button type="button" className={`${BTN} bg-action! text-action-text!`} onClick={suggest} title={t('montage.suggestTitle', { shortcut: keyCombo('Z', ['cmd']) })}>
                 {t('montage.suggest')}
               </button>
               <button type="button" className={BTN} onClick={addStep}>{t('montage.addStep')}</button>
@@ -292,7 +293,7 @@ export function AssemblyModePanel() {
       {/* Footer: re-suggest, print */}
       <div className="flex items-center gap-1.5 px-3 py-2 border-t border-white/8 shrink-0">
         {total > 0 && (
-          <button type="button" className={BTN} onClick={suggest} title={t('montage.suggestTitle')}>{t('montage.suggest')}</button>
+          <button type="button" className={BTN} onClick={suggest} title={t('montage.suggestTitle', { shortcut: keyCombo('Z', ['cmd']) })}>{t('montage.suggest')}</button>
         )}
         <span className="flex-1 text-[9px] text-white/35">{total > 0 ? t('montage.keysHint') : ''}</span>
         <button

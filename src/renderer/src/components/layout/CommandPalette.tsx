@@ -7,6 +7,7 @@ import { boardPresets, presetToBoard, type BoardPreset } from '../../data/board-
 import { getApiKey } from './SettingsDialog'
 import { useDialogFocus } from '../../hooks/useKeyboard'
 import { isDragActive } from '../../utils/transformLock'
+import { isCmdKey, keyName, keyCombo } from '../../utils/shortcutKeys'
 
 // ── Command definition ────────────────────────────────────────────────────────
 
@@ -48,10 +49,10 @@ export function CommandPalette() {
   const listRef = useRef<HTMLDivElement>(null)
   const dialogRef = useDialogFocus<HTMLDivElement>(show)
 
-  // Open on Ctrl+K / Cmd+K — not on top of another modal or mid-drag
+  // Open on Ctrl+K / ⌘K — not on top of another modal or mid-drag
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
+      if (isCmdKey(e) && keyName(e) === 'k') {
         e.preventDefault()
         const top = topModal(useUIStore.getState())
         if ((top && top !== 'showCommandPalette') || isDragActive()) return
@@ -229,13 +230,13 @@ export function CommandPalette() {
       label: t('actions.open'),
       description: lang === 'de' ? 'Projekt öffnen' : 'Open project',
       keywords: ['open', 'öffnen', 'load', 'laden', 'file', 'datei'],
-      shortcut: 'Ctrl+O',
+      shortcut: keyCombo('O', ['cmd']),
       action: handleOpen },
     { id: 'save', category: 'file',
       label: t('actions.save'),
       description: lang === 'de' ? 'Projekt speichern' : 'Save project',
       keywords: ['save', 'speichern', 'export', 'file', 'datei'],
-      shortcut: 'Ctrl+S',
+      shortcut: keyCombo('S', ['cmd']),
       action: handleSave },
     ...(getApiKey() ? [{
       id: 'ai', category: 'file' as Category,
