@@ -492,6 +492,19 @@
     "paramInvalidName": "Names start with a letter or _ and contain only letters, digits and _.",
     "paramRemoveUnlinks": "Delete – {{count}} board(s) lose their formula with {{name}}; their sizes stay."
   },
+  "partLabel": {
+    "nr": "No.",
+    "nrTitle": "Part number: the assembly’s short word and the number within it, e.g. “Herd 2”. The same everywhere: parts column, cutting list, nesting, shop drawings, assembly instruction.",
+    "shortName": "Short word",
+    "shortNameTitle": "Short word for this assembly’s part numbers ({{example}} …). Click to change; empty = first word of the name.",
+    "editShortName": "Change short word",
+    "doubled": "“{{word}}” is used by another assembly too – the part numbers would repeat. Click to change.",
+    "taken": "Another assembly already uses the short word “{{word}}”.",
+    "renumber": "Renumber parts",
+    "renumberHint": "Numbers the parts of every assembly again (1, 2, 3 …), without gaps. Meant for just before printing.",
+    "renumberConfirm": "Renumber all parts? Parts already labelled will no longer match the lists.",
+    "renumbered": "Parts renumbered. Undo with {{undo}}."
+  },
   "fileChanged": {
     "title": "File changed outside the app",
     "question": "The file is newer than the saved state – reload it?",

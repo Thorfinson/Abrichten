@@ -20,8 +20,9 @@ function dxfText(s: string): string {
  *
  * Each board is drawn as its face (boardFace: the two dimensions besides the
  * thickness). Boards are laid out in a row separated by a 50 mm gap.
+ * `labels`: the part labels ("Herd 2", utils/partLabel) by board id, put in front of the names.
  */
-export function exportDxf(boards: Board[]): string {
+export function exportDxf(boards: Board[], labels?: Map<string, string>): string {
   const lines: string[] = []
 
   // ── HEADER ──────────────────────────────────────────────────────────────
@@ -135,7 +136,8 @@ export function exportDxf(boards: Board[]): string {
     lines.push('0', 'TEXT', '8', 'TEXT')
     lines.push('10', (x0 + 4).toFixed(3), '20', (y0 + 4).toFixed(3), '30', '0.0')
     lines.push('40', '8')
-    lines.push('1', dxfText(`${board.name}  ${w}x${d}x${face.thickness}mm`))
+    const label = labels?.get(board.id)
+    lines.push('1', dxfText(`${label ? `${label}  ` : ''}${board.name}  ${w}x${d}x${face.thickness}mm`))
 
     offsetX += w + GAP
   }

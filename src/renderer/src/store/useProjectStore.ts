@@ -5,6 +5,7 @@ import { validateProject, isDimension, cleanName, MAX_QUANTITY } from '../utils/
 import { isBoardRole } from '../utils/boardRole'
 import { cleanSteps } from '../utils/assemblySteps'
 import { subtreeIds } from '../utils/assemblyTree'
+import { cleanShortName, numberParts, renumberParts, shortNameOf } from '../utils/partLabel'
 import { evalFormula, isParamName, formulaParams, renameFormulaParam } from '../utils/formulaEval'
 
 function uid(): string {
@@ -135,6 +136,11 @@ interface ProjectState {
   /** Removes the assembly with everything nested below it. */
   removeAssembly: (id: string) => void
   renameAssembly: (id: string, name: string) => void
+  /** Short word for the part labels ("Herd" → "Herd 2"); '' goes back to the first word of the name.
+   *  False (and nothing changes) when another assembly with parts already uses it. */
+  setAssemblyShortName: (id: string, shortName: string) => boolean
+  /** Every assembly's parts numbered 1, 2, 3 … in list order, without gaps (one undo step) */
+  renumberParts: () => void
   /** Places an assembly before/after a sibling or inside a group (targetId null + inside = top level). */
   moveAssembly: (id: string, targetId: string | null, where: AssemblyDrop) => void
   /** Visibility and X-ray apply to the whole subtree. */
@@ -233,7 +239,17 @@ const initialProject = createEmptyProject()
 
 export const useProjectStore = create<ProjectState>()(
   temporal(
-    (set, get) => ({
+    (rawSet, get) => {
+      // Every change that touches the parts numbers new ones (Board.partNo): the next
+      // free number of their assembly, in the same set — so in the same undo step.
+      const set: typeof rawSet = (partial, replace) => rawSet((s) => {
+        const next = typeof partial === 'function' ? partial(s) : partial
+        const assemblies = next.project?.assemblies
+        if (!assemblies || assemblies === s.project.assemblies) return next
+        const numbered = numberParts(assemblies)
+        return numbered === assemblies ? next : { ...next, project: { ...next.project!, assemblies: numbered } }
+      }, replace as false)
+      return ({
       project: initialProject,
       savedProject: initialProject,
 
@@ -294,6 +310,22 @@ export const useProjectStore = create<ProjectState>()(
       renameAssembly: (id, name) =>
         set((s) => withAssemblies(s, mapAssembly(s.project.assemblies, id, (a) => (a.name === name ? a : { ...a, name })))),
 
+      setAssemblyShortName: (id, shortName) => {
+        const list = get().project.assemblies
+        const target = list.find((a) => a.id === id)
+        if (!target) return false
+        const cleaned = cleanShortName(shortName) || undefined
+        const word = shortNameOf({ name: target.name, shortName: cleaned }).toLocaleLowerCase('de')
+        // two assemblies with the same word would give two parts the same label
+        if (list.some((a) => a.id !== id && a.boards.length > 0 && shortNameOf(a).toLocaleLowerCase('de') === word)) return false
+        set((s) => withAssemblies(s, mapAssembly(s.project.assemblies, id, (a) =>
+          (a.shortName === cleaned ? a : { ...a, shortName: cleaned }))))
+        return true
+      },
+
+      renumberParts: () =>
+        set((s) => withAssemblies(s, renumberParts(s.project.assemblies))),
+
       moveAssembly: (id, targetId, where) => {
         const list = get().project.assemblies
         const moving = list.find((a) => a.id === id)
@@ -346,7 +378,8 @@ export const useProjectStore = create<ProjectState>()(
 
       addBoard: (assemblyId, board) => {
         const id = uid()
-        set((s) => withAssemblies(s, mapAssembly(s.project.assemblies, assemblyId, (a) => ({ ...a, boards: [...a.boards, { ...board, id }] }))))
+        // a new part never brings a number: it gets the next free one of its assembly
+        set((s) => withAssemblies(s, mapAssembly(s.project.assemblies, assemblyId, (a) => ({ ...a, boards: [...a.boards, { ...board, id, partNo: undefined }] }))))
         return id
       },
 
@@ -365,6 +398,7 @@ export const useProjectStore = create<ProjectState>()(
         const duplicate: Board = {
           ...board,
           id: newId,
+          partNo: undefined,
           name: board.name + ' (Kopie)',
           position: {
             x: board.position.x + 20,
@@ -410,6 +444,7 @@ export const useProjectStore = create<ProjectState>()(
         const duplicates: Board[] = originals.map((b) => ({
           ...b,
           id: uid(),
+          partNo: undefined,
           name: b.name + ' (Kopie)',
           position: {
             x: b.position.x + 20,
@@ -462,7 +497,8 @@ export const useProjectStore = create<ProjectState>()(
         // an unknown target would swallow the boards
         if (!fromAssembly || !get().project.assemblies.some((a) => a.id === toAssemblyId)) return
         const idSet = new Set(boardIds)
-        const moving = fromAssembly.boards.filter((b) => idSet.has(b.id))
+        // in the new assembly the parts take its next numbers ("Herd 7" becomes "Eck 6")
+        const moving = fromAssembly.boards.filter((b) => idSet.has(b.id)).map((b) => ({ ...b, partNo: undefined }))
         if (moving.length === 0) return
         set((s) => ({
           project: {
@@ -499,7 +535,7 @@ export const useProjectStore = create<ProjectState>()(
 
       addBoardsBatch: (assemblyId, boards) => {
         const ids = boards.map(() => uid())
-        const newBoards: Board[] = boards.map((b, i) => ({ ...b, id: ids[i] }))
+        const newBoards: Board[] = boards.map((b, i) => ({ ...b, id: ids[i], partNo: undefined }))
         if (newBoards.length === 0) return ids
         set((s) => withAssemblies(s, mapAssembly(s.project.assemblies, assemblyId, (a) => ({ ...a, boards: [...a.boards, ...newBoards] }))))
         return ids
@@ -674,7 +710,7 @@ export const useProjectStore = create<ProjectState>()(
           return next.every((st, i) => st === list[i]) ? s : withSteps(s, next)
         }),
 
-    }),
+    })},
     {
       partialize: (state) => {
         const { project } = state

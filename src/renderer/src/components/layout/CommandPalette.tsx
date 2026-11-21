@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { openProjectFile, saveProjectFile, confirmDiscardChanges } from '../../services/projectFile'
+import { renumberPartsAsked } from '../../services/partNumbers'
 import { useUIStore, topModal } from '../../store/useUIStore'
 import { useProjectStore } from '../../store/useProjectStore'
 import { boardPresets, presetToBoard, type BoardPreset } from '../../data/board-presets'
@@ -206,6 +207,11 @@ export function CommandPalette() {
       description: lang === 'de' ? 'Werkstattzeichnungen (DXF/PDF)' : 'Shop drawings export (DXF/PDF)',
       keywords: ['zeichnung', 'drawing', 'plan', 'werkstatt', 'shop', 'dxf', 'pdf'],
       action: () => { setShow(false); ui().setShowShopDrawingsPanel(true) } },
+    { id: 'renumber-parts', category: 'export',
+      label: t('partLabel.renumber'),
+      description: t('partLabel.renumberHint'),
+      keywords: ['nummer', 'nummern', 'teilenummer', 'number', 'renumber', 'kurzwort', 'werkstatt', 'etikett', 'label'],
+      action: () => { setShow(false); renumberPartsAsked() } },
 
     // View
     { id: 'toggle-static', category: 'view',

@@ -9,6 +9,7 @@ import { uprightFace, boardFace } from '../../utils/boardFace'
 import { worldAligned } from '../../utils/projection'
 import type { Board } from '../../types/furniture'
 import { csvCell } from '../../utils/textSafety'
+import { partLabels } from '../../utils/partLabel'
 import { getCsvDelimiter } from '../layout/SettingsDialog'
 import { Dialog, Button, FIELD_CLASS, LABEL_CLASS, TH_CLASS, TD_CLASS, CHECK_CLASS } from '../ui/Dialog'
 
@@ -18,6 +19,8 @@ type HoleRow = 'left' | 'right' | 'hardware'
 interface BoringHole {
   boardId: string
   boardName: string
+  /** Part label, "Herd 2" (utils/partLabel) */
+  label: string
   assemblyName: string
   row: HoleRow
   x: number  // mm from left edge of the board face
@@ -38,7 +41,7 @@ const PREVIEW_HEIGHT_PX = 120
 const PREVIEW_PAD = 6
 
 function BoardBoringPreview({ board, holes, scale }: {
-  board: { id: string; name: string; width: number; height: number; depth: number }
+  board: { id: string; name: string; label: string; width: number; height: number; depth: number }
   holes: BoringHole[]
   scale: number
 }) {
@@ -62,7 +65,7 @@ function BoardBoringPreview({ board, holes, scale }: {
         ))}
       </svg>
       <figcaption className="max-w-[140px] text-center text-[11px] leading-tight">
-        <div className="truncate text-chrome-text" title={board.name}>{board.name}</div>
+        <div className="truncate text-chrome-text" title={board.name}><span className="font-mono font-semibold">{board.label}</span> {board.name}</div>
         <div className="font-mono text-chrome-muted">{face.x} × {face.y}</div>
       </figcaption>
     </figure>
@@ -96,22 +99,24 @@ export function BoringPanel() {
     const w = worldAligned(b)
     return w.height >= minHeight && boardFace(w).thicknessAxis === 'width'
   }
+  const labels = partLabels(project.assemblies)
   const allBoards = activeAssemblies(project).flatMap((a) =>
     a.boards
       .filter(isSidePanel)
-      .map((b) => ({ ...b, assemblyName: assemblyPath(project.assemblies, a.id) }))
+      .map((b) => ({ ...b, assemblyName: assemblyPath(project.assemblies, a.id), label: labels.get(b.id) ?? '' }))
   )
 
   const allHoles: BoringHole[] = allBoards.flatMap((b) => {
     // spacing is clamped and the row count capped in systemBoringRows (an empty field is 0)
     const grid: BoringHole[] = systemBoringRows(b, { spacing, startOffset, sideInset, diameter, depth })
-      .map(({ side, ...h }) => ({ ...h, row: side, boardId: b.id, boardName: b.name, assemblyName: b.assemblyName }))
+      .map(({ side, ...h }) => ({ ...h, row: side, boardId: b.id, boardName: b.name, label: b.label, assemblyName: b.assemblyName }))
     if (!autoFromHardware) return grid
 
     // Add hardware-inferred holes
     const inferred = inferBoringFromHardware(b).map((ih): BoringHole => ({
       boardId: b.id,
       boardName: b.name,
+      label: b.label,
       assemblyName: b.assemblyName,
       row: 'hardware',
       x: ih.x,
@@ -128,9 +133,9 @@ export function BoringPanel() {
 
   const handleExport = () => {
     const sep = getCsvDelimiter()
-    const headers = [t('cutting.assembly'), t('board.name'), t('boring.side'), 'X (mm)', 'Y (mm)', 'Ø (mm)', t('boring.depth')]
+    const headers = [t('partLabel.nr'), t('cutting.assembly'), t('board.name'), t('boring.side'), 'X (mm)', 'Y (mm)', 'Ø (mm)', t('boring.depth')]
     const rows = allHoles.map((h) =>
-      [h.assemblyName, h.boardName, rowLabel(h.row), h.x, h.y, h.diameter, h.depth].map(csvCell).join(sep)
+      [h.label, h.assemblyName, h.boardName, rowLabel(h.row), h.x, h.y, h.diameter, h.depth].map(csvCell).join(sep)
     )
     const csv = [headers.map(csvCell).join(sep), ...rows].join('\n')
     const filename = `${project.name}_boring.csv`
@@ -212,6 +217,7 @@ export function BoringPanel() {
           <table className="w-full border-collapse text-xs">
             <thead>
               <tr>
+                <th className={TH_CLASS}>{t('partLabel.nr')}</th>
                 <th className={TH_CLASS}>{t('cutting.assembly')}</th>
                 <th className={TH_CLASS}>{t('board.name')}</th>
                 <th className={TH_CLASS}>{t('boring.side')}</th>
@@ -223,6 +229,7 @@ export function BoringPanel() {
             <tbody>
               {allHoles.map((h, i) => (
                 <tr key={i} className="hover:bg-chrome-surface/40">
+                  <td className={`${TD_CLASS} whitespace-nowrap font-mono`}>{h.label}</td>
                   <td className={`${TD_CLASS} text-chrome-secondary`}>{h.assemblyName}</td>
                   <td className={TD_CLASS}>{h.boardName}</td>
                   <td className={TD_CLASS}>

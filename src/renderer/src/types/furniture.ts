@@ -78,6 +78,12 @@ export interface Board {
   grainDirection?: GrainDirection
   /** Part role (Bauteilart) for lists and costing; missing = not assigned */
   role?: BoardRole
+  /**
+   * Part number within its assembly (1, 2, 3 …), fixed once given. With the
+   * assembly's short word it is the part's label in every list and print:
+   * "Herd 2" (utils/partLabel.ts). The store fills in missing numbers.
+   */
+  partNo?: number
   edgeBanding?: EdgeBanding
   cutouts?: BoardCutout[]
   hardware?: AttachedHardware[]
@@ -100,6 +106,8 @@ export interface Assembly {
   visible: boolean
   /** X-ray highlight: group edges drawn through all other geometry */
   highlight?: boolean
+  /** Short word for the part labels ("Herd" → "Herd 2"); missing = the first word of the name */
+  shortName?: string
   boards: Board[]
   joints: Joint[]
 }

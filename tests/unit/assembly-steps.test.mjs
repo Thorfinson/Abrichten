@@ -261,7 +261,7 @@ test('store: a removed board leaves its step; replacing all steps cleans them', 
 
 const t = (key, opts = {}) => `${key}${Object.keys(opts).length ? JSON.stringify(opts) : ''}`
 
-test('instruction: a cover and one page per step, parts numbered, everything escaped', () => {
+test('instruction: a cover and one page per step, parts by their labels, everything escaped', () => {
   const xss = '<img src=x onerror=alert(1)>'
   const p = kitchen()
   p.name = xss
@@ -283,9 +283,11 @@ test('instruction: a cover and one page per step, parts numbered, everything esc
   const step2 = html.split('<section class="step">')[2]
   assert.match(step2, /<b>4 ×<\/b> joints\.f_wood_screw montage\.head_countersunk 4 × 40<span class="note">, vorgebohrt<\/span>/)
   assert.match(step2, /<b>6 ×<\/b> joints\.f_nail 1,2 × 25/)
-  // parts carry the cover's numbers; the cover lists them in step order, so the back is no. 1
+  // parts carry their labels (utils/partLabel), as in the cutting list: the back is the
+  // third part of "Unterschrank", on the cover and in its step alike
   const step1 = html.split('<section class="step">')[1]
-  assert.match(step1, /<td class="r">1<\/td><td class="r"><b>1 ×<\/b><\/td><td>back<\/td>/)
+  assert.match(step1, /<td class="nr">Unterschrank 3<\/td><td class="r"><b>1 ×<\/b><\/td><td>back<\/td>/)
+  assert.match(html.split('<section class="step">')[0], /<td class="nr">Unterschrank 3<\/td>/)
 })
 
 test('instruction: unplanned parts get their own page and a warning on the cover', () => {

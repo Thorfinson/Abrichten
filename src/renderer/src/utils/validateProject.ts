@@ -5,6 +5,7 @@ import type {
 import { cleanSteps } from './assemblySteps'
 import { sanitizeParents } from './assemblyTree'
 import { isBoardRole } from './boardRole'
+import { cleanShortName, isPartNo, numberParts } from './partLabel'
 import { isParamName } from './formulaEval'
 
 /** Largest accepted size or |position| in mm (100 m). Beyond it the boring and nesting loops blow up. */
@@ -44,10 +45,11 @@ export function validateProject(raw: unknown): Project {
   if (!Array.isArray(raw.assemblies)) throw new Error('"assemblies" missing')
   const parsed = raw.assemblies.map((a, i) => validateAssembly(a, `assemblies[${i}]`))
   const boardIds = new Set(parsed.flatMap(({ assembly }) => assembly.boards.map((b) => b.id)))
-  const assemblies = sanitizeParents(parsed.map(({ assembly, rawJoints }) => ({
+  // every part gets its number (older files: 1, 2, 3 … per assembly in list order)
+  const assemblies = numberParts(sanitizeParents(parsed.map(({ assembly, rawJoints }) => ({
     ...assembly,
     joints: rawJoints.flatMap((j) => validateJoint(j, boardIds))
-  })))
+  }))))
   return {
     ...raw,
     id: str(raw.id, crypto.randomUUID()),
@@ -78,6 +80,7 @@ function validateAssembly(a: unknown, path: string): { assembly: Assembly; rawJo
       id: str(a.id, crypto.randomUUID()),
       name: cleanName(a.name, 'Baugruppe'),
       visible: a.visible !== false,
+      shortName: cleanShortName(a.shortName) || undefined,
       boards,
       joints: []
     },
@@ -105,6 +108,7 @@ export function validateBoard(b: unknown, path: string): Board {
     color: color(b.color, '#D2B48C'),
     grainDirection: GRAIN_DIRECTIONS.includes(b.grainDirection as GrainDirection) ? (b.grainDirection as GrainDirection) : undefined,
     role: isBoardRole(b.role) ? b.role : undefined,
+    partNo: isPartNo(b.partNo) ? b.partNo : undefined,
     edgeBanding: isRecord(b.edgeBanding) ? (b.edgeBanding as Board['edgeBanding']) : undefined,
     cutouts: Array.isArray(b.cutouts) ? b.cutouts.flatMap(validateCutout) : undefined,
     hardware: Array.isArray(b.hardware) ? b.hardware.filter(isHardware) : undefined,
