@@ -21,6 +21,21 @@ export function useKeyboard() {
       // closes the dialog around it / deselects the board.
       if (e.defaultPrevented) return
 
+      const tag = (e.target as HTMLElement)?.tagName
+      const typing = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT'
+
+      // "Ctrl" below is Ctrl, or ⌘ on macOS; plain letters fire without either
+      // (utils/shortcutKeys). Letters compare in lower case: ⇧ / Caps Lock.
+      const cmd = isCmdKey(e)
+      const plain = noCmdKey(e)
+      const k = keyName(e)
+
+      // Undo, redo and select all outside a text field are the app's, also where
+      // they do nothing (during a drag, under a dialog). Left to the browser — on
+      // macOS the Edit menu, src/main/appMenu.ts — Ctrl+Z would undo the last
+      // edit of a text field that no longer has focus.
+      if (cmd && !typing && (k === 'z' || k === 'y' || k === 'a')) e.preventDefault()
+
       // Esc during a gizmo / board drag cancels it and restores the pre-drag state
       if (e.key === 'Escape' && isDragActive()) {
         e.preventDefault()
@@ -45,14 +60,7 @@ export function useKeyboard() {
       }
 
       // Don't intercept when user is typing in an input/textarea
-      const tag = (e.target as HTMLElement)?.tagName
-      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return
-
-      // "Ctrl" below is Ctrl, or ⌘ on macOS; plain letters fire without either
-      // (utils/shortcutKeys). Letters compare in lower case: ⇧ / Caps Lock.
-      const cmd = isCmdKey(e)
-      const plain = noCmdKey(e)
-      const k = keyName(e)
+      if (typing) return
 
       // Ctrl+S: save project — also while a modal is open (it changes nothing on screen)
       if (cmd && k === 's') {
