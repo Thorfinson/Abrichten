@@ -50,6 +50,9 @@ test('short word: set by the user, else the first word of the name', () => {
   assert.equal(defaultShortName('Herdfach'), 'Herdfach')
   assert.equal(defaultShortName('Fach 1'), 'Fach')
   assert.equal(defaultShortName('  Spülenfach mit Spülstein '), 'Spülenfach')
+  // the suggestion keeps the whole word: no "Unterkonstruktio 12"
+  assert.equal(defaultShortName('Unterkonstruktion'), 'Unterkonstruktion')
+  assert.equal(partLabel({ name: 'Unterkonstruktion' }, { partNo: 12 }), 'Unterkonstruktion 12')
   assert.equal(shortNameOf({ name: 'Herdfach', shortName: 'Herd' }), 'Herd')
   assert.equal(shortNameOf({ name: 'Herdfach', shortName: '   ' }), 'Herdfach')
   assert.equal(cleanShortName('  Unter\nbau  '), 'Unter bau')
@@ -175,4 +178,35 @@ test('DXF: the label in front of the name', async () => {
   const b = board('sw-l', { name: 'Seitenwand', width: 19, height: 710, depth: 540 })
   assert.match(exportDxf([b], new Map([['sw-l', 'Herd 1']])), /Herd 1 {2}Seitenwand {2}710x540x19mm/)
   assert.match(exportDxf([b]), /\nSeitenwand {2}710x540x19mm/)
+})
+
+test('the AI assistant sees the part labels too', async () => {
+  const { serializeProjectContext } = await import('../../src/renderer/src/services/chat.ts')
+  ui().setAssemblyShortName('herd', 'Herd')
+  const ctx = serializeProjectContext(ui().project, 'de', 20)
+  assert.match(ctx, /Teilenummer \(Kurzwort der Baugruppe und Nummer/)
+  assert.match(ctx, /\n- Herd 1 Seitenwand Herdfach links: 600x18x560mm/)
+  assert.match(ctx, /\n- Schubkasten 2 sk-boden: /)
+})
+
+test('a part without a number has no label (no "Herd –")', () => {
+  const raw = [asm('a', 'Herdfach', [board('x'), board('y', { partNo: 3 })])]
+  assert.deepEqual([...partLabels(raw)], [['y', 'Herdfach 3']])
+})
+
+test('renaming an assembly keeps its part labels', () => {
+  ui().renameAssembly('herd', 'Kochfeld links')
+  assert.equal(labels().get('sw-l'), 'Herdfach 1')
+  assert.equal(ui().project.assemblies.find((a) => a.id === 'herd').shortName, 'Herdfach')
+  // a word of its own stays as it is; an assembly without parts needs none
+  ui().setAssemblyShortName('schub', 'Schub')
+  ui().renameAssembly('schub', 'Auszug')
+  assert.equal(labels().get('front'), 'Schub 1')
+  ui().renameAssembly('k', 'Küche 5')
+  assert.equal(ui().project.assemblies.find((a) => a.id === 'k').shortName, undefined)
+  // one undo step each (four changes): the first brings back name and word together
+  for (let i = 0; i < 4; i++) useProjectStore.temporal.getState().undo()
+  const herd = ui().project.assemblies.find((a) => a.id === 'herd')
+  assert.equal(herd.name, 'Herdfach')
+  assert.equal(herd.shortName, undefined)
 })

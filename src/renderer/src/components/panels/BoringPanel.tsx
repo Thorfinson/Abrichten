@@ -10,6 +10,8 @@ import { worldAligned } from '../../utils/projection'
 import type { Board } from '../../types/furniture'
 import { csvCell } from '../../utils/textSafety'
 import { partLabels } from '../../utils/partLabel'
+import { partTitle } from '../../utils/partLabel'
+import { PartName } from '../ui/PartName'
 import { getCsvDelimiter } from '../layout/SettingsDialog'
 import { Dialog, Button, FIELD_CLASS, LABEL_CLASS, TH_CLASS, TD_CLASS, CHECK_CLASS } from '../ui/Dialog'
 
@@ -18,7 +20,7 @@ type HoleRow = 'left' | 'right' | 'hardware'
 
 interface BoringHole {
   boardId: string
-  boardName: string
+  boardName: string // part-name-ok: the label has its own field and column
   /** Part label, "Herd 2" (utils/partLabel) */
   label: string
   assemblyName: string
@@ -51,7 +53,7 @@ function BoardBoringPreview({ board, holes, scale }: {
   const boardHoles = holes.filter((ho) => ho.boardId === board.id)
   return (
     <figure className="flex shrink-0 flex-col items-center gap-1">
-      <svg width={w + 2 * PREVIEW_PAD} height={h + 2 * PREVIEW_PAD} role="img" aria-label={`${board.name}: ${boardHoles.length}`}>
+      <svg width={w + 2 * PREVIEW_PAD} height={h + 2 * PREVIEW_PAD} role="img" aria-label={`${partTitle(board.label, board.name)}: ${boardHoles.length}`}>
         <rect x={PREVIEW_PAD} y={PREVIEW_PAD} width={w} height={h} rx={1} fill="#d9c6a5" stroke="#a1a1aa" strokeWidth={0.75} />
         {boardHoles.map((ho, i) => (
           <circle key={i}
@@ -65,7 +67,7 @@ function BoardBoringPreview({ board, holes, scale }: {
         ))}
       </svg>
       <figcaption className="max-w-[140px] text-center text-[11px] leading-tight">
-        <div className="truncate text-chrome-text" title={board.name}><span className="font-mono font-semibold">{board.label}</span> {board.name}</div>
+        <div className="truncate text-chrome-text" title={partTitle(board.label, board.name)}><PartName label={board.label} name={board.name} labelClassName="font-semibold" /></div>
         <div className="font-mono text-chrome-muted">{face.x} × {face.y}</div>
       </figcaption>
     </figure>
@@ -109,13 +111,13 @@ export function BoringPanel() {
   const allHoles: BoringHole[] = allBoards.flatMap((b) => {
     // spacing is clamped and the row count capped in systemBoringRows (an empty field is 0)
     const grid: BoringHole[] = systemBoringRows(b, { spacing, startOffset, sideInset, diameter, depth })
-      .map(({ side, ...h }) => ({ ...h, row: side, boardId: b.id, boardName: b.name, label: b.label, assemblyName: b.assemblyName }))
+      .map(({ side, ...h }) => ({ ...h, row: side, boardId: b.id, boardName: b.name, label: b.label, assemblyName: b.assemblyName })) // part-name-ok: label alongside
     if (!autoFromHardware) return grid
 
     // Add hardware-inferred holes
     const inferred = inferBoringFromHardware(b).map((ih): BoringHole => ({
       boardId: b.id,
-      boardName: b.name,
+      boardName: b.name, // part-name-ok: label alongside
       label: b.label,
       assemblyName: b.assemblyName,
       row: 'hardware',
@@ -135,7 +137,8 @@ export function BoringPanel() {
     const sep = getCsvDelimiter()
     const headers = [t('partLabel.nr'), t('cutting.assembly'), t('board.name'), t('boring.side'), 'X (mm)', 'Y (mm)', 'Ø (mm)', t('boring.depth')]
     const rows = allHoles.map((h) =>
-      [h.label, h.assemblyName, h.boardName, rowLabel(h.row), h.x, h.y, h.diameter, h.depth].map(csvCell).join(sep)
+      [h.label, h.assemblyName, h.boardName, rowLabel(h.row), // part-name-ok: label in the first column
+       h.x, h.y, h.diameter, h.depth].map(csvCell).join(sep)
     )
     const csv = [headers.map(csvCell).join(sep), ...rows].join('\n')
     const filename = `${project.name}_boring.csv`
@@ -231,6 +234,7 @@ export function BoringPanel() {
                 <tr key={i} className="hover:bg-chrome-surface/40">
                   <td className={`${TD_CLASS} whitespace-nowrap font-mono`}>{h.label}</td>
                   <td className={`${TD_CLASS} text-chrome-secondary`}>{h.assemblyName}</td>
+                  {/* part-name-ok: the label has the first column */}
                   <td className={TD_CLASS}>{h.boardName}</td>
                   <td className={TD_CLASS}>
                     <span className="mr-1.5 inline-block h-2 w-2 rounded-full" style={{ background: ROW_COLOR[h.row] }} aria-hidden="true" />

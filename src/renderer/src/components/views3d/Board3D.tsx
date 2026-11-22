@@ -1,7 +1,7 @@
 import React, { memo, useRef, useEffect, useMemo, useState } from 'react'
 import { useThree, useFrame } from '@react-three/fiber'
 import { useTranslation } from 'react-i18next'
-import { useUIStore, useCanvasView } from '../../store/useUIStore'
+import { useUIStore, useCanvasView, shownStep } from '../../store/useUIStore'
 import { useProjectStore } from '../../store/useProjectStore'
 import { TransformControls, Line, Html } from '@react-three/drei'
 import { snapToGrid } from '../../utils/geometry'
@@ -82,7 +82,7 @@ function snapCandidates(moving: string[]): Board[] {
  * as the assembly X-ray, decided per board.
  */
 export const Board3D = memo(function Board3D(props: Board3DProps) {
-  const current = useUIStore((s) => (s.assemblyMode ? s.assemblyStep : -1))
+  const current = useUIStore(shownStep)
   const steps = useProjectStore((s) => s.project.assemblySteps)
   const state = boardStepState(steps, current, props.board.id)
   if (state === 'hidden') return null

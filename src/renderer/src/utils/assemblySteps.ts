@@ -42,6 +42,26 @@ export function boardStepState(steps: AssemblyStep[] | undefined, current: numbe
 }
 
 /**
+ * The boards the step view hides while step `current` is shown (current < 0: no step
+ * view, nothing hidden): parts of later steps and parts in no step. One rule for
+ * everything that shows or picks parts in the assembly workspace — the 3D boards
+ * (boardStepState), the layers drawn over them, ⌘A and the marquee.
+ */
+export function stepHiddenIds(project: Pick<Project, 'assemblies' | 'assemblySteps'>, current: number): Set<string> {
+  const hidden = new Set<string>()
+  const steps = project.assemblySteps
+  if (!steps || steps.length === 0 || current < 0) return hidden
+  const at = stepIndexOf(steps)
+  for (const a of project.assemblies) {
+    for (const b of a.boards) {
+      const i = at.get(b.id)
+      if (i === undefined || i > current) hidden.add(b.id)
+    }
+  }
+  return hidden
+}
+
+/**
  * Steps checked against the project's boards: unknown ids go, and a board stays only
  * in the first step that lists it. The same array when nothing had to change.
  */
@@ -164,10 +184,12 @@ export function partLines(boards: Board[]): PartLine[] {
   const lines = new Map<string, PartLine>()
   for (const b of boards) {
     const d = cuttingDims(b)
+    // part-name-ok: the name is the grouping key; the print puts the labels in front (joinLabels)
     const key = `${b.name}|${b.materialId}|${b.role ?? ''}|${d.length}|${d.width}|${d.thickness}`
     const prev = lines.get(key)
-    if (prev) { prev.qty++; prev.boardIds.push(b.id) }
-    else lines.set(key, { name: b.name, materialId: b.materialId, role: b.role, length: d.length, width: d.width, thickness: d.thickness, qty: 1, boardIds: [b.id] })
+    if (prev) { prev.qty++; prev.boardIds.push(b.id); continue }
+    // part-name-ok: as above
+    lines.set(key, { name: b.name, materialId: b.materialId, role: b.role, length: d.length, width: d.width, thickness: d.thickness, qty: 1, boardIds: [b.id] })
   }
   return [...lines.values()]
 }

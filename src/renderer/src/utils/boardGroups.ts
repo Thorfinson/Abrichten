@@ -67,6 +67,6 @@ export function groupBoards(
     g.items.push(it)
   }
   return [...groups.values()]
-    .sort((a, b) => a.name.localeCompare(b.name, lang) || a.thickness - b.thickness)
+    .sort((a, b) => a.name.localeCompare(b.name, lang) || a.thickness - b.thickness) // part-name-ok: material groups, not parts
     .map((g) => ({ key: g.key, label: g.label, labelIsKey: g.labelIsKey, color: g.color, items: g.items }))
 }

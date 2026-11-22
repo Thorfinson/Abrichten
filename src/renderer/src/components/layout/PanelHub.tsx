@@ -42,6 +42,7 @@ export function PanelHub() {
   const setShowParameters     = useUIStore((s) => s.setShowParametersPanel)
   const setShowStaticSummary  = useUIStore((s) => s.setShowStaticSummary)
   const setShowMeasurement    = useUIStore((s) => s.setShowMeasurementPanel)
+  const setShowCuttingList    = useUIStore((s) => s.setShowCuttingList)
   const setShowNesting        = useUIStore((s) => s.setShowNestingPanel)
   const setShowBoring         = useUIStore((s) => s.setShowBoringPanel)
   const setShowHardware       = useUIStore((s) => s.setShowHardwarePanel)
@@ -156,11 +157,19 @@ export function PanelHub() {
       titleEn: 'Production',
       items: [
         {
+          icon: 'table',
+          labelDe: t('cutting.title', { lng: 'de' }),
+          labelEn: t('cutting.title', { lng: 'en' }),
+          descDe: 'Alle Teile mit Nummer, Maßen, Faser und Kanten; Druck, CSV, DXF',
+          descEn: 'Every part with number, sizes, grain and edges; print, CSV, DXF',
+          action: () => open(setShowCuttingList)
+        },
+        {
           icon: 'nesting',
-          labelDe: 'Nesting / Zuschnitt',
-          labelEn: 'Nesting / Layout',
-          descDe: 'Zuschnittoptimierung mit SVG-Export',
-          descEn: 'Cutting optimization with SVG export',
+          labelDe: t('nesting.title', { lng: 'de' }),
+          labelEn: t('nesting.title', { lng: 'en' }),
+          descDe: 'Teile auf Platten verteilt, mit Verschnitt; SVG-Export',
+          descEn: 'Parts laid out on sheets, with waste; SVG export',
           action: () => open(setShowNesting)
         },
         {

@@ -136,7 +136,7 @@ export function exportDxf(boards: Board[], labels?: Map<string, string>): string
     lines.push('0', 'TEXT', '8', 'TEXT')
     lines.push('10', (x0 + 4).toFixed(3), '20', (y0 + 4).toFixed(3), '30', '0.0')
     lines.push('40', '8')
-    const label = labels?.get(board.id)
+    const label = labels?.get(board.id) // part-name-ok: the label goes in front of the name below
     lines.push('1', dxfText(`${label ? `${label}  ` : ''}${board.name}  ${w}x${d}x${face.thickness}mm`))
 
     offsetX += w + GAP

@@ -126,7 +126,7 @@ test.describe('Dialogs', () => {
   test('nesting optimises on open and again when an input changes', async ({ page }) => {
     await bootWithSample(page)
     await open(page, 'setShowNestingPanel')
-    const dialog = page.getByRole('dialog', { name: /Zuschnittoptimierung|Nesting/ })
+    const dialog = page.getByRole('dialog', { name: /Plattenbelegung|Sheet layout/ })
     await expect(dialog.getByTestId('nesting-preview').locator('svg')).toBeVisible()
     await expect(dialog.getByRole('status')).toContainText(/Gesamt: 2 Platten|Total: 2 Sheets/i)
     await expect(dialog.getByRole('button', { name: /^(Optimieren|Optimize)$/ })).toHaveCount(0)

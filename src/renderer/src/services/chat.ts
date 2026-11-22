@@ -1,6 +1,7 @@
 import type { Project } from '../types/furniture'
 import { getMaterialById } from '../data/materials'
 import { activeAssemblies, activeJoints } from '../utils/activeParts'
+import { partLabels, partTitle } from '../utils/partLabel'
 import { GRAVITY } from './static-calc'
 import { simulateStatics, type BoardStatic } from './static-sim'
 
@@ -114,6 +115,11 @@ Respond in English.`
   context += isDe
     ? `Aktuelles Projekt: "${project.name}"\n`
     : `Current project: "${project.name}"\n`
+  // the part labels the user sees on every list and print ("Herd 2"), so they can be referred to
+  const labels = partLabels(project.assemblies)
+  context += isDe
+    ? 'Jedes Bauteil beginnt mit seiner Teilenummer (Kurzwort der Baugruppe und Nummer, z. B. "Herd 2"), so wie sie in allen Listen und auf den Teilen steht.\n'
+    : 'Each part starts with its part number (the assembly\'s short word and a number, e.g. "Herd 2"), as on every list and on the parts.\n'
 
   const warnings: string[] = []
   // The load simulation sees the same boards as the 3D heat map: visible assemblies
@@ -132,7 +138,7 @@ Respond in English.`
     for (const board of assembly.boards) {
       const mat = getMaterialById(board.materialId, project.customMaterials)
       const matName = mat ? (isDe ? mat.name : mat.nameEn) : board.materialId
-      context += `- ${board.name}: ${board.width}x${board.height}x${board.depth}mm, ${matName}`
+      context += `- ${partTitle(labels.get(board.id), board.name)}: ${board.width}x${board.height}x${board.depth}mm, ${matName}`
       context += `, pos(${board.position.x},${board.position.y},${board.position.z})`
       if (board.rotation.x || board.rotation.y || board.rotation.z) {
         context += `, rot(${board.rotation.x},${board.rotation.y},${board.rotation.z})`
@@ -140,7 +146,7 @@ Respond in English.`
       context += '\n'
 
       // Same simulation as the static heat map and the static summary
-      const note = staticNote(board.name, sim.results.get(board.id), isDe)
+      const note = staticNote(partTitle(labels.get(board.id), board.name), sim.results.get(board.id), isDe)
       if (note) warnings.push(note)
     }
   }

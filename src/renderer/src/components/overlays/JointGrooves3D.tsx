@@ -1,6 +1,7 @@
 import type { JSX } from 'react'
 import { useProjectStore } from '../../store/useProjectStore'
 import { useUIStore } from '../../store/useUIStore'
+import { useStepHidden } from '../../hooks/useStepHidden'
 import { grooveBox } from '../../utils/geometry'
 
 /**
@@ -11,6 +12,7 @@ import { grooveBox } from '../../utils/geometry'
 export function JointGrooves3D() {
   const showJointMarkers = useUIStore((s) => s.showJointMarkers)
   const project = useProjectStore((s) => s.project)
+  const hidden = useStepHidden()
 
   if (!showJointMarkers) return null
 
@@ -27,7 +29,8 @@ export function JointGrooves3D() {
 
       const boardA = boardMap.get(joint.boardA)
       const boardB = boardMap.get(joint.boardB)
-      if (!boardA || !boardB) continue
+      // a groove of a part the assembly step view hides is not drawn
+      if (!boardA || !boardB || hidden.has(boardA.id) || hidden.has(boardB.id)) continue
 
       const { centre, size } = grooveBox(joint.position, boardA, boardB)
       grooves.push(

@@ -68,7 +68,7 @@ export function planBars(parts: BarPart[], settings: BarSettings, customMaterial
     groups.set(key, [...(groups.get(key) ?? []), p])
   }
   return [...groups.values()].map((list) => {
-    const sorted = [...list].sort((a, b) => b.length - a.length || a.name.localeCompare(b.name))
+    const sorted = [...list].sort((a, b) => b.length - a.length || a.name.localeCompare(b.name)) // part-name-ok: sort key
     const bars: { pieces: BarPart[]; used: number }[] = []
     const tooLong: BarPart[] = []
     for (const p of sorted) {

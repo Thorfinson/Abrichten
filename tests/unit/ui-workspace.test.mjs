@@ -18,30 +18,31 @@ Object.defineProperty(globalThis, 'localStorage', {
   configurable: true,
   value: { getItem: (k) => mem.get(k) ?? null, setItem: (k, v) => mem.set(k, String(v)), removeItem: (k) => mem.delete(k) }
 })
-const { useUIStore } = await import('../../src/renderer/src/store/useUIStore.ts')
+const { useUIStore, shownStep } = await import('../../src/renderer/src/store/useUIStore.ts')
 const { groupBoards, ROLE_COLORS, NO_ROLE_COLOR } = await import('../../src/renderer/src/utils/boardGroups.ts')
 
 const ui = () => useUIStore.getState()
 
-test('the assembly workspace is assembly mode, both ways', () => {
+test('the assembly workspace is assembly mode, both ways (one state, no second flag)', () => {
   assert.equal(ui().workspace, 'design')
+  assert.equal(shownStep(ui()), -1, 'no step view in design')
   ui().selectBoard('a', 'b1')
   ui().setWorkspace('assembly')
-  assert.equal(ui().assemblyMode, true)
+  assert.equal(shownStep(ui()), ui().assemblyStep)
+  assert.equal('assemblyMode' in ui(), false)
   assert.deepEqual(ui().selectedBoardIds, [], 'entering assembly clears the selection')
   ui().setAssemblyMode(false)
   assert.equal(ui().workspace, 'design')
   ui().setAssemblyMode(true)
   assert.equal(ui().workspace, 'assembly')
   ui().setWorkspace('design')
-  assert.equal(ui().assemblyMode, false)
+  assert.equal(shownStep(ui()), -1)
 })
 
 test('an unknown or removed workspace changes nothing', () => {
   for (const w of ['production', 'kitchen']) {
     ui().setWorkspace(w)
     assert.equal(ui().workspace, 'design')
-    assert.equal(ui().assemblyMode, false)
   }
 })
 

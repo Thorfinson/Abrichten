@@ -2,6 +2,7 @@ import { memo, useMemo } from 'react'
 import { Line, Html } from '@react-three/drei'
 import { useProjectStore } from '../../store/useProjectStore'
 import { useUIStore, useCanvasView } from '../../store/useUIStore'
+import { useStepHidden } from '../../hooks/useStepHidden'
 import { boardCorners3D } from '../../utils/projection'
 import { formatValue } from '../../utils/units'
 import type { Board } from '../../types/furniture'
@@ -277,6 +278,7 @@ export function DimensionOverlay() {
   const activeView = useCanvasView()
   const selectedAssemblyId = useUIStore((s) => s.selectedAssemblyId)
   const showAssemblyDims = useUIStore((s) => s.showAssemblyDims)
+  const hidden = useStepHidden()
 
   const selectedBoards = useMemo(() => {
     if (selectedBoardIds.length === 0) return []
@@ -290,8 +292,9 @@ export function DimensionOverlay() {
   const assemblyBoards = useMemo(() => {
     if (!showAssemblyDims || !selectedAssemblyId) return []
     const assembly = project.assemblies.find((a) => a.id === selectedAssemblyId)
-    return assembly?.boards ?? []
-  }, [project.assemblies, selectedAssemblyId, showAssemblyDims])
+    // the overall size of what the assembly step view shows
+    return (assembly?.boards ?? []).filter((b) => !hidden.has(b.id))
+  }, [project.assemblies, selectedAssemblyId, showAssemblyDims, hidden])
 
   // Sort boards by a primary axis position to make stagger order predictable
   const sortedBoards = useMemo(() => {

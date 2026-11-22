@@ -24,8 +24,9 @@ export function cleanShortName(v: unknown): string {
   return v.replace(CONTROL_CHARS, ' ').replace(/\s+/g, ' ').trim().slice(0, MAX_SHORT_NAME).trim()
 }
 
-/** The first word of the assembly name: "Herdfach links" → "Herdfach". */
-export const defaultShortName = (name: string): string => cleanShortName(name.split(/\s+/).find(Boolean) ?? name)
+/** The first word of the assembly name, whole: "Herdfach links" → "Herdfach" (the length limit is for words you type). */
+export const defaultShortName = (name: string): string =>
+  (name.replace(CONTROL_CHARS, ' ').split(/\s+/).find(Boolean) ?? '').trim()
 
 /** The assembly's short word: set by the user, else the first word of its name. */
 export const shortNameOf = (a: Pick<Assembly, 'name' | 'shortName'>): string =>
@@ -38,10 +39,17 @@ export const isPartNo = (n: unknown): n is number => typeof n === 'number' && Nu
 export const partLabel = (a: Pick<Assembly, 'name' | 'shortName'>, b: Pick<Board, 'partNo'>): string =>
   `${shortNameOf(a)} ${isPartNo(b.partNo) ? b.partNo : '–'}`
 
-/** The label of every part, by board id. */
+/**
+ * How a part is named in running text, options and tooltips: label and name,
+ * "Herd 2 Seitenwand Herdfach rechts". Every place that names a part uses this
+ * (or components/ui/PartName in JSX); tests/unit/part-name-guard.test.mjs checks it.
+ */
+export const partTitle = (label: string | undefined, name: string): string => (label ? `${label} ${name}` : name)
+
+/** The label of every numbered part, by board id (the store numbers every part; one without stays unlabelled). */
 export function partLabels(assemblies: Assembly[]): Map<string, string> {
   const out = new Map<string, string>()
-  for (const a of assemblies) for (const b of a.boards) out.set(b.id, partLabel(a, b))
+  for (const a of assemblies) for (const b of a.boards) if (isPartNo(b.partNo)) out.set(b.id, partLabel(a, b))
   return out
 }
 

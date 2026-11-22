@@ -12,6 +12,8 @@ import { boardFace, edgeBandingLengthMm } from '../../utils/boardFace'
 import { worldAligned } from '../../utils/projection'
 import { roleKey } from '../../utils/boardRole'
 import { partLabel } from '../../utils/partLabel'
+import { usePartLabels } from '../../hooks/usePartLabels'
+import { PartName } from '../ui/PartName'
 import { BOARD_ROLES, type Board, type BoardCutout, type BoardRole, type EdgeBanding, type Fastener, type MaterialCategory, type Vec3 } from '../../types/furniture'
 
 /** Dark <option>/<optgroup> styling so native dropdowns are readable on the
@@ -284,6 +286,7 @@ export function FloatingPropertiesCard() {
   const setShowJointDialog  = useUIStore((s) => s.setShowJointDialog)
   const showStaticOverlay   = useUIStore((s) => s.showStaticOverlay)
   const [openSections, toggleSection] = useOpenSections()
+  const labels = usePartLabels()
 
   if (selectedBoardIds.length === 0 || !selectedAssemblyId) return null
 
@@ -488,11 +491,11 @@ export function FloatingPropertiesCard() {
           style={{ background: board.color }}
         />
         <span className="shrink-0 font-mono text-[10px] text-white/60" data-testid="card-part-label" title={t('partLabel.nrTitle')}>
-          {partLabel(assembly, board)}
+          {labels.get(board.id) ?? partLabel(assembly, board)}
         </span>
         <CommitInput
           key={board.id}
-          type="text"
+          type="text" /* part-name-ok: the field edits the name; the label stands just before it */
           value={board.name}
           onCommit={(name) => updateBoard(assembly.id, board.id, { name })}
           className="flex-1 bg-transparent text-[11px] font-medium text-white outline-none min-w-0 truncate"
@@ -702,7 +705,7 @@ export function FloatingPropertiesCard() {
                     className="flex-1 min-w-0 text-left text-white/70 rounded px-1 -mx-1 hover:bg-white/10 hover:text-white outline-none focus-visible:ring-1 focus-visible:ring-action"
                     title={t('func.jointEdit')}
                   >
-                    <span className="block truncate">{t(`joints.${j.type}`)} · {partner?.name ?? '?'}</span>
+                    <span className="block truncate">{t(`joints.${j.type}`)} · {partner ? <PartName label={labels.get(partner.id)} name={partner.name} /> : '?'}</span>
                     {detail && <span className="block truncate text-white/40" title={detail}>{detail}</span>}
                   </button>
                   <button

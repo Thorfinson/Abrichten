@@ -1,5 +1,6 @@
 import { useState, useCallback, useEffect, useRef } from 'react'
-import { useUIStore, useCanvasView } from '../../store/useUIStore'
+import { useUIStore, useCanvasView, shownStep } from '../../store/useUIStore'
+import { stepHiddenIds } from '../../utils/assemblySteps'
 import { useProjectStore } from '../../store/useProjectStore'
 import type { ViewMode } from '../../types/measurement'
 import { cameraDragFor } from '../../utils/canvasInput'
@@ -85,10 +86,13 @@ export function MarqueeSelect({ canvasRef, cameraRef }: MarqueeSelectProps) {
       // Find all boards that overlap with the marquee rectangle, per assembly
       const project = useProjectStore.getState().project
       const hits = new Map<string, string[]>()
+      // parts the assembly step view hides cannot be picked (Del would remove what you cannot see)
+      const hidden = stepHiddenIds(project, shownStep(useUIStore.getState()))
 
       for (const assembly of project.assemblies) {
         if (assembly.visible === false) continue
         for (const board of assembly.boards) {
+          if (hidden.has(board.id)) continue
           // Board AABB in world space (position is corner, not center)
           const bMinW = board.position[wAxis]
           const bMaxW = board.position[wAxis] + (wAxis === 'x' ? board.width : wAxis === 'y' ? board.height : board.depth)

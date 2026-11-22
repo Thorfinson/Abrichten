@@ -17,7 +17,8 @@ test.describe('Assembly drawer', () => {
       return ''
     }, firstBoardId)
     await page.evaluate(() => window.__uiStore.getState().setShowAssemblyDrawer(true))
-    const item = page.locator(`[title^="${name} ·"]`)
+    // the row's tooltip names the part with its label: "Wandschrank 1 Seitenwand Links · …"
+    const item = page.locator(`[title^="Wandschrank 1 ${name} ·"]`)
     await expect(item).toHaveCount(0)
 
     await page.evaluate(({ a, b }) => window.__uiStore.getState().selectBoard(a, b), { a: assemblyId, b: firstBoardId })
