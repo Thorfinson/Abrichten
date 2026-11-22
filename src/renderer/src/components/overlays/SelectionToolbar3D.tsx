@@ -8,6 +8,8 @@ import type { Vec3 } from '../../types/furniture'
 import { HTML_Z_RANGE } from '../canvasTheme'
 import { Icon } from '../layout/Icon'
 import { clampCentre } from '../layout/layoutRules'
+import { usePartLabels } from '../../hooks/usePartLabels'
+import { PartName } from '../ui/PartName'
 
 /** Lift above the board's top centre so the pill clears the TC gizmo (~70 px) */
 const LIFT_PX = 80
@@ -28,6 +30,7 @@ export function SelectionToolbar3D() {
 
   const transformMode  = useUIStore((s) => s.transformMode)
   const project        = useProjectStore((s) => s.project)
+  const labels         = usePartLabels()
   const removeBoard    = useProjectStore((s) => s.removeBoard)
   const duplicateBoard = useProjectStore((s) => s.duplicateBoard)
   const updateBoard    = useProjectStore((s) => s.updateBoard)
@@ -95,8 +98,8 @@ export function SelectionToolbar3D() {
           style={{ background: board.color }}
         />
         {/* Board name */}
-        <span className="text-[11px] font-medium max-w-[120px] truncate">
-          {board.name}
+        <span className="text-[11px] font-medium max-w-[180px] truncate" data-testid="selection-pill-name">
+          <PartName label={labels.get(board.id)} name={board.name} labelClassName="text-chrome-muted" />
         </span>
         {/* Divider */}
         <span className="w-px h-3.5 bg-chrome-divider mx-1" />

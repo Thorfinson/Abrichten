@@ -6,6 +6,9 @@ import { useUIStore } from '../../store/useUIStore'
 import { computeJointPosition } from '../../utils/geometry'
 import { MAX_QUANTITY } from '../../utils/validateProject'
 import { useDialogFocus } from '../../hooks/useKeyboard'
+import { usePartLabels } from '../../hooks/usePartLabels'
+import { partTitle } from '../../utils/partLabel'
+import { PartName } from '../ui/PartName'
 import type { Board, Fastener, FastenerType, Joint, JointType } from '../../types/furniture'
 
 const JOINT_TYPES: JointType[] = ['butt', 'miter', 'dado', 'rabbet', 'dowel', 'biscuit', 'screw', 'pocket_screw', 'lap', 'glued']
@@ -108,6 +111,7 @@ function JointForm({ ownerId, joint }: JointFormProps) {
   const setShowJointDialog = useUIStore((s) => s.setShowJointDialog)
   const selectedBoardIds   = useUIStore((s) => s.selectedBoardIds)
   const project     = useProjectStore((s) => s.project)
+  const labels      = usePartLabels()
   const addJoint    = useProjectStore((s) => s.addJoint)
   const updateJoint = useProjectStore((s) => s.updateJoint)
   const removeJoint = useProjectStore((s) => s.removeJoint)
@@ -190,12 +194,12 @@ function JointForm({ ownerId, joint }: JointFormProps) {
           <div className="grid grid-cols-2 gap-2">
             <div className="min-w-0">
               <div className="text-xs text-chrome-secondary mb-1">{lang === 'de' ? 'Bauteil A' : 'Board A'}</div>
-              <div className={readonlyBoard}>{boardA?.name ?? '?'}</div>
+              <div className={readonlyBoard}>{boardA ? <PartName label={labels.get(boardA.id)} name={boardA.name} /> : '?'}</div>
             </div>
             <div className="min-w-0">
               <div className="text-xs text-chrome-secondary mb-1">{lang === 'de' ? 'Bauteil B' : 'Board B'}</div>
               {editing || preselectedB ? (
-                <div className={readonlyBoard}>{boardB?.name ?? '?'}</div>
+                <div className={readonlyBoard}>{boardB ? <PartName label={labels.get(boardB.id)} name={boardB.name} /> : '?'}</div>
               ) : (
                 <select
                   value={partnerBoardId}
@@ -205,7 +209,7 @@ function JointForm({ ownerId, joint }: JointFormProps) {
                 >
                   <option value="">{lang === 'de' ? '— Bauteil wählen —' : '— Select board —'}</option>
                   {otherBoards.map((b) => (
-                    <option key={b.id} value={b.id}>{b.name}</option>
+                    <option key={b.id} value={b.id}>{partTitle(labels.get(b.id), b.name)}</option>
                   ))}
                 </select>
               )}

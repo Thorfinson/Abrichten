@@ -10,7 +10,9 @@ import { subtreeIds, ancestorIds, assemblyPath } from '../../utils/assemblyTree'
 import { computeJointPosition } from '../../utils/geometry'
 import { useDialogFocus } from '../../hooks/useKeyboard'
 import { groupBoards } from '../../utils/boardGroups'
-import { doubledShortNames, partLabels, shortNameOf, MAX_SHORT_NAME } from '../../utils/partLabel'
+import { cleanShortName, doubledShortNames, partTitle, shortNameOf, MAX_SHORT_NAME } from '../../utils/partLabel'
+import { usePartLabels } from '../../hooks/usePartLabels'
+import { PartName } from '../ui/PartName'
 import { setShortNameTold } from '../../services/partNumbers'
 import type { DrawerGroupBy } from '../../store/useUIStore'
 import { Icon } from './Icon'
@@ -83,7 +85,7 @@ export function AssemblyDrawer() {
   const [renamingAssemblyId, setRenamingAssemblyId] = useState<string | null>(null)
   const [editingShortId, setEditingShortId] = useState<string | null>(null)
   // part labels ("Herd 2") and short words two assemblies share (their labels would repeat)
-  const labels = useMemo(() => partLabels(project.assemblies), [project.assemblies])
+  const labels = usePartLabels()
   const doubled = useMemo(() => doubledShortNames(project.assemblies), [project.assemblies])
   const [customFormAssemblyId, setCustomFormAssemblyId] = useState<string | null>(null)
   const [customW, setCustomW] = useState('600')
@@ -421,7 +423,7 @@ export function AssemblyDrawer() {
               }}
             />
           ) : (
-            <span className={`flex-1 truncate ${assembly.visible === false ? 'opacity-50' : ''}`} title={assembly.name}>
+            <span className={`flex-1 min-w-0 truncate ${assembly.visible === false ? 'opacity-50' : ''}`} title={assembly.name}>
               {assembly.name}
             </span>
           )}
@@ -445,15 +447,22 @@ export function AssemblyDrawer() {
           ) : (() => {
             const word = shortNameOf(assembly)
             const twice = doubled.has(word.toLocaleLowerCase('de'))
+            // not set yet: the first word of the name, shown as a suggestion (dashed, italic)
+            const suggested = !cleanShortName(assembly.shortName)
             return (
               <button
                 type="button"
                 data-testid={`short-name-${assembly.id}`}
+                data-suggested={suggested}
                 onClick={(e) => { e.stopPropagation(); setEditingShortId(assembly.id) }}
-                className={`shrink-0 max-w-[6rem] truncate rounded px-1 text-[10px] font-mono font-normal ${
-                  twice ? 'bg-accent-dim/70 text-accent-text' : 'bg-chrome-surface text-chrome-muted hover:text-chrome-text'
+                className={`shrink-0 truncate rounded px-1 text-[10px] font-mono font-normal border ${suggested ? 'max-w-[3.5rem]' : 'max-w-[5.5rem]'} ${
+                  twice ? 'border-transparent bg-accent-dim/70 text-accent-text'
+                    : suggested ? 'border-dashed border-chrome-divider italic text-chrome-hint hover:text-chrome-text'
+                    : 'border-transparent bg-chrome-surface text-chrome-muted hover:text-chrome-text'
                 }`}
-                title={twice ? t('partLabel.doubled', { word }) : t('partLabel.shortNameTitle', { example: `${word} 1, ${word} 2` })}
+                title={twice ? t('partLabel.doubled', { word })
+                  : suggested ? t('partLabel.shortNameSuggested', { word, example: `${word} 1` })
+                  : t('partLabel.shortNameTitle', { example: `${word} 1, ${word} 2` })}
                 aria-label={`${t('partLabel.shortName')}: ${word}`}
               >
                 {word}
@@ -480,7 +489,7 @@ export function AssemblyDrawer() {
                     if (el) boardItemRefs.current.set(board.id, el)
                     else boardItemRefs.current.delete(board.id)
                   }}
-                  title={`${board.name} · ${board.width}×${board.height}×${board.depth}mm`}
+                  title={`${partTitle(labels.get(board.id), board.name)} · ${board.width}×${board.height}×${board.depth}mm`}
                   draggable
                   onDragStart={(e) => {
                     e.stopPropagation()
@@ -508,6 +517,7 @@ export function AssemblyDrawer() {
                     style={{ backgroundColor: board.color }}
                   />
                   <div className="flex-1 min-w-0">
+                    {/* part-name-ok: the label leads the line below */}
                     <div className="truncate leading-tight">{board.name}</div>
                     <div className={`text-[10px] font-mono leading-tight ${
                       selectedBoardIds.includes(board.id) ? 'text-info' : 'text-chrome-hint'
@@ -621,7 +631,7 @@ export function AssemblyDrawer() {
       {show && (
         <aside
           aria-label={t('layout.drawer.title')}
-          className="w-60 shrink-0 bg-chrome-bg text-chrome-text border-r border-chrome-border flex flex-col min-h-0"
+          className="w-64 shrink-0 bg-chrome-bg text-chrome-text border-r border-chrome-border flex flex-col min-h-0"
         >
           <div className="flex items-center gap-2 h-8 px-3 border-b border-chrome-border shrink-0">
             <h3 className="text-[11px] font-semibold text-chrome-muted uppercase tracking-wider">{groupBy === 'assembly' ? t('layout.drawer.title') : t('workspace.parts')}</h3>
@@ -689,6 +699,7 @@ export function AssemblyDrawer() {
                     >
                       <span className="inline-block w-2 h-2 rounded-sm shrink-0 border border-white/30" style={{ backgroundColor: board.color }} />
                       <div className="flex-1 min-w-0">
+                        {/* part-name-ok: the label leads the line below */}
                         <div className="truncate leading-tight">{board.name}</div>
                         <div className={`text-[10px] font-mono leading-tight ${selectedBoardIds.includes(board.id) ? 'text-info' : 'text-chrome-hint'}`}>
                           <span className="text-chrome-secondary" data-testid="part-label">{labels.get(board.id)}</span> · {board.width}×{board.height}×{board.depth}
@@ -827,8 +838,8 @@ export function AssemblyDrawer() {
               </div>
               <div className="p-4 flex flex-col gap-3">
                 <div className="text-xs text-chrome-muted">
-                  <div><span className="font-medium text-chrome-secondary">A:</span> {boardA?.name ?? jointDialog.boardAId}</div>
-                  <div><span className="font-medium text-chrome-secondary">B:</span> {boardB?.name ?? jointDialog.boardBId}</div>
+                  <div><span className="font-medium text-chrome-secondary">A:</span> {boardA ? <PartName label={labels.get(boardA.id)} name={boardA.name} /> : jointDialog.boardAId}</div>
+                  <div><span className="font-medium text-chrome-secondary">B:</span> {boardB ? <PartName label={labels.get(boardB.id)} name={boardB.name} /> : jointDialog.boardBId}</div>
                 </div>
                 <div>
                   <label className="text-xs text-chrome-muted block mb-1">{t('sidebar.jointType')}</label>

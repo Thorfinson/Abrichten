@@ -302,7 +302,7 @@
     "minHeight": "Mindesh\u00f6he (mm)"
   },
   "nesting": {
-    "title": "Zuschnittoptimierung",
+    "title": "Plattenbelegung",
     "sheetWidth": "Plattenbreite (mm)",
     "sheetHeight": "Plattenh\u00f6he (mm)",
     "sawKerf": "S\u00e4geblattbreite (mm)",
@@ -497,6 +497,7 @@
     "nrTitle": "Teilenummer: Kurzwort der Baugruppe und Nummer im Fach, z. B. „Herd 2“. Überall gleich: Teileliste, Zuschnittliste, Plattenbelegung, Zeichnungen, Montageanleitung.",
     "shortName": "Kurzwort",
     "shortNameTitle": "Kurzwort für die Teilenummern dieser Baugruppe ({{example}} …). Klicken zum Ändern; leer = erstes Wort des Namens.",
+    "shortNameSuggested": "Vorschlag aus dem Namen: „{{word}}“ ({{example}} …). Klicken, um ein kurzes Wort festzulegen – zum Beispiel „Herd“ statt „Herdfach“.",
     "editShortName": "Kurzwort ändern",
     "doubled": "„{{word}}“ hat noch eine Baugruppe – die Teilenummern wären doppelt. Klicken zum Ändern.",
     "taken": "Das Kurzwort „{{word}}“ hat schon eine andere Baugruppe.",

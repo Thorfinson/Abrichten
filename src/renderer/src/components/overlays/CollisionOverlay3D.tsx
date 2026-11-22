@@ -3,6 +3,7 @@ import * as THREE from 'three'
 import { Html } from '@react-three/drei'
 import { useProjectStore } from '../../store/useProjectStore'
 import { useUIStore } from '../../store/useUIStore'
+import { useStepHidden } from '../../hooks/useStepHidden'
 import { detectCollisions3D } from '../../utils/collision'
 import { CANVAS, HTML_Z_RANGE, sceneLabelStyle } from '../canvasTheme'
 
@@ -42,15 +43,17 @@ export function CollisionOverlay3D() {
   const project = useProjectStore((s) => s.project)
   const showCollisionOverlay = useUIStore((s) => s.showCollisionOverlay)
   const setCollisionPairs = useUIStore((s) => s.setCollisionPairs)
+  const hidden = useStepHidden()
 
   const collisions = useMemo(() => {
     if (!showCollisionOverlay) return []
 
     const visible = project.assemblies.filter((a) => a.visible !== false)
 
-    // joints let a back panel sit in its dado/rabbet without counting as a collision
-    return detectCollisions3D(visible.flatMap((a) => a.boards), visible.flatMap((a) => a.joints))
-  }, [showCollisionOverlay, project.assemblies])
+    // joints let a back panel sit in its dado/rabbet without counting as a collision;
+    // parts the assembly step view hides take no part
+    return detectCollisions3D(visible.flatMap((a) => a.boards).filter((b) => !hidden.has(b.id)), visible.flatMap((a) => a.joints))
+  }, [showCollisionOverlay, project.assemblies, hidden])
 
   // Publish the pairs whenever they change (not just their count — a drag can
   // swap one colliding pair for another), without churning the store while

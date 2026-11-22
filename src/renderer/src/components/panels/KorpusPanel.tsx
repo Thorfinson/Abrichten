@@ -306,6 +306,7 @@ export function KorpusPanel() {
                 const d = cuttingDims(b)
                 return (
                   <tr key={i}>
+                    {/* part-name-ok: a preview of parts not created yet, they have no label */}
                     <td className={TD_CLASS}>{b.name}</td>
                     <td className={`${TD_CLASS} text-right font-mono tabular-nums text-chrome-secondary`}>
                       {d.length} × {d.width} × {d.thickness}

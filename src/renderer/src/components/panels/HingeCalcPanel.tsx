@@ -4,6 +4,8 @@ import { useUIStore } from '../../store/useUIStore'
 import { useProjectStore } from '../../store/useProjectStore'
 import { HINGE_CUP_EDGE_MM, hingePositionsMm, hardwareItems, withHinges } from '../../data/hardware'
 import { getMaterialById } from '../../data/materials'
+import { usePartLabels } from '../../hooks/usePartLabels'
+import { partTitle } from '../../utils/partLabel'
 import { boardFace, uprightFace } from '../../utils/boardFace'
 import type { Board } from '../../types/furniture'
 
@@ -168,6 +170,7 @@ export function HingeCalcPanel() {
   const setShowHingeCalcPanel = useUIStore((s) => s.setShowHingeCalcPanel)
   const customMaterials = useProjectStore((s) => s.project.customMaterials)
   const door = useSelectedDoor()
+  const labels = usePartLabels()
 
   const [doorThickness, setDoorThickness] = useState(18)
   const [doorHeight, setDoorHeight] = useState(700)
@@ -218,7 +221,7 @@ export function HingeCalcPanel() {
     const item = hardwareItems.find((h) => h.id === sys.hardwareId)
     const count = hardware.at(-1)?.quantity ?? hingeCount
     useUIStore.getState().setExportStatus(t('func.hingesApplied', {
-      count, hinge: item ? (lang === 'de' ? item.name : item.nameEn) : sys.name, board: door.board.name
+      count, hinge: item ? (lang === 'de' ? item.name : item.nameEn) : sys.name, board: partTitle(labels.get(door.board.id), door.board.name)
     }))
     close()
   }
@@ -237,7 +240,7 @@ export function HingeCalcPanel() {
           {/* Door from the selection */}
           <div className="text-xs text-chrome-muted">
             {door
-              ? t('func.hingeDoorFrom', { board: door.board.name })
+              ? t('func.hingeDoorFrom', { board: partTitle(labels.get(door.board.id), door.board.name) })
               : t('func.hingeSelectDoor')}
           </div>
 

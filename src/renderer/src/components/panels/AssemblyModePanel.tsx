@@ -7,7 +7,8 @@ import { assemblyInstructionHtml, fastenerLabel, type Translate } from '../../ut
 import { renderAssemblySnapshots } from '../../utils/assemblySnapshots'
 import { assemblyPath } from '../../utils/assemblyTree'
 import { cuttingDims } from '../../utils/cuttingDims'
-import { partLabels } from '../../utils/partLabel'
+import { partTitle } from '../../utils/partLabel'
+import { usePartLabels } from '../../hooks/usePartLabels'
 import { formatNumber } from '../../utils/units'
 import { printHtml } from '../../utils/printHtml'
 import { keyCombo } from '../../utils/shortcutKeys'
@@ -54,7 +55,7 @@ export function AssemblyModePanel() {
   const lang = i18n.language as 'de' | 'en'
   const tr = t as unknown as Translate
 
-  const on = useUIStore((s) => s.assemblyMode)
+  const on = useUIStore((s) => s.workspace === 'assembly')
   const stepIndex = useUIStore((s) => s.assemblyStep)
   const setAssemblyMode = useUIStore((s) => s.setAssemblyMode)
   const setAssemblyStep = useUIStore((s) => s.setAssemblyStep)
@@ -64,7 +65,7 @@ export function AssemblyModePanel() {
   const store = useProjectStore.getState
 
   const plan = useMemo(() => planAssembly(project), [project.assemblies, project.assemblySteps])
-  const labels = useMemo(() => partLabels(project.assemblies), [project.assemblies])
+  const labels = usePartLabels()
   const total = plan.steps.length
   const index = Math.min(stepIndex, Math.max(0, total - 1))
 
@@ -233,7 +234,7 @@ export function AssemblyModePanel() {
                         value={current.step.id}
                         onChange={(e) => store().assignBoardsToStep([p.board.id], e.target.value === UNPLANNED ? null : e.target.value)}
                         className="w-20 shrink-0 text-[9px] bg-white/8 border border-white/15 text-white rounded px-1 py-0.5 outline-none"
-                        aria-label={`${t('montage.moveTo')}: ${p.board.name}`}
+                        aria-label={`${t('montage.moveTo')}: ${partTitle(labels.get(p.board.id), p.board.name)}`}
                         title={t('montage.moveTo')}
                       >
                         {stepOptions}

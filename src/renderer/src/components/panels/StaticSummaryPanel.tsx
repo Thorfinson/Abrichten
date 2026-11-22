@@ -3,6 +3,8 @@ import { useTranslation } from 'react-i18next'
 import { useProjectStore } from '../../store/useProjectStore'
 import { useUIStore } from '../../store/useUIStore'
 import { useStaticSimulation } from '../../store/useStaticStore'
+import { usePartLabels } from '../../hooks/usePartLabels'
+import { PartName } from '../ui/PartName'
 import { GRAVITY, utilisationCss, type StaticStatus } from '../../services/static-calc'
 import type { BoardStatic } from '../../services/static-sim'
 import type { Assembly, Board } from '../../types/furniture'
@@ -33,6 +35,7 @@ function SummaryDialog() {
   const { t, i18n } = useTranslation()
   const lang = i18n.language
   const assemblies = useProjectStore((s) => s.project.assemblies)
+  const labels = usePartLabels()
   const setShowStaticSummary = useUIStore((s) => s.setShowStaticSummary)
   const payloadKg = useUIStore((s) => s.staticLoadKg)
   const sim = useStaticSimulation()
@@ -127,7 +130,7 @@ function SummaryDialog() {
                       onKeyDown={(e) => { if (e.key === 'Enter') select(row) }}
                       className="cursor-pointer hover:bg-chrome-hover focus:bg-chrome-hover outline-none"
                     >
-                      <td className={`${td} font-medium`}>{row.board.name}</td>
+                      <td className={`${td} font-medium`}><PartName label={labels.get(row.board.id)} name={row.board.name} labelClassName="text-chrome-muted font-normal" /></td>
                       <td className={`${td} text-chrome-muted`}>{row.assembly.name}</td>
                       <td className={`${td} text-right font-mono`}>{num(r.totalLoadN / GRAVITY)}</td>
                       <td className={`${td} text-right font-mono`}>

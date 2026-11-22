@@ -5,6 +5,7 @@ import * as THREE from 'three'
 import { useTranslation } from 'react-i18next'
 import type { TFunction } from 'i18next'
 import { useUIStore } from '../../store/useUIStore'
+import { useStepHidden } from '../../hooks/useStepHidden'
 import { useProjectStore } from '../../store/useProjectStore'
 import { useStaticSimulation, useStaticStore, modelFieldMax, DEFORMATION_SCALE, type StaticResultType, type StaticScaleMode } from '../../store/useStaticStore'
 import { faceToWorld, worldToFace, type BoardStatic } from '../../services/static-sim'
@@ -353,10 +354,11 @@ function LoadArrow({ board, load, r, scale }: { board: Board; load: NonNullable<
 /** Arrows for every load placed on a visible board. */
 function PlacedLoads({ results, scale }: { results: Map<string, BoardStatic>; scale: number }) {
   const assemblies = useProjectStore((s) => s.project.assemblies)
+  const hidden = useStepHidden()
   return (
     <>
       {assemblies.filter((a) => a.visible !== false).flatMap((a) => a.boards.flatMap((b) => {
-        const r = results.get(b.id)
+        const r = hidden.has(b.id) ? undefined : results.get(b.id)
         // only lying boards carry placed loads (services/static-sim.ts ownLoads)
         if (!r || !b.loads?.length || !isLying(r)) return []
         return b.loads.map((l) => <LoadArrow key={l.id} board={b} load={l} r={r} scale={scale} />)
@@ -394,6 +396,8 @@ function StaticHeatMap() {
   const placing = useStaticStore((s) => s.placingLoad)
   const placeKg = useStaticStore((s) => s.placeKg)
   const selectedBoardIds = useUIStore((s) => s.selectedBoardIds)
+  // the simulation covers the whole furniture; parts the assembly step view hides get no colour
+  const hidden = useStepHidden()
   usePlacementMode(placing)
   // One material for all boards: colour and opacity come per vertex
   const material = useMemo(() => new THREE.MeshLambertMaterial({
@@ -411,7 +415,7 @@ function StaticHeatMap() {
   const rangeTop = scaleMode === 'absolute' ? 1 : scaleMode === 'model' ? modelMax : null
   return (
     <group name="static-heatmap" userData={{ simulationMs: sim.durationMs, solved: sim.solved }}>
-      {[...sim.results.values()].map((r) => (
+      {[...sim.results.values()].filter((r) => !hidden.has(r.boardId)).map((r) => (
         <BoardHeat
           key={r.boardId}
           result={r}

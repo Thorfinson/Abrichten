@@ -104,7 +104,7 @@ test.describe('Assembly mode', () => {
     await panel.getByRole('button', { name: /^(\+ Schritt|\+ Step)$/ }).click()
     await expect(stepLabel(page)).toHaveText(/(Schritt|Step) 2 (von|of) 2/)
     await panel.getByRole('button', { name: /^(Voriger Schritt|Previous step)/ }).click()
-    await panel.getByRole('combobox', { name: /(In Schritt verschieben|Move to step): Rückwand/ }).selectOption({ index: 1 })
+    await panel.getByRole('combobox', { name: /(In Schritt verschieben|Move to step): Wandschrank 6 Rückwand/ }).selectOption({ index: 1 })
     const steps = await page.evaluate(() => window.__projectStore.getState().project.assemblySteps)
     expect(steps.map((s: any) => [s.title, s.note, s.boardIds.length])).toEqual([
       ['Korpus <verleimen>', 'Erst ausrichten', 5],

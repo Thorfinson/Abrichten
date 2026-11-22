@@ -120,7 +120,7 @@ export function CuttingList() {
           nr: order.get(board.id) ?? 0,
           labels: [labels.get(board.id) ?? ''],
           assemblyName: assemblyPath(project.assemblies, assembly.id),
-          name: board.name,
+          name: board.name, // part-name-ok: the label has its own column (labels)
           materialId: board.materialId,
           material: mat ? (lang === 'de' ? mat.name : mat.nameEn) : board.materialId,
           role: board.role,
@@ -147,8 +147,10 @@ export function CuttingList() {
     let rows = rawRows
     if (filterText.trim()) {
       const q = filterText.trim().toLowerCase()
+      // name, assembly or part label: "herd 2" finds exactly Herd 2 (not Herd 20), "herd" every Herd part
+      const labelHit = (l: string): boolean => (/\d$/.test(q) ? l.toLowerCase() === q : l.toLowerCase().includes(q))
       rows = rows.filter((r) =>
-        r.name.toLowerCase().includes(q) || r.assemblyName.toLowerCase().includes(q)
+        r.name.toLowerCase().includes(q) || r.assemblyName.toLowerCase().includes(q) || r.labels.some(labelHit)
       )
     }
     if (filterMaterial) {
@@ -255,7 +257,7 @@ export function CuttingList() {
 
   const buildCsvRows = (rows: Row[]) => {
     const headers = [
-      t('cutting.nr'),
+      t('partLabel.nr'),
       t('cutting.assembly'),
       t('board.name'),
       t('board.material'),

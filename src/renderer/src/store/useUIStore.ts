@@ -4,6 +4,7 @@ import type { ToolMode, ViewMode, Measurement } from '../types/measurement'
 import { useProjectStore } from './useProjectStore'
 import { isInputDevice, type InputDevice } from '../utils/canvasInput'
 import type { ChangedProjectFile } from '../utils/changedFile'
+import { stepHiddenIds } from '../utils/assemblySteps'
 
 export type TransformMode = 'translate' | 'rotate' | 'scale'
 
@@ -140,11 +141,9 @@ export interface UIState {
   setInputDevice: (device: InputDevice) => void
   /** Close the topmost open modal (see topModal) */
   closeTopModal: () => void
-  /** Assembly mode (Montage): the 3D view shows the steps one at a time. Not a modal. */
-  assemblyMode: boolean
-  /** Step shown in assembly mode (index into project.assemblySteps) */
+  /** Step shown in the assembly workspace (index into project.assemblySteps); see shownStep */
   assemblyStep: number
-  /** Turning it on clears the selection (it may sit on parts the step view hides) */
+  /** The assembly workspace on or off (same as setWorkspace) */
   setAssemblyMode: (on: boolean) => void
   setAssemblyStep: (index: number) => void
   /** Workspace: design (the model) or assembly (steps). Assembly mode is the assembly workspace. */
@@ -169,6 +168,9 @@ const MODAL_FLAGS = [
 ] as const satisfies readonly (keyof UIState)[]
 
 export type ModalId = (typeof MODAL_FLAGS)[number] | 'contextMenu' | 'welcome' | 'changedFile'
+
+/** The step the 3D view shows: in the assembly workspace its current step, else -1 (no step view). */
+export const shownStep = (s: Pick<UIState, 'workspace' | 'assemblyStep'>): number => (s.workspace === 'assembly' ? s.assemblyStep : -1)
 
 /** The topmost open modal — context menu, dialog, panel, the startup question or the welcome screen — or null. */
 export function topModal(s: UIState): ModalId | null {
@@ -254,21 +256,23 @@ export const useUIStore = create<UIState>((set, get) => ({
   hudCollapsed: storedFlag(HUD_COLLAPSED_KEY),
   staticLegendCollapsed: storedFlag(LEGEND_COLLAPSED_KEY),
   inputDevice: storedInputDevice(),
-  assemblyMode: false,
   assemblyStep: 0,
   setAssemblyMode: (on) => get().setWorkspace(on ? 'assembly' : 'design'),
   workspace: 'design',
   setWorkspace: (workspace) => {
     if (!WORKSPACES.includes(workspace) || workspace === get().workspace) return
-    set({
-      workspace,
-      assemblyMode: workspace === 'assembly',
-      ...(workspace === 'assembly' ? { selectedBoardIds: [] } : {})
-    })
+    // entering assembly clears the selection (it may sit on parts the step view hides)
+    set({ workspace, ...(workspace === 'assembly' ? { selectedBoardIds: [] } : {}) })
   },
   drawerGroupBy: 'assembly',
   setDrawerGroupBy: (groupBy) => set({ drawerGroupBy: groupBy }),
-  setAssemblyStep: (index) => set({ assemblyStep: Number.isFinite(index) ? Math.max(0, Math.round(index)) : 0 }),
+  // another step may hide selected parts: they leave the selection, so Del never hits a part you cannot see
+  setAssemblyStep: (index) => set((s) => {
+    const assemblyStep = Number.isFinite(index) ? Math.max(0, Math.round(index)) : 0
+    const hidden = stepHiddenIds(useProjectStore.getState().project, shownStep({ ...s, assemblyStep }))
+    const kept = s.selectedBoardIds.filter((id) => !hidden.has(id))
+    return kept.length === s.selectedBoardIds.length ? { assemblyStep } : { assemblyStep, selectedBoardIds: kept }
+  }),
 
   setActiveView: (view) => set({ activeView: view }),
   setActiveTool: (tool) => set({ activeTool: tool }),
@@ -289,14 +293,16 @@ export const useUIStore = create<UIState>((set, get) => ({
       }
     }),
 
+  // ⌘A: the parts you can see — in the assembly workspace not those the step view hides
   selectAllBoards: (assemblyId) =>
-    set(() => {
+    set((s) => {
       const proj = useProjectStore.getState().project
       const assembly = proj.assemblies.find((a) => a.id === assemblyId)
       if (!assembly) return {}
+      const hidden = stepHiddenIds(proj, shownStep(s))
       return {
         selectedAssemblyId: assemblyId,
-        selectedBoardIds: assembly.boards.map((b) => b.id)
+        selectedBoardIds: assembly.boards.filter((b) => !hidden.has(b.id)).map((b) => b.id)
       }
     }),
 

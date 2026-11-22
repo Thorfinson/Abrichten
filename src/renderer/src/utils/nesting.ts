@@ -172,7 +172,7 @@ export function nestBoards(
     if (!groupMap.has(key)) {
       groupMap.set(key, { materialId: b.materialId, thickness: thickKey, rects: [] })
     }
-    groupMap.get(key)!.rects.push({ boardId: b.id, name: b.name, w, h, grainLocked })
+    groupMap.get(key)!.rects.push({ boardId: b.id, name: b.name, w, h, grainLocked }) // part-name-ok: nestingToSvg adds the label
   }
 
   const groups: NestingGroup[] = []

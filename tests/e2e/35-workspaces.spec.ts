@@ -26,7 +26,7 @@ test.describe('Workspaces', () => {
     await expect(page.getByTestId('assembly-step-list')).toBeVisible()
     await expect(page.getByTestId('assembly-panel')).toBeVisible()
     await expect(page.getByTestId('drawer-group-by')).toHaveCount(0)
-    expect(await page.evaluate(() => window.__uiStore.getState().assemblyMode)).toBe(true)
+    expect(await page.evaluate(() => window.__uiStore.getState().workspace)).toBe('assembly')
 
     // a third workspace key does nothing
     await page.keyboard.press('Control+3')
@@ -37,7 +37,7 @@ test.describe('Workspaces', () => {
     await expect(ws(page, 'design')).toHaveAttribute('aria-pressed', 'true')
     await expect(page.getByTestId('assembly-band')).toHaveCount(0)
     await expect(page.getByTestId('drawer-group-by')).toBeVisible()
-    expect(await page.evaluate(() => window.__uiStore.getState().assemblyMode)).toBe(false)
+    expect(await page.evaluate(() => window.__uiStore.getState().workspace)).toBe('design')
 
     // ⌘1 / Ctrl+1 from assembly back to design
     await page.keyboard.press('Control+2')

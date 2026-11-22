@@ -83,12 +83,11 @@ export default function App() {
             <FloatingPropertiesCard />
             <ContextHUD />
             <AssemblyTimeline />
-            {/* Static legend (renders only while the static overlay is on) */}
-            {workspace !== 'assembly' && (
-              <div className="absolute bottom-3 left-1/2 -translate-x-1/2 z-30">
-                <StaticLegend />
-              </div>
-            )}
+            {/* Static legend (renders only while the static overlay is on); in the
+                assembly workspace above the step timeline, so colour and legend go together */}
+            <div className={`absolute ${workspace === 'assembly' ? 'bottom-28' : 'bottom-3'} left-1/2 -translate-x-1/2 z-30`}>
+              <StaticLegend />
+            </div>
           </div>
         </main>
 

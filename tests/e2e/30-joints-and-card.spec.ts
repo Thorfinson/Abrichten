@@ -69,7 +69,7 @@ test.describe('Joint editing and fasteners', () => {
   test('clicking a joint in the card opens it for editing; save is one undo step', async ({ page }) => {
     await bootWithSample(page)
     await selectBoard(page, 'asm-1', 'b-links')
-    await page.getByRole('button', { name: /· Boden/ }).click()
+    await page.getByRole('button', { name: /· Wandschrank 3 Boden/ }).click()
     const dialog = page.getByRole('dialog', { name: /Verbindung bearbeiten|Edit Joint/ })
     await expect(dialog).toBeVisible()
     // the sample joint comes with 3 confirmat screws
@@ -98,7 +98,7 @@ test.describe('Joint editing and fasteners', () => {
   test('cancel and Esc leave the joint untouched; the next J opens a new joint', async ({ page }) => {
     await bootWithSample(page)
     await selectBoard(page, 'asm-1', 'b-links')
-    const row = page.getByRole('button', { name: /· Boden/ })
+    const row = page.getByRole('button', { name: /· Wandschrank 3 Boden/ })
     await row.click()
     const dialog = page.getByRole('dialog', { name: /Verbindung bearbeiten|Edit Joint/ })
     await dialog.getByRole('combobox', { name: /Verbindungstyp|Joint type/ }).selectOption('glued')

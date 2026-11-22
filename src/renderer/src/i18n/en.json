@@ -302,7 +302,7 @@
     "minHeight": "Min height (mm)"
   },
   "nesting": {
-    "title": "Sheet Nesting",
+    "title": "Sheet layout",
     "sheetWidth": "Sheet Width (mm)",
     "sheetHeight": "Sheet Height (mm)",
     "sawKerf": "Saw Kerf (mm)",
@@ -497,6 +497,7 @@
     "nrTitle": "Part number: the assembly’s short word and the number within it, e.g. “Herd 2”. The same everywhere: parts column, cutting list, nesting, shop drawings, assembly instruction.",
     "shortName": "Short word",
     "shortNameTitle": "Short word for this assembly’s part numbers ({{example}} …). Click to change; empty = first word of the name.",
+    "shortNameSuggested": "Suggested from the name: “{{word}}” ({{example}} …). Click to set a short word of your own.",
     "editShortName": "Change short word",
     "doubled": "“{{word}}” is used by another assembly too – the part numbers would repeat. Click to change.",
     "taken": "Another assembly already uses the short word “{{word}}”.",

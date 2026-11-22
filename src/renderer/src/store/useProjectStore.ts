@@ -5,7 +5,7 @@ import { validateProject, isDimension, cleanName, MAX_QUANTITY } from '../utils/
 import { isBoardRole } from '../utils/boardRole'
 import { cleanSteps } from '../utils/assemblySteps'
 import { subtreeIds } from '../utils/assemblyTree'
-import { cleanShortName, numberParts, renumberParts, shortNameOf } from '../utils/partLabel'
+import { cleanShortName, defaultShortName, numberParts, renumberParts, shortNameOf } from '../utils/partLabel'
 import { evalFormula, isParamName, formulaParams, renameFormulaParam } from '../utils/formulaEval'
 
 function uid(): string {
@@ -242,13 +242,14 @@ export const useProjectStore = create<ProjectState>()(
     (rawSet, get) => {
       // Every change that touches the parts numbers new ones (Board.partNo): the next
       // free number of their assembly, in the same set — so in the same undo step.
-      const set: typeof rawSet = (partial, replace) => rawSet((s) => {
+      // (No action replaces the whole state, so `set` takes partial updates only.)
+      const set = (partial: Partial<ProjectState> | ((s: ProjectState) => Partial<ProjectState>)): void => rawSet((s) => {
         const next = typeof partial === 'function' ? partial(s) : partial
         const assemblies = next.project?.assemblies
-        if (!assemblies || assemblies === s.project.assemblies) return next
+        if (!next.project || !assemblies || assemblies === s.project.assemblies) return next
         const numbered = numberParts(assemblies)
-        return numbered === assemblies ? next : { ...next, project: { ...next.project!, assemblies: numbered } }
-      }, replace as false)
+        return numbered === assemblies ? next : { ...next, project: { ...next.project, assemblies: numbered } }
+      })
       return ({
       project: initialProject,
       savedProject: initialProject,
@@ -307,8 +308,14 @@ export const useProjectStore = create<ProjectState>()(
           }, goneBoards)
         }),
 
+      // Renaming keeps the part labels: an assembly with parts and no short word of its own
+      // keeps the word it had from its old name ("Herdfach 2" stays, not "Kochfeld 2").
       renameAssembly: (id, name) =>
-        set((s) => withAssemblies(s, mapAssembly(s.project.assemblies, id, (a) => (a.name === name ? a : { ...a, name })))),
+        set((s) => withAssemblies(s, mapAssembly(s.project.assemblies, id, (a) => {
+          if (a.name === name) return a
+          const keep = a.boards.length > 0 && !cleanShortName(a.shortName) && defaultShortName(name) !== defaultShortName(a.name)
+          return keep ? { ...a, name, shortName: defaultShortName(a.name) } : { ...a, name }
+        }))),
 
       setAssemblyShortName: (id, shortName) => {
         const list = get().project.assemblies

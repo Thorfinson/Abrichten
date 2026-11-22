@@ -61,7 +61,7 @@ export function AssemblyStepList() {
     <aside
       aria-label={t('montage.instruction')}
       data-testid="assembly-step-list"
-      className="w-60 shrink-0 bg-chrome-bg text-chrome-text border-r border-chrome-border flex flex-col min-h-0"
+      className="w-64 shrink-0 bg-chrome-bg text-chrome-text border-r border-chrome-border flex flex-col min-h-0"
     >
       <div className="flex items-center h-8 px-3 border-b border-chrome-border shrink-0">
         <h3 className="text-[11px] font-semibold text-chrome-muted uppercase tracking-wider">{t('montage.steps')}</h3>
@@ -92,11 +92,7 @@ export function AssemblyStepList() {
           )
         })}
       </ol>
-      {plan.unplanned.length > 0 && (
-        <div className="shrink-0 m-2 px-2 py-1.5 rounded bg-ws-assembly/15 text-[11px] text-amber-200">
-          {t('montage.unplannedCount', { count: plan.unplanned.length })}
-        </div>
-      )}
+      {/* the parts in no step are listed once, in the step panel on the right (AssemblyModePanel) */}
     </aside>
   )
 }

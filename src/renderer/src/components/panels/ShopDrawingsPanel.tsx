@@ -108,6 +108,7 @@ function boardSvg(board: Board, projectName: string, lang: 'de' | 'en', customMa
   <line x1="0" y1="${tbY + tbH / 2}" x2="${svgW}" y2="${tbY + tbH / 2}" stroke="#ccc" stroke-width="0.4"/>
   <line x1="${svgW * 0.75}" y1="${tbY}" x2="${svgW * 0.75}" y2="${tbY + tbH}" stroke="#ccc" stroke-width="0.4"/>
   <text x="4" y="${tbY + 8}" font-size="6" fill="#666">${lang === 'de' ? 'Bauteil' : 'Part'}</text>
+  <!-- part-name-ok: the label stands in the right column of the title block -->
   <text x="4" y="${tbY + 18}" font-size="7.5" font-weight="bold" fill="#1e3a5f">${escapeHtml(fitText(board.name, colA, 7.5))}</text>
   <text x="${svgW * 0.75 + 4}" y="${tbY + 8}" font-size="6" fill="#666">${lang === 'de' ? 'Nr.' : 'No.'}</text>
   <text x="${svgW * 0.75 + 4}" y="${tbY + 18}" font-size="${labelPx.toFixed(1)}" font-weight="bold" fill="#111">${escapeHtml(fitText(label, colB, labelPx))}</text>
