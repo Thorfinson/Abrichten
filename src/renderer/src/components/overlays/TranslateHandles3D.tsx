@@ -2,7 +2,7 @@ import { useRef, useEffect, useState, type JSX } from 'react'
 import { useThree, useFrame } from '@react-three/fiber'
 import * as THREE from 'three'
 import { useProjectStore } from '../../store/useProjectStore'
-import { useUIStore, useCanvasView } from '../../store/useUIStore'
+import { useUIStore, useCanvasView, snapTargets } from '../../store/useUIStore'
 import { snapToGrid } from '../../utils/geometry'
 import { snapBoardToBoards, FACE_SNAP_PX } from '../../utils/snap'
 import { prioritizeRaycast } from '../../utils/raycastPriority'
@@ -167,9 +167,7 @@ function TranslateArrow({ arrow, centre, board, assemblyId }: ArrowProps): JSX.E
     if (!w) return
     drag.current.startWorld = w.clone()
     drag.current.startBoardPos = { ...board.position }
-    drag.current.others = useProjectStore.getState().project.assemblies
-      .filter((a) => a.visible !== false)
-      .flatMap((a) => a.boards.filter((b) => b.id !== board.id))
+    drag.current.others = snapTargets(useProjectStore.getState().project, useUIStore.getState(), [board.id])
     drag.current.active = true
     // Esc cancels: drop the drag state; the caller restores the pre-drag project
     beginTransform(() => {

@@ -92,7 +92,7 @@ export function BoringPanel() {
   const [depth, setDepth] = useState(12)
   // null = automatic: on as soon as any board carries hardware (e.g. hinges from the calculator)
   const [autoChoice, setAutoFromHardware] = useState<boolean | null>(null)
-  const autoFromHardware = autoChoice ?? project.assemblies.some((a) => a.boards.some((b) => b.hardware?.length))
+  const autoFromHardware = autoChoice ?? activeAssemblies(project).some((a) => a.boards.some((b) => b.hardware?.length))
   // the 32 mm rows for shelf pins: automatic, on only where shelf pins (Bodenträger) are planned
   // in the project — no rows of holes in posts, end panels or appliances (Küche 5)
   const pinsPlanned = activeAssemblies(project).some((a) => a.boards.some((b) => hasShelfPins(b, project.customHardware)))

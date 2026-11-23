@@ -114,6 +114,8 @@ test('whether shelf pins are planned is decided in one place (hasShelfPins) — 
   const SRC = new URL('../../src/renderer/src/', import.meta.url).pathname
   const files = async (d) => (await Promise.all((await readdir(d, { withFileTypes: true })).map((e) => e.isDirectory() ? files(join(d, e.name)) : /\.(ts|tsx)$/.test(e.name) ? [join(d, e.name)] : []))).flat()
   const offenders = []
-  for (const f of await files(SRC)) if (relative(SRC, f) !== 'data/hardware.ts' && /===\s*'shelfPins'/.test(await readFile(f, 'utf8'))) offenders.push(relative(SRC, f))
+  // any mention of the category outside the hardware module (and the panel's list of categories)
+  const allowed = ['data/hardware.ts', 'components/panels/HardwarePanel.tsx']
+  for (const f of await files(SRC)) if (!allowed.includes(relative(SRC, f)) && /['"`]shelfPins['"`]/.test(await readFile(f, 'utf8'))) offenders.push(relative(SRC, f))
   assert.deepEqual(offenders, [])
 })

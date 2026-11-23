@@ -104,6 +104,31 @@ test('back in the design, a part picked in the assembly that the eye hides leave
   assert.deepEqual(ui().selectedBoardIds, [], 'Del cannot hit a part you cannot see')
 })
 
+test('a hidden part is no snap target, in the design (eye) and in the assembly (step view)', async () => {
+  const { snapTargets } = await import('../../src/renderer/src/store/useUIStore.ts')
+  ui().togglePartsInView(['h2'])
+  assert.deepEqual(snapTargets(store().project, ui(), ['h1']).map((b) => b.id), ['s1'], 'not the moved part, not the hidden one')
+  ui().setWorkspace('assembly')
+  ui().setAssemblyStep(0)
+  assert.deepEqual(snapTargets(store().project, ui(), []).map((b) => b.id), ['h1'], 'the step view decides there')
+})
+
+test('every snapping drag takes its targets from snapTargets', async () => {
+  const { readFile } = await import('node:fs/promises')
+  for (const f of ['components/views3d/Board3D.tsx', 'components/overlays/TranslateHandles3D.tsx']) {
+    const text = await readFile(new URL('../../src/renderer/src/' + f, import.meta.url), 'utf8')
+    assert.ok(text.includes('snapTargets('), f)
+  }
+  // nobody else snaps: snapBoardToBoards is used only by these two
+  const offenders = []
+  for (const file of await sources(ROOT)) {
+    const rel = relative(ROOT, file)
+    if (rel === 'utils/snap.ts') continue
+    if (/\bsnapBoardToBoards\(/.test(await readFile(file, 'utf8')) && !['components/views3d/Board3D.tsx', 'components/overlays/TranslateHandles3D.tsx'].includes(rel)) offenders.push(rel)
+  }
+  assert.deepEqual(offenders, [])
+})
+
 test('another project starts with nothing hidden', () => {
   ui().togglePartsInView(['h1'])
   store().loadProject({ assemblies: [{ id: 'X', name: 'X', boards: [board('x1')], joints: [] }] })

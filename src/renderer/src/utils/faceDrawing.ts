@@ -1,6 +1,6 @@
 import type { Board, BoardCutout } from '../types/furniture'
 import { boardFace } from './boardFace'
-import { faceAxesInRoom, type EdgeName } from './cutoutPlace'
+import { faceAxesInRoom, type EdgeName, type RoomAxis } from './cutoutPlace'
 
 /**
  * How a board's face is laid on the drawing sheet, so the drawing agrees with the part as
@@ -20,34 +20,34 @@ export interface FaceDrawing {
   sides: { left: EdgeName; right: EdgeName; top: EdgeName; bottom: EdgeName }
 }
 
+const ROOM_MIN: Record<RoomAxis, EdgeName> = { x: 'left', y: 'bottom', z: 'back' }
+const ROOM_MAX: Record<RoomAxis, EdgeName> = { x: 'right', y: 'top', z: 'front' }
+
 export function faceDrawing(board: Board): FaceDrawing {
   const face = boardFace(board)
   const { u, v } = faceAxesInRoom(board)
-  const U = face.u, V = face.v
-  // the height lies along u: draw it upright (u up the sheet, v across)
-  if (u.room === 'y') {
-    return {
-      width: V, height: U,
-      rect: (pu, pv, du, dv) => ({ x: pv, y: U - (pu + du), w: dv, h: du }),
-      sheetAxis: { u: 'y', v: 'x' },
-      sides: { left: v.minEdge, right: v.maxEdge, top: u.maxEdge, bottom: u.minEdge }
-    }
-  }
-  // the height lies along v: upright, v up the sheet
-  if (v.room === 'y') {
-    return {
-      width: U, height: V,
-      rect: (pu, pv, du, dv) => ({ x: pu, y: V - (pv + dv), w: du, h: dv }),
-      sheetAxis: { u: 'x', v: 'y' },
-      sides: { left: u.minEdge, right: u.maxEdge, top: v.maxEdge, bottom: v.minEdge }
-    }
-  }
-  // lying: seen from above, the back (min depth) at the top
+  // which face axis runs across the sheet and which up and down: a standing part with the
+  // height up the sheet, a lying part with the room's x across and the back at the top. The
+  // direction comes from the room too, so a part turned over is still drawn up the right way.
+  const lying = u.room !== 'y' && v.room !== 'y'
+  const across = lying ? (u.room === 'x' ? 'u' : 'v') : (u.room === 'y' ? 'v' : 'u')
+  const A = across === 'u' ? u : v, B = across === 'u' ? v : u
+  const lenA = across === 'u' ? face.u : face.v, lenB = across === 'u' ? face.v : face.u
+  const fwdA = A.minEdge === ROOM_MIN[A.room], fwdB = B.minEdge === ROOM_MIN[B.room]
   return {
-    width: U, height: V,
-    rect: (pu, pv, du, dv) => ({ x: pu, y: pv, w: du, h: dv }),
-    sheetAxis: { u: 'x', v: 'y' },
-    sides: { left: u.minEdge, right: u.maxEdge, top: v.minEdge, bottom: v.maxEdge }
+    width: lenA, height: lenB,
+    rect: (pu, pv, du, dv) => {
+      const [a, da, b, db] = across === 'u' ? [pu, du, pv, dv] : [pv, dv, pu, du]
+      const x = fwdA ? a : lenA - a - da
+      // standing: up is +y (top of the sheet = far end); lying: the back (min z) at the top
+      const y = lying ? (fwdB ? b : lenB - b - db) : (fwdB ? lenB - b - db : b)
+      return { x, y, w: da, h: db }
+    },
+    sheetAxis: { u: across === 'u' ? 'x' : 'y', v: across === 'v' ? 'x' : 'y' },
+    sides: {
+      left: ROOM_MIN[A.room], right: ROOM_MAX[A.room],
+      top: lying ? ROOM_MIN[B.room] : ROOM_MAX[B.room], bottom: lying ? ROOM_MAX[B.room] : ROOM_MIN[B.room]
+    }
   }
 }
 

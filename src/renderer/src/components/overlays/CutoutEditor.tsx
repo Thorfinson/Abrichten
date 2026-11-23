@@ -2,7 +2,7 @@ import { useTranslation } from 'react-i18next'
 import type { Board, BoardCutout } from '../../types/furniture'
 import { CommitInput } from '../ui/CommitInput'
 import { boardFace } from '../../utils/boardFace'
-import { cutoutProblem, faceCutout } from '../../utils/geometry'
+import { clampCutouts, cutoutProblems, cutoutsTouch, faceCutout } from '../../utils/geometry'
 import { cutoutInRoom, cutoutKind, faceAxesInRoom, placementOf, storedFromFace, storedPlacement, switchEdge, type EdgePlacement, type FaceAxisInRoom } from '../../utils/cutoutPlace'
 
 const FIELD = 'w-14 shrink-0 text-[10px] bg-white/8 border border-white/15 text-white rounded px-1 py-0.5 outline-none text-right'
@@ -22,6 +22,7 @@ export function CutoutEditor({ board, onChange }: { board: Board; onChange: (cut
   const cutouts = board.cutouts ?? []
   const face = boardFace(board)
   const { u, v } = faceAxesInRoom(board)
+  const problems = cutoutProblems(board)
 
   const put = (id: string, next: BoardCutout): void => onChange(cutouts.map((c) => (c.id === id ? next : c)))
   /** Stored with its distances from the reference edges (a round hole: to its centre), so it
@@ -36,7 +37,15 @@ export function CutoutEditor({ board, onChange }: { board: Board; onChange: (cut
     const fit = (want: number, len: number): number => Math.max(1, Math.round(Math.min(want, len - 80 >= 50 ? len - 80 : len / 2)))
     const w = fit(lying ? 560 : 100, face.u)
     const d = fit(lying ? 490 : 100, face.v)
-    onChange([...cutouts, { id: crypto.randomUUID(), x: Math.round((face.u - w) / 2), z: Math.round((face.v - d) / 2), width: w, depth: d }])
+    // in the middle, or the nearest free place next to the cutouts already there (stepping
+    // out from the middle), so a second click does not stack two cutouts on one spot
+    const taken = clampCutouts(board)
+    const at = (i: number, j: number): BoardCutout => ({ id: '', x: Math.round((face.u - w) / 2 + i * (w + 20)), z: Math.round((face.v - d) / 2 + j * (d + 20)), width: w, depth: d })
+    const fits = (c: BoardCutout): boolean => c.x >= 0 && c.z >= 0 && c.x + w <= face.u && c.z + d <= face.v && !taken.some((t) => cutoutsTouch(t, c))
+    const steps: [number, number][] = [[0, 0]]
+    for (let r = 1; r <= 4; r++) for (let i = -r; i <= r; i++) for (let j = -r; j <= r; j++) if (Math.max(Math.abs(i), Math.abs(j)) === r) steps.push([i, j])
+    const spot = steps.map(([i, j]) => at(i, j)).find(fits) ?? at(0, 0)
+    onChange([...cutouts, { ...spot, id: crypto.randomUUID() }])
   }
 
   const axisWord = (a: FaceAxisInRoom): string => t(`cutout.size.${a.room}`)
@@ -49,10 +58,10 @@ export function CutoutEditor({ board, onChange }: { board: Board; onChange: (cut
         const fc = faceCutout(board, c)
         const p = placementOf(board, fc)
         const room = cutoutInRoom(board, fc)
-        const problem = cutoutProblem(board, c)
+        const { problem, other } = problems[idx]
         const round = c.shape === 'circle'
         // not built: not called a notch (it is at no edge of the part); the hint says why
-        const kind = problem === 'outside' || problem === 'splits' ? (round ? 'round' : 'hole') : cutoutKind(board, fc)
+        const kind = problem === 'outside' || problem === 'splits' || problem === 'overlaps' ? (round ? 'round' : 'hole') : cutoutKind(board, fc)
         const num = (text: string): number | null => { const n = parseFloat(text.replace(',', '.')); return Number.isFinite(n) && n >= 0 ? n : null }
         const edgePick = (a: FaceAxisInRoom, which: 'u' | 'v') => (
           <select
@@ -127,7 +136,7 @@ export function CutoutEditor({ board, onChange }: { board: Board; onChange: (cut
               {edgePick(v, 'v')}
             </div>
             {/* why it is not built: off the board, or it would cut the board in two */}
-            {problem && <div className="pl-4 mb-0.5 text-amber-400" data-testid="cutout-problem">{t(`cutout.problem.${problem}`)}</div>}
+            {problem && <div className="pl-4 mb-0.5 text-amber-400" data-testid="cutout-problem">{t(`cutout.problem.${problem}`, { n: other })}</div>}
             {/* 4: the same place in the room — the one reference system */}
             <div className="pl-4 text-white/40" data-testid="cutout-room">
               {t('cutout.inRoom')}: {roomWord(u)} {round1(room[u.room][0])}–{round1(room[u.room][1])} · {roomWord(v)} {round1(room[v.room][0])}–{round1(room[v.room][1])}

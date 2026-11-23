@@ -88,15 +88,17 @@ export interface EdgePlacement {
 }
 
 /** The placement as people read it, for a cutout on the face (faceCutout / clampCutouts):
- *  from its own reference edges (Bezugskanten), else from the nearer edge along each axis
- *  (a notch: 0 from its edge). A round hole is placed by its centre, as it is drilled. */
+ *  from its reference edges (Bezugskanten) — the edges whose distance it keeps when the board
+ *  changes size. Without stored ones that is the face's min edges, as the distances are stored
+ *  (shown truthfully, not "from the nearer edge", which would change with the board's size).
+ *  A round hole is placed by its centre, as it is drilled. */
 export function placementOf(board: Board, c: BoardCutout): EdgePlacement {
   const face = boardFace(board)
   const round = (n: number): number => Math.round(n * 10) / 10
   const r = c.shape === 'circle' ? c.width / 2 : 0
   const uMax = face.u - c.x - c.width, vMax = face.v - c.z - c.depth
-  const uFrom = c.uFrom ?? (uMax < c.x ? 'max' : 'min')
-  const vFrom = c.vFrom ?? (vMax < c.z ? 'max' : 'min')
+  const uFrom = c.uFrom ?? 'min'
+  const vFrom = c.vFrom ?? 'min'
   return { uFrom, uDist: round((uFrom === 'min' ? c.x : uMax) + r), vFrom, vDist: round((vFrom === 'min' ? c.z : vMax) + r) }
 }
 

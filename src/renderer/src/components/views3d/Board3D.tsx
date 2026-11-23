@@ -1,7 +1,7 @@
 import React, { memo, useRef, useEffect, useMemo, useState } from 'react'
 import { useThree, useFrame } from '@react-three/fiber'
 import { useTranslation } from 'react-i18next'
-import { useUIStore, useCanvasView, shownStep } from '../../store/useUIStore'
+import { useUIStore, useCanvasView, shownStep, snapTargets } from '../../store/useUIStore'
 import { useProjectStore } from '../../store/useProjectStore'
 import { TransformControls, Line, Html } from '@react-three/drei'
 import { snapToGrid } from '../../utils/geometry'
@@ -66,12 +66,9 @@ function edgeMaterial(color: string, dimmed: boolean): THREE.LineBasicMaterial {
   return m
 }
 
-/** The other visible boards a drag can snap to (not the ones being moved). */
+/** The other visible boards a drag can snap to (not the ones being moved; store snapTargets). */
 function snapCandidates(moving: string[]): Board[] {
-  const skip = new Set(moving)
-  return useProjectStore.getState().project.assemblies
-    .filter((a) => a.visible !== false)
-    .flatMap((a) => a.boards.filter((b) => !skip.has(b.id)))
+  return snapTargets(useProjectStore.getState().project, useUIStore.getState(), moving)
 }
 
 /** Memoized: the store keeps unchanged boards' object identity, so a drag or
