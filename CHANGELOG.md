@@ -67,6 +67,7 @@
 - Large selections show one overall dimension instead of hundreds of labels.
 
 ### Changed
+- Whether an assembly counts (its tick in the parts column) is read in one place, `assemblyCounts` (utils/activeParts). Before, the rule was written out again in 18 files — the 3D view, handles, snapping, marquee, joints, grooves, collisions, statics, the parts column and file loading. Nothing changes on screen. A guard test fails for a new copy.
 - Status messages (saved, exported, „Gehört zum Entwurf …“) appear at the top of the canvas, under the view tabs; in Montage they covered the tabs.
 - The parts column (and the step list of the assembly workspace) is a little wider, so group names and their short words fit side by side.
 - The cutting list is in the panel menu (*Produktion*); before, only the command palette opened it. The nesting window has one name everywhere: *Plattenbelegung* (was “Zuschnittoptimierung” in its title and “Nesting / Zuschnitt” in the menu).

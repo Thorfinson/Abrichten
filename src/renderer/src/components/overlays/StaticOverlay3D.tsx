@@ -17,6 +17,7 @@ import {
   fieldGeometry, contourGeometry, boxCentre, frameOf, nodeNear, nodeWorld, place, displacement, type Rgba, type Vec
 } from './staticFieldGeometry'
 import { useDesignLocked } from '../../hooks/useDesignLocked'
+import { assemblyCounts } from '../../utils/activeParts'
 
 /** The heat map sits this far outside the board; polygonOffset does the rest against z-fighting. */
 const INFLATE_MM = 0.3
@@ -393,7 +394,7 @@ function PlacedLoads({ results, scale }: { results: Map<string, BoardStatic>; sc
   const hidden = useViewHidden()
   return (
     <>
-      {assemblies.filter((a) => a.visible !== false).flatMap((a) => a.boards.flatMap((b) => {
+      {assemblies.filter(assemblyCounts).flatMap((a) => a.boards.flatMap((b) => {
         const r = hidden.has(b.id) ? undefined : results.get(b.id)
         // only lying boards carry placed loads (services/static-sim.ts ownLoads)
         if (!r || !b.loads?.length || !isLying(r)) return []

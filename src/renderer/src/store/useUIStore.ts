@@ -7,6 +7,7 @@ import type { ChangedProjectFile } from '../utils/changedFile'
 import { stepHiddenIds } from '../utils/assemblySteps'
 import type { Board, Project } from '../types/furniture'
 import { setDesignLockSource } from './designLock'
+import { assemblyCounts } from '../utils/activeParts'
 
 export type TransformMode = 'translate' | 'rotate' | 'scale'
 
@@ -223,7 +224,7 @@ export function snapTargets(project: Pick<Project, 'assemblies' | 'assemblySteps
   const skip = new Set(moving)
   const hidden = viewHiddenIds(project, s)
   return project.assemblies
-    .filter((a) => a.visible !== false)
+    .filter(assemblyCounts)
     .flatMap((a) => a.boards.filter((b) => !skip.has(b.id) && !hidden.has(b.id)))
 }
 

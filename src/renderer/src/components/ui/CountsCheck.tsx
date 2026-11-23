@@ -2,13 +2,14 @@ import { useTranslation } from 'react-i18next'
 import { useProjectStore } from '../../store/useProjectStore'
 import { subtreeIds } from '../../utils/assemblyTree'
 import type { Assembly } from '../../types/furniture'
+import { assemblyCounts } from '../../utils/activeParts'
 
 /** Ticked, not ticked, or some of the subgroups ticked. */
 export type CountsState = 'on' | 'off' | 'some'
 
 export function countsStateOf(assemblies: Assembly[], id: string): CountsState {
   const ids = subtreeIds(assemblies, id)
-  const on = assemblies.filter((a) => ids.has(a.id)).map((a) => a.visible !== false)
+  const on = assemblies.filter((a) => ids.has(a.id)).map(assemblyCounts)
   return on.every(Boolean) ? 'on' : on.some(Boolean) ? 'some' : 'off'
 }
 

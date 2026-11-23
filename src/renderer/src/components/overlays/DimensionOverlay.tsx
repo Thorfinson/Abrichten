@@ -8,6 +8,7 @@ import { formatValue } from '../../utils/units'
 import type { Board } from '../../types/furniture'
 import type { ViewMode } from '../../types/measurement'
 import { CANVAS, HTML_Z_RANGE, sceneLabelStyle } from '../canvasTheme'
+import { assemblyCounts } from '../../utils/activeParts'
 
 /** Per-board dimension lines are drawn for at most this many selected boards;
  *  a bigger selection (e.g. Ctrl+A) gets one overall dimension instead. */
@@ -283,7 +284,7 @@ export function DimensionOverlay() {
   const selectedBoards = useMemo(() => {
     if (selectedBoardIds.length === 0) return []
     return project.assemblies
-      .filter((a) => a.visible !== false)
+      .filter(assemblyCounts)
       .flatMap((a) => a.boards)
       .filter((b) => selectedBoardIds.includes(b.id))
   }, [project.assemblies, selectedBoardIds])

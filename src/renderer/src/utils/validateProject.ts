@@ -7,6 +7,7 @@ import { sanitizeParents } from './assemblyTree'
 import { isBoardRole } from './boardRole'
 import { cleanShortName, isPartNo, numberParts } from './partLabel'
 import { isParamName } from './formulaEval'
+import { assemblyCounts } from './activeParts'
 
 /** Largest accepted size or |position| in mm (100 m). Beyond it the boring and nesting loops blow up. */
 export const MAX_MM = 100_000
@@ -81,7 +82,7 @@ function validateAssembly(a: unknown, path: string): { assembly: Assembly; rawJo
       ...rest,
       id: str(a.id, crypto.randomUUID()),
       name: cleanName(a.name, 'Baugruppe'),
-      visible: a.visible !== false,
+      visible: assemblyCounts(a),
       shortName: cleanShortName(a.shortName) || undefined,
       boards,
       joints: []

@@ -3,6 +3,7 @@ import { useProjectStore } from '../../store/useProjectStore'
 import { useUIStore } from '../../store/useUIStore'
 import { useViewHidden } from '../../hooks/useViewHidden'
 import { grooveBox } from '../../utils/geometry'
+import { assemblyCounts } from '../../utils/activeParts'
 
 /**
  * Renders visual groove marks for dado and rabbet joints.
@@ -22,7 +23,7 @@ export function JointGrooves3D() {
   const boardMap = new Map(project.assemblies.flatMap((a) => a.boards).map((b) => [b.id, b]))
 
   for (const assembly of project.assemblies) {
-    if (assembly.visible === false) continue
+    if (!assemblyCounts(assembly)) continue
 
     for (const joint of assembly.joints) {
       if (joint.type !== 'dado' && joint.type !== 'rabbet') continue

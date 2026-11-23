@@ -26,7 +26,8 @@ Object.defineProperty(globalThis, 'localStorage', {
 })
 const { useProjectStore } = await import('../../src/renderer/src/store/useProjectStore.ts')
 const { useUIStore, viewHiddenIds, viewStateOf, toggleAll } = await import('../../src/renderer/src/store/useUIStore.ts')
-const { activeAssemblies } = await import('../../src/renderer/src/utils/activeParts.ts')
+const activeParts = await import('../../src/renderer/src/utils/activeParts.ts')
+const { activeAssemblies } = activeParts
 
 const store = () => useProjectStore.getState()
 const ui = () => useUIStore.getState()
@@ -187,4 +188,27 @@ test('what the view hides is decided in one place (viewHiddenIds), not beside it
   // the eye's own controls and the boards read the eye's list as such; every other place goes through viewHiddenIds / useViewHidden
   const allowed = ['components/views3d/Board3D.tsx', 'components/layout/AssemblyDrawer.tsx']
   assert.deepEqual(offenders.filter((f) => !allowed.includes(f)), [])
+})
+
+test('the tick: an assembly counts unless its tick is off; no tick saved counts (older files)', () => {
+  const { assemblyCounts } = activeParts
+  assert.equal(assemblyCounts({ visible: false }), false)
+  assert.equal(assemblyCounts({ visible: true }), true)
+  assert.equal(assemblyCounts({}), true)
+  const project = { assemblies: [{ id: 'a', visible: false }, { id: 'b' }, { id: 'c', visible: true }] }
+  assert.deepEqual(activeAssemblies(project).map((a) => a.id), ['b', 'c'])
+})
+
+test('whether an assembly counts is read in one place (assemblyCounts), not written out beside it', async () => {
+  // a reading of the tick: compared, negated, or used as a condition — not a copy (visible: parent.visible)
+  // and not a three.js object (mesh.visible = …)
+  const reading = /\.visible\s*(?:[!=]==?|\?|&&|\|\|)|!\s*[\w.\]]*\.visible\b|\(\s*[\w.\]]*\.visible\s*\)/
+  const offenders = []
+  for (const file of await sources(ROOT)) {
+    const rel = relative(ROOT, file)
+    if (rel === 'utils/activeParts.ts') continue
+    const code = (await readFile(file, 'utf8')).replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '')
+    if (reading.test(code)) offenders.push(rel)
+  }
+  assert.deepEqual(offenders, [])
 })
