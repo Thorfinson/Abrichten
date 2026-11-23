@@ -24,6 +24,8 @@ export interface HardwareItem {
   extensionType?: 'full' | 'partial'
   /** Typical unit price EUR */
   unitPrice: number
+  /** The gap it bridges between its board and the neighbour, from–to mm (see CustomHardwareItem.bridgesMm) */
+  bridgesMm?: [number, number]
 }
 
 export const hardwareItems: HardwareItem[] = [
@@ -203,6 +205,45 @@ export function carriesHardware(board: Pick<Board, 'hardware'>, category: Hardwa
   return (board.hardware ?? []).some((h) => h.quantity > 0 && (
     hardwareItems.find((i) => i.id === h.hardwareId)?.category === category ||
     customHardware?.find((i) => i.id === h.hardwareId)?.category === category))
+}
+
+/** Largest gap a hardware item may claim to bridge (mm). */
+export const MAX_BRIDGES_MM = 100
+
+/** A from–to range in mm as stored (both finite, 0 ≤ from ≤ to ≤ MAX_BRIDGES_MM, sorted), or undefined. */
+export function cleanBridgesMm(v: unknown): [number, number] | undefined {
+  if (!Array.isArray(v) || v.length !== 2) return undefined
+  const [a, b] = v
+  if (typeof a !== 'number' || typeof b !== 'number' || !Number.isFinite(a) || !Number.isFinite(b)) return undefined
+  const lo = Math.min(a, b), hi = Math.max(a, b)
+  return lo >= 0 && hi <= MAX_BRIDGES_MM ? [lo, hi] : undefined
+}
+
+/** Where the gap ranges come from: the project's own hardware, and the project's ranges for catalogue items. */
+export interface BridgeRanges {
+  customHardware?: CustomHardwareItem[]
+  /** Project.hardwareBridges: the gap a catalogue item bridges in this project */
+  hardwareBridges?: Record<string, [number, number]>
+}
+
+/** The gap a hardware item bridges, from–to mm: its own field (project hardware), else the project's range for a catalogue item. */
+export function bridgesOf(hardwareId: string, ranges: BridgeRanges): [number, number] | undefined {
+  const own = ranges.customHardware?.find((i) => i.id === hardwareId)
+  if (own) return own.bridgesMm
+  return ranges.hardwareBridges?.[hardwareId] ?? hardwareItems.find((i) => i.id === hardwareId)?.bridgesMm
+}
+
+/**
+ * The hardware on this board that bridges a gap of `gapMm` (its range holds it), or
+ * undefined: the one test whether hardware explains air between two boards (services/static-sim).
+ */
+export function bridgingHardware(board: Pick<Board, 'hardware'>, gapMm: number, ranges: BridgeRanges): string | undefined {
+  const EPS = 1e-6
+  return (board.hardware ?? []).find((h) => {
+    if (!(h.quantity > 0)) return false
+    const range = bridgesOf(h.hardwareId, ranges)
+    return !!range && gapMm >= range[0] - EPS && gapMm <= range[1] + EPS
+  })?.hardwareId
 }
 
 export function getHardwareByCategory(cat: HardwareCategory): HardwareItem[] {

@@ -25,7 +25,7 @@ const board = (id, w, h, d, pos, extra = {}) => ({
 })
 const weightN = (b) => (b.width * b.height * b.depth / 1e9) * getMaterialById(b.materialId).density * GRAVITY
 const joint = (a, b, type = 'screw') => ({ id: `${a}-${b}`, type, boardA: a, boardB: b, position: { x: 0, y: 0, z: 0 }, fasteners: [] })
-const run = (boards, joints = [], payloadKg = 20) => simulateStatics(boards, { payloadKg, joints })
+const run = (boards, joints = [], payloadKg = 20, customHardware) => simulateStatics(boards, { payloadKg, joints, customHardware })
 const near = (a, b, rel, msg = '') => assert.ok(Math.abs(a - b) <= rel * Math.max(Math.abs(b), 1e-9), `${msg} ${a} ≠ ${b}`)
 const handed = (r, to) => r.reactions.filter((x) => x.to === to).reduce((s, x) => s + x.F, 0)
 
@@ -182,18 +182,21 @@ test('a 40 × 60 timber screwed onto a plinth is a beam: a load over its edge do
 
 test('a drawer hangs on its runners: the joint bridges the 12.7 mm gap, a rail its bottom touches does not carry it', () => {
   // drawer box (bottom glued between two sides) on side-mounted runners between two cabinet
-  // sides; its bottom touches a rail at the front edge only (5 mm gap), where it would tip
+  // sides; its bottom touches a rail at the front edge only (5 mm gap), where it would tip.
+  // The runner on each drawer side says it bridges 12.5–13 mm (Wunschliste, Statik Stufe 1)
   const ply = { materialId: 'multiplex-birke' }
+  const onRunner = { ...ply, hardware: [{ hardwareId: 'runner', quantity: 1 }] }   // one rail on each drawer side
+  const customHardware = [{ id: 'runner', name: 'Auszug', nameEn: 'Runner', category: 'slides', unitPrice: 9, bridgesMm: [12.5, 13] }]
   const boards = [
     board('wallL', 19, 700, 540, [0, 0, 0], ply),
     board('wallR', 19, 700, 540, [582.4, 0, 0], ply),
     board('rail', 600, 100, 60, [0, 0, 480], { materialId: 'fichte' }),
     board('bottom', 538, 12, 500, [31.7, 105, 20], ply),
-    board('sideL', 15, 68, 500, [31.7, 117, 20], ply),
-    board('sideR', 15, 68, 500, [554.7, 117, 20], ply)
+    board('sideL', 15, 68, 500, [31.7, 117, 20], onRunner),
+    board('sideR', 15, 68, 500, [554.7, 117, 20], onRunner)
   ]
   const joints = [joint('bottom', 'sideL', 'glued'), joint('bottom', 'sideR', 'glued'), joint('sideL', 'wallL'), joint('sideR', 'wallR')]
-  const sim = run(boards, joints, 20).results
+  const sim = run(boards, joints, 20, customHardware).results
   const bottom = sim.get('bottom')
   assert.notEqual(bottom.status, 'unsupported')
   const onRunners = handed(sim.get('sideL'), 'wallL') + handed(sim.get('sideR'), 'wallR')

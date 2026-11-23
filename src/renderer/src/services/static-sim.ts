@@ -1,6 +1,6 @@
-import type { Board, CustomHardwareItem, Joint, Material, PlacedLoad } from '../types/furniture'
+import type { Board, CustomHardwareItem, Joint, JointType, Material, PlacedLoad } from '../types/furniture'
 import { getMaterialById, permanentMaterial, GAMMA_M } from '../data/materials'
-import { carriesHardware, hasShelfPins } from '../data/hardware'
+import { bridgingHardware, hasShelfPins } from '../data/hardware'
 import { worldAligned, dimDirection } from '../utils/projection'
 import { boardFace, type BoardFace } from '../utils/boardFace'
 import { clampCutouts } from '../utils/geometry'
@@ -26,12 +26,20 @@ export type { StaticBox, StaticField } from './static-fe'
  *    its vertical plane; a panel whose height is its largest dimension is also checked
  *    for Euler buckling.
  *  - Supports: the floor (bottom at y ≤ 0.5), a board whose top touches this board's
- *    bottom (within 5 mm, footprints overlapping) over the contact area, and for
+ *    bottom (within 0.5 mm, footprints overlapping; up to 5 mm when the gap is explained,
+ *    see Gaps) over the contact area, and for
  *    horizontal members a board touching one of its end faces (a shelf between side
  *    panels, in a dado, a rail between posts) along the contact length. An end contact
  *    counts whether or not a joint is modelled. A lying board with shelf pins attached
  *    (hardware category shelfPins) rests on two pins per end contact instead. Every
  *    support only pushes; a board that would lift off a support leaves it.
+ *  - Gaps (Wunschliste, Statik Stufe 1, 23.11.): air of 0.5 mm or more between two boards
+ *    is no support and no connection unless something explains it: a glued joint between
+ *    them (glue bed, up to 5 mm) or hardware on one of them that bridges that width
+ *    (HardwareItem.bridgesMm, a side-mounted drawer runner). An explained gap is shown
+ *    with its width (BoardStatic.gaps); anything else is air (BoardStatic.air), and the
+ *    board is solved without it, so it may end up without support or overloaded. A screw
+ *    or any other joint across air is reported (jointAir).
  *  - Joints (Assembly.joints) connect boards over their contact region and carry the
  *    load between them, replacing their contact (applyJoints): what stands on something
  *    stands and is braced by its joints, what does not stand hangs on its joints. They
@@ -53,10 +61,16 @@ export type { StaticBox, StaticField } from './static-fe'
 
 /** Up to this height a board stands on the floor. */
 const FLOOR_Y_MM = 0.5
-/** Gap (or overlap) up to which two faces touch. */
+/** Gap (or overlap) up to which two faces are taken as a contact: they touch up to GAP_SHOWN_MM, beyond it only an explained gap (glue bed) carries */
 const CONTACT_MM = 5
-/** A contact or joint across more air than this is reported as a gap (SupportGap); less is rounding */
+/** Air up to this between two boards is rounding: they touch. More must be explained (glue, hardware) to carry */
 const GAP_SHOWN_MM = 0.5
+/** A glued joint fills a gap up to this: the glue bed (slate on fibre cement: 3 mm) */
+const GLUE_BED_MM = 5
+/** Float noise in sums of positions (860.3 + 38.4 …): differences below this are equal at the limits above */
+const GAP_EPS_MM = 1e-6
+/** Air between two boards beyond rounding (more than GAP_SHOWN_MM) */
+const isAir = (gap: number): boolean => gap > GAP_SHOWN_MM + GAP_EPS_MM
 /** How far a board may reach into another at its end (groove, dado, tenon) and still rest on it. */
 const MAX_PENETRATION_MM = 25
 /** Overlaps below this are rounding noise. */
@@ -109,8 +123,20 @@ interface Support extends ContactSupport {
   area: number
   /** Air between the two boards that this support is counted across (mm); missing: they touch */
   gap?: number
-  /** The gap is bridged on purpose by hardware (a drawer runner on one of the boards) */
-  bridged?: boolean
+  /** What explains the gap (always set with gap) */
+  because?: GapReason
+}
+
+/** What explains a gap between two boards, so a support or joint counts across it. */
+type GapReason = { because: 'glued' } | { because: 'hardware'; hardwareId: string }
+
+/** Air no support or joint counts across, kept per member (BoardStatic.air) */
+interface Air {
+  by: number
+  kind: 'below' | 'end' | 'joint'
+  mm: number
+  jointType?: JointType
+  at: { x: number; y: number; z: number }
 }
 
 interface Member {
@@ -141,24 +167,45 @@ interface Member {
   joints: StaticBox[]
   /** Lying boards resting on this one over most of their area: they bend together */
   layers: { index: number; rect: Rect }[]
+  /** Contacts and joints across air nothing explains: not counted, reported */
+  air: Air[]
 }
 
 /** A force handed down to a supporting board (world point of its centre, N). */
 export interface StaticReaction { x: number; y: number; z: number; F: number; to: string | null }
 
 /**
- * A support counted across a gap: a contact the boards do not really make (within the
- * contact tolerance), or a joint across air. It still counts, but the board is never
- * rated "ok" for it unless hardware bridges it on purpose (BoardStatic.gaps).
+ * A support counted across a gap that something explains: a glued joint (the glue bed, up
+ * to 5 mm) or hardware on one of the boards that bridges this width (a drawer runner).
+ * Shown with its width, no warning (BoardStatic.gaps).
  */
 export interface SupportGap {
   /** The board it rests on or is joined to; null for the floor */
   by: string | null
-  kind: 'below' | 'end' | 'joint'
+  kind: 'below' | 'end' | 'joint' | 'floor'
   /** Width of the gap (mm) */
   mm: number
-  /** Bridged on purpose by hardware (a drawer runner): shown, no warning */
-  bridged: boolean
+  /** What explains it */
+  because: 'glued' | 'hardware'
+  /** The hardware that bridges it (because: 'hardware') */
+  hardwareId?: string
+  /** Where (world mm), for the 3D label */
+  at: { x: number; y: number; z: number }
+}
+
+/**
+ * Air between two boards that nothing explains (no glue, no hardware bridging it): it is
+ * no support and no connection, the board is solved without it (BoardStatic.air). A joint
+ * across air (jointType set) is a mistake to report: "Schraube über 3 mm Luft".
+ */
+export interface SupportAir {
+  /** The board across the air */
+  by: string
+  kind: 'below' | 'end' | 'joint'
+  /** Width of the air (mm, rounded to 0.1) */
+  mm: number
+  /** The joint that claims to connect across it (kind 'joint') */
+  jointType?: JointType
   /** Where (world mm), for the 3D label */
   at: { x: number; y: number; z: number }
 }
@@ -200,8 +247,10 @@ export interface BoardStatic {
   minThicknessMm: number | null
   /** Forces this board hands to its supports */
   reactions: StaticReaction[]
-  /** Supports counted across a gap; missing when none */
+  /** Supports counted across a gap that something explains; missing when none */
   gaps?: SupportGap[]
+  /** Contacts and joints across air that do not count; missing when none */
+  air?: SupportAir[]
 }
 
 export interface StaticSimulation {
@@ -218,10 +267,12 @@ export interface SimulationOptions {
   /** Global payload per shelf (kg) for boards without their own loadKg */
   payloadKg: number
   customMaterials?: Material[]
-  /** Joints between the boards (Assembly.joints of the visible assemblies): fastened connections */
-  joints?: Pick<Joint, 'boardA' | 'boardB'>[]
-  /** Project hardware, to recognise custom shelf pins */
+  /** Joints between the boards (Assembly.joints of the visible assemblies): fastened connections; a glued one explains a gap up to the glue bed */
+  joints?: (Pick<Joint, 'boardA' | 'boardB'> & { type?: JointType })[]
+  /** Project hardware, to recognise custom shelf pins and the gaps hardware bridges */
   customHardware?: CustomHardwareItem[]
+  /** The gaps catalogue hardware bridges in this project (Project.hardwareBridges) */
+  hardwareBridges?: Record<string, [number, number]>
 }
 
 const lo = (r: Rect | StaticBox, a: HAxis): number => (a === 'x' ? r.x0 : r.z0)
@@ -297,7 +348,8 @@ function buildMember(raw: Board, index: number, options: SimulationOptions): Mem
     received: [],
     covers: [],
     layers: [],
-    joints: []
+    joints: [],
+    air: []
   }
 }
 
@@ -308,6 +360,7 @@ function buildMember(raw: Board, index: number, options: SimulationOptions): Mem
  * its own end face is a continuation (a worktop seam), not a support.
  */
 function endContact(b: StaticBox, s: StaticBox, sVertical: boolean, ends: readonly HAxis[]): { rect: Rect; area: number; axis: HAxis; gap: number } | null {
+  const reach = CONTACT_MM + GAP_EPS_MM
   const oy = overlap(b.y0, b.y1, s.y0, s.y1)
   if (oy <= MIN_OVERLAP_MM) return null
   for (const a of ends) {
@@ -317,8 +370,8 @@ function endContact(b: StaticBox, s: StaticBox, sVertical: boolean, ends: readon
     if (!sVertical && hi(s, a) - lo(s, a) >= hi(s, o) - lo(s, o)) continue
     const pen = Math.min(MAX_PENETRATION_MM, 0.25 * (hi(b, a) - lo(b, a)))
     let at: number | null = null
-    if (lo(s, a) >= hi(b, a) - pen && lo(s, a) <= hi(b, a) + CONTACT_MM && hi(s, a) > hi(b, a) + MIN_OVERLAP_MM) at = hi(b, a)
-    else if (hi(s, a) <= lo(b, a) + pen && hi(s, a) >= lo(b, a) - CONTACT_MM && lo(s, a) < lo(b, a) - MIN_OVERLAP_MM) at = lo(b, a)
+    if (lo(s, a) >= hi(b, a) - pen && lo(s, a) <= hi(b, a) + reach && hi(s, a) > hi(b, a) + MIN_OVERLAP_MM) at = hi(b, a)
+    else if (hi(s, a) <= lo(b, a) + pen && hi(s, a) >= lo(b, a) - reach && lo(s, a) < lo(b, a) - MIN_OVERLAP_MM) at = lo(b, a)
     if (at === null) continue
     const gap = at === hi(b, a) ? lo(s, a) - hi(b, a) : lo(b, a) - hi(s, a)
     return { rect: make(a, at, at, Math.max(lo(b, o), lo(s, o)), Math.min(hi(b, o), hi(s, o))), area: oy * across, axis: a, gap }
@@ -342,12 +395,23 @@ function pinPositions(m: Member, rect: Rect, axis: HAxis): { x: number; z: numbe
   return unique.map((p) => (axis === 'x' ? { x: at, z: p } : { x: p, z: at }))
 }
 
-/** Support relations, built once for all members. */
-function findSupports(members: Member[]): void {
+/**
+ * What explains air of `gap` mm between two members, or null: then it is no support
+ * (gapExplainer). `floor`: the same for air below a member standing on the floor.
+ */
+interface Explain {
+  (a: Member, b: Member, gap: number): GapReason | null
+  floor: (m: Member, gap: number) => GapReason | null
+}
+
+/** Support relations, built once for all members. A gap nothing explains is air (Member.air), no support. */
+function findSupports(members: Member[], explain: Explain): void {
   for (const m of members) {
     const b = m.box
-    if (b.y0 <= FLOOR_Y_MM) {
-      m.supports.push({ kind: 'floor', by: -1, rect: footprint(b), area: rectArea(footprint(b)), y0: b.y0, y1: b.y0 })
+    // on the floor; or up to CONTACT_MM above it across a gap that hardware on the board bridges (levelling shims)
+    const floorWhy = b.y0 > FLOOR_Y_MM + GAP_EPS_MM && b.y0 <= CONTACT_MM + GAP_EPS_MM ? explain.floor(m, b.y0) : null
+    if (b.y0 <= FLOOR_Y_MM + GAP_EPS_MM || floorWhy) {
+      m.supports.push({ kind: 'floor', by: -1, rect: footprint(b), area: rectArea(footprint(b)), y0: b.y0, y1: b.y0, ...(floorWhy ? { gap: b.y0, because: floorWhy } : {}) })
       continue
     }
     // ends: the horizontal axes along the board's face (both for a lying board, the length of a rail on edge)
@@ -357,11 +421,20 @@ function findSupports(members: Member[]): void {
       const sb = s.box
       const ox = overlap(b.x0, b.x1, sb.x0, sb.x1)
       const oz = overlap(b.z0, b.z1, sb.z0, sb.z1)
-      if (Math.abs(sb.y1 - b.y0) <= CONTACT_MM && sb.y0 < b.y0 && ox > MIN_OVERLAP_MM && oz > MIN_OVERLAP_MM) {
+      // near enough to rest on it: within CONTACT_MM either way. A hardware range does not
+      // reach further: it has no direction, and a runner's 12.7 mm beside a drawer side must
+      // not make it rest on what is 12.7 mm below (that gap counts through the runner's joint)
+      const gap = b.y0 - sb.y1
+      if (Math.abs(gap) <= CONTACT_MM + GAP_EPS_MM && sb.y0 < b.y0 && ox > MIN_OVERLAP_MM && oz > MIN_OVERLAP_MM) {
         const rect = { x0: Math.max(b.x0, sb.x0), x1: Math.min(b.x1, sb.x1), z0: Math.max(b.z0, sb.z0), z1: Math.min(b.z1, sb.z1) }
-        const gap = b.y0 - sb.y1
-        m.supports.push({ kind: 'below', by: s.index, rect, area: ox * oz, y0: b.y0, y1: b.y0, ...(gap > GAP_SHOWN_MM ? { gap } : {}) })
+        const why = isAir(gap) ? explain(m, s, gap) : null
+        if (isAir(gap) && !why) {
+          s.covers.push(rect)   // covered either way: nothing is put there
+          m.air.push({ by: s.index, kind: 'below', mm: gap, at: { x: (rect.x0 + rect.x1) / 2, y: b.y0 - gap / 2, z: (rect.z0 + rect.z1) / 2 } })
+          continue
+        }
         s.covers.push(rect)
+        m.supports.push({ kind: 'below', by: s.index, rect, area: ox * oz, y0: b.y0, y1: b.y0, ...(why ? { gap, because: why } : {}) })
         if (m.lying && s.lying && ox * oz >= LAYER_COVERAGE * rectArea(footprint(b))) s.layers.push({ index: m.index, rect })
         continue
       }
@@ -369,14 +442,16 @@ function findSupports(members: Member[]): void {
       const end = endContact(b, sb, s.vertical, ends)
       if (!end) continue
       const y0 = Math.max(b.y0, sb.y0), y1 = Math.min(b.y1, sb.y1)
+      const why = isAir(end.gap) ? explain(m, s, end.gap) : null
+      if (isAir(end.gap) && !why) {
+        if (end.gap <= CONTACT_MM + GAP_EPS_MM) m.air.push({ by: s.index, kind: 'end', mm: end.gap, at: { x: (end.rect.x0 + end.rect.x1) / 2, y: (y0 + y1) / 2, z: (end.rect.z0 + end.rect.z1) / 2 } })
+        continue
+      }
       const pins = m.lying && m.pins ? pinPositions(m, end.rect, end.axis) : undefined
-      m.supports.push({ kind: 'end', by: s.index, rect: end.rect, area: end.area, y0, y1, pins, ...(end.gap > GAP_SHOWN_MM ? { gap: end.gap } : {}) })
+      m.supports.push({ kind: 'end', by: s.index, rect: end.rect, area: end.area, y0, y1, pins, ...(why ? { gap: end.gap, because: why } : {}) })
     }
   }
 }
-
-/** A joint bridges a gap up to this: drawer runners (12.7 mm a side), spacer strips. */
-const JOINT_GAP_MM = 15
 
 /**
  * Where two boxes touch or overlap: per axis the overlap, or the middle of a gap of at
@@ -412,23 +487,56 @@ function contactRegion(a: StaticBox, b: StaticBox, gap: number): StaticBox | nul
  * A joint replaces the contact of its pair; boards without joints keep the contact rules.
  * Every joint braces both boards (bucklingGap).
  */
+/** A contact region across air moved onto `held`'s face toward `carrier`, on each axis where they are apart. */
+function onFace(region: StaticBox, held: StaticBox, carrier: StaticBox): StaticBox {
+  const r = { ...region }
+  for (const [k0, k1] of [['x0', 'x1'], ['y0', 'y1'], ['z0', 'z1']] as const) {
+    if (carrier[k0] >= held[k1]) { r[k0] = held[k1]; r[k1] = held[k1] }
+    else if (carrier[k1] <= held[k0]) { r[k0] = held[k0]; r[k1] = held[k0] }
+  }
+  return r
+}
+
+/** The middle between two boxes' centres (where to label air between boards that do not face each other). */
+function centreBetween(a: StaticBox, b: StaticBox): { x: number; y: number; z: number } {
+  return { x: (a.x0 + a.x1 + b.x0 + b.x1) / 4, y: (a.y0 + a.y1 + b.y0 + b.y1) / 4, z: (a.z0 + a.z1 + b.z0 + b.z1) / 4 }
+}
+
 /** Air between two boxes (mm): the largest separation along an axis; 0 when they touch or overlap. */
 function separation(a: StaticBox, b: StaticBox): number {
   return Math.max(0, b.x0 - a.x1, a.x0 - b.x1, b.y0 - a.y1, a.y0 - b.y1, b.z0 - a.z1, a.z0 - b.z1)
 }
 
-function applyJoints(members: Member[], joints: Pick<Joint, 'boardA' | 'boardB'>[], customHardware?: CustomHardwareItem[]): void {
+function applyJoints(members: Member[], joints: NonNullable<SimulationOptions['joints']>, explain: Explain): void {
   const n = members.length
   const index = new Map(members.map((m) => [m.raw.id, m.index]))
-  const pairs = new Map<string, { a: number; b: number; region: StaticBox }>()
+  const pairs = new Map<string, { a: number; b: number; region: StaticBox; gap: number; why: GapReason | null }>()
+  const seen = new Set<string>()
   for (const j of joints) {
     const a = index.get(j.boardA), b = index.get(j.boardB)
     if (a === undefined || b === undefined || a === b) continue
     const key = a < b ? `${a}|${b}` : `${b}|${a}`
-    if (pairs.has(key)) continue
-    const region = contactRegion(members[a].box, members[b].box, JOINT_GAP_MM)
+    if (seen.has(key)) continue
+    seen.add(key)
+    // the joint replaces the contact of its pair: so does its verdict on the air between them
+    members[a].air = members[a].air.filter((x) => x.by !== b)
+    members[b].air = members[b].air.filter((x) => x.by !== a)
+    // a joint holds across air only where something explains it (glue bed, hardware); a
+    // screw or any other joint across air is reported and does not connect
+    const gap = separation(members[a].box, members[b].box)
+    const why = isAir(gap) ? explain(members[a], members[b], gap) : null
+    const region = contactRegion(members[a].box, members[b].box, Math.max(gap, GAP_SHOWN_MM) + 0.01)
+    if (isAir(gap) && !why) {
+      const at = region
+        ? { x: (region.x0 + region.x1) / 2, y: (region.y0 + region.y1) / 2, z: (region.z0 + region.z1) / 2 }
+        : centreBetween(members[a].box, members[b].box)
+      const air = { kind: 'joint' as const, mm: gap, jointType: j.type, at }
+      members[a].air.push({ ...air, by: b })
+      members[b].air.push({ ...air, by: a })
+      continue
+    }
     if (!region) continue
-    pairs.set(key, { a, b, region })
+    pairs.set(key, { a, b, region, gap, why })
     members[a].joints.push(region)
     members[b].joints.push(region)
   }
@@ -477,7 +585,7 @@ function applyJoints(members: Member[], joints: Pick<Joint, 'boardA' | 'boardB'>
       area: Math.max(1, ext[0]) * Math.max(1, ext[1])
     }
   }
-  for (const { a, b, region } of pairs.values()) {
+  for (const { a, b, region, gap, why } of pairs.values()) {
     // the contact of the pair, if any: who rests on whom
     const aOnB = members[a].supports.some((s) => s.by === b), bOnA = members[b].supports.some((s) => s.by === a)
     members[a].supports = members[a].supports.filter((s) => s.by !== b)
@@ -490,10 +598,11 @@ function applyJoints(members: Member[], joints: Pick<Joint, 'boardA' | 'boardB'>
       ;[carrier, held] = dist[a] < dist[b] ? [a, b] : [b, a]
     }
     if (carrier < 0 || members[held].supports.some((s) => s.kind === 'floor')) continue
-    // a joint across air: a drawer runner bridges it on purpose, anything else is a gap
-    const gap = separation(members[a].box, members[b].box)
-    const bridged = carriesHardware(members[a].raw, 'slides', customHardware) || carriesHardware(members[b].raw, 'slides', customHardware)
-    members[held].supports.push({ ...jointSupport(carrier, region), ...(gap > GAP_SHOWN_MM ? { gap, bridged } : {}) })
+    // a joint across an explained gap (glue bed, drawer runner) carries; its width is shown.
+    // It acts on the held board's own face, not in the middle of the air (the solver looks
+    // for supports at the board)
+    const at = why ? onFace(region, members[held].box, members[carrier].box) : region
+    members[held].supports.push({ ...jointSupport(carrier, at), ...(why ? { gap, because: why } : {}) })
   }
 }
 
@@ -780,6 +889,7 @@ function memberKey(m: Member, own: OwnLoads, members: Member[]): string {
     m.covers,
     m.layers.map((l) => [l.rect, members[l.index].material ?? null, members[l.index].grain, members[l.index].face.thickness]),
     m.lying ? clampCutouts(m.raw) : [], m.raw.rotation, m.raw.width, m.raw.depth, m.raw.height,
+    m.air.length > 0,
     own
   ])
 }
@@ -807,7 +917,12 @@ function remember(key: string, outcome: Outcome): void {
 
 function solveMember(m: Member, own: OwnLoads, members: Member[]): Outcome {
   const totalN = own.selfN + own.payloadN + own.placed.reduce((s, p) => s + p.F, 0) + m.received.reduce((s, l) => s + l.F, 0)
-  if (!m.material || m.body) return { result: null, transfers: rigidTransfers(m, totalN, members) }
+  if (!m.material || m.body) {
+    // an appliance meant to rest on something (it was found near it) but only across air
+    // carries nowhere: say so, else its weight would vanish without a word
+    if (m.body && m.material && m.supports.length === 0 && m.air.length > 0) return { result: baseResult(m, 'unsupported', totalN, own), transfers: [] }
+    return { result: null, transfers: rigidTransfers(m, totalN, members) }
+  }
   const base = baseResult(m, 'ok', totalN, own)
   const loads = [
     { rect: footprint(m.box), F: own.selfN + own.payloadN },
@@ -920,8 +1035,9 @@ export function simulateStatics(boards: Board[], options: SimulationOptions): St
   const t0 = performance.now()
   const members = boards.map((b, i) => buildMember(b, i, options))
   const indexById = new Map(members.map((m) => [m.raw.id, m.index]))
-  findSupports(members)
-  applyJoints(members, options.joints ?? [], options.customHardware)
+  const explain = gapExplainer(options)
+  findSupports(members, explain)
+  applyJoints(members, options.joints ?? [], explain)
   const processed = new Array<boolean>(members.length).fill(false)
   const results = new Map<string, BoardStatic>()
   let solved = 0
@@ -952,14 +1068,14 @@ export function simulateStatics(boards: Board[], options: SimulationOptions): St
     }
   }
 
-  // supports counted across a gap: reported with their width, and a board resting on one
-  // is never rated "ok" (unless hardware bridges it on purpose)
+  // what the supports were counted across: explained gaps with their width, and the air
+  // that was not counted (the rating already follows from solving without it)
   for (const m of members) {
     const r = results.get(m.raw.id)
+    if (!r) continue
     const gaps = supportGaps(m, members)
-    if (!r || gaps.length === 0) continue
-    const open = gaps.some((g) => !g.bridged)
-    results.set(m.raw.id, { ...r, gaps, status: open && r.status === 'ok' ? 'warning' : r.status })
+    const air = m.air.map((x): SupportAir => ({ by: members[x.by].raw.id, kind: x.kind, mm: Math.round(x.mm * 10) / 10, ...(x.jointType ? { jointType: x.jointType } : {}), at: x.at }))
+    if (gaps.length || air.length) results.set(m.raw.id, { ...r, ...(gaps.length ? { gaps } : {}), ...(air.length ? { air } : {}) })
   }
 
   let critical = 0, warning = 0, unsupported = 0
@@ -971,22 +1087,41 @@ export function simulateStatics(boards: Board[], options: SimulationOptions): St
   return { results, critical, warning, unsupported, durationMs: performance.now() - t0, solved }
 }
 
-/** The widest gap a board's support is assumed across without hardware bridging it, or null. */
-export function openGap(r: Pick<BoardStatic, 'gaps'>): SupportGap | null {
-  const open = (r.gaps ?? []).filter((g) => !g.bridged)
-  return open.length ? open.reduce((a, b) => (b.mm > a.mm ? b : a)) : null
+/**
+ * The one rule what explains air between two boards (Wunschliste, Statik Stufe 1, 23.11.):
+ * a glued joint between them up to the glue bed, or hardware on either board whose
+ * bridgesMm range holds the width (data/hardware bridgingHardware). Nothing else does.
+ */
+function gapExplainer(options: SimulationOptions): Explain {
+  const pair = (p: string, q: string): string => (p < q ? `${p}|${q}` : `${q}|${p}`)
+  const glued = new Set((options.joints ?? []).filter((j) => j.type === 'glued').map((j) => pair(j.boardA, j.boardB)))
+  const ranges = { customHardware: options.customHardware, hardwareBridges: options.hardwareBridges }
+  const byHardware = (m: Member, gap: number): GapReason | null => {
+    const hardwareId = bridgingHardware(m.raw, gap, ranges)
+    return hardwareId ? { because: 'hardware', hardwareId } : null
+  }
+  const explain = ((a: Member, b: Member, gap: number): GapReason | null => {
+    if (gap <= GLUE_BED_MM + GAP_EPS_MM && glued.has(pair(a.raw.id, b.raw.id))) return { because: 'glued' }
+    return byHardware(a, gap) ?? byHardware(b, gap)
+  }) as Explain
+  explain.floor = byHardware
+  return explain
 }
-export function openGapMm(r: Pick<BoardStatic, 'gaps'>): number | null {
-  return openGap(r)?.mm ?? null
+
+/** The widest joint a board has across air (a screw that bridges nothing), or null: a mistake to report. */
+export function jointAir(r: Pick<BoardStatic, 'air'>): SupportAir | null {
+  const joints = (r.air ?? []).filter((x) => x.kind === 'joint')
+  return joints.length ? joints.reduce((a, b) => (b.mm > a.mm ? b : a)) : null
 }
 
 function supportGaps(m: Member, members: Member[]): SupportGap[] {
-  return m.supports.flatMap((s) => s.gap === undefined || s.kind === 'floor' ? [] : [{
+  return m.supports.flatMap((s) => s.gap === undefined || !s.because ? [] : [{
     by: s.by >= 0 ? members[s.by].raw.id : null,
     kind: s.kind,
     mm: Math.round(s.gap * 10) / 10,
-    bridged: !!s.bridged,
-    at: { x: (s.rect.x0 + s.rect.x1) / 2, y: s.kind === 'below' ? s.y0 - s.gap / 2 : (s.y0 + s.y1) / 2, z: (s.rect.z0 + s.rect.z1) / 2 }
+    because: s.because.because,
+    ...(s.because.because === 'hardware' ? { hardwareId: s.because.hardwareId } : {}),
+    at: { x: (s.rect.x0 + s.rect.x1) / 2, y: s.kind === 'below' || s.kind === 'floor' ? s.y0 - s.gap / 2 : (s.y0 + s.y1) / 2, z: (s.rect.z0 + s.rect.z1) / 2 }
   }])
 }
 

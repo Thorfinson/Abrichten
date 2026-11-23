@@ -8,7 +8,7 @@ import { useUIStore } from '../../store/useUIStore'
 import { useViewHidden } from '../../hooks/useViewHidden'
 import { useProjectStore } from '../../store/useProjectStore'
 import { useStaticSimulation, useStaticStore, modelFieldMax, DEFORMATION_SCALE, type StaticResultType, type StaticScaleMode } from '../../store/useStaticStore'
-import { faceToWorld, openGapMm, worldToFace, type BoardStatic } from '../../services/static-sim'
+import { faceToWorld, jointAir, worldToFace, type BoardStatic } from '../../services/static-sim'
 import { utilisationRgb, utilisationCss, UNSUPPORTED_COLOR, NEUTRAL_COLOR, SUPPORT_COLOR, JOINT_COLOR } from '../../services/static-calc'
 import { MAX_LOADS_PER_BOARD } from '../../utils/validateProject'
 import { HTML_Z_RANGE } from '../canvasTheme'
@@ -77,9 +77,11 @@ function heatRgba(v: number): Rgba {
 /** Label text of a board, or null when it gets none (ok and not selected). */
 export function staticLabel(r: BoardStatic, selected: boolean, mode: StaticResultType, t: TFunction, lang: string): string | null {
   const text = ratingLabel(r, selected, mode, t, lang)
-  // a support assumed across a gap: why the board is not "ok" (services/static-sim SupportGap)
-  const gap = openGapMm(r)
-  return text !== null && gap !== null ? `${text} · ${t('sim.gapShort', { mm: fmt(gap, lang) })}` : text
+  // a joint across air connects nothing: a mistake to point at (services/static-sim jointAir)
+  const air = jointAir(r)
+  if (air === null) return text
+  const note = t('sim.jointAirShort', { type: t(`joints.${air.jointType}`), mm: fmt(air.mm, lang) })
+  return text !== null ? `${text} · ${note}` : note   // shown also on a board rated ok: it is a mistake to fix
 }
 
 function ratingLabel(r: BoardStatic, selected: boolean, mode: StaticResultType, t: TFunction, lang: string): string | null {
@@ -287,7 +289,7 @@ function BoardHeat({ result: r, scale, mode, rangeTop, contours, selected, placi
       )}
       {showHot && <HotSpot boardId={r.boardId} position={hotPos} radius={radius} breaks={breaks} />}
       {selected && rated && <Supports r={r} scale={scale} />}
-      {selected && r.gaps && <GapMarkers r={r} />}
+      {selected && (r.gaps || r.air) && <GapMarkers r={r} />}
       {label && (
         <Html position={labelPos} zIndexRange={HTML_Z_RANGE} style={{ pointerEvents: 'none', whiteSpace: 'nowrap' }}>
           <div
@@ -315,25 +317,37 @@ function BoardHeat({ result: r, scale, mode, rangeTop, contours, selected, placi
   )
 }
 
-/** The gaps of the selected board's supports, where they are, with their width. */
+/**
+ * What the selected board's supports are counted across, where it is, with its width: a gap
+ * something explains (glue bed, hardware: light), air that carries nothing (dark), and a joint
+ * across air (amber, a mistake). services/static-sim SupportGap and SupportAir.
+ */
 function GapMarkers({ r }: { r: BoardStatic }) {
   const { t, i18n } = useTranslation()
+  const mm = (v: number): string => fmt(v, i18n.language)
+  const marks = [
+    ...(r.gaps ?? []).map((g) => ({ at: g.at, kind: 'gap', text: t(g.because === 'glued' ? 'sim.gapGlued' : 'sim.gapBridged', { mm: mm(g.mm) }) })),
+    ...(r.air ?? []).map((a) => ({
+      at: a.at,
+      kind: a.kind === 'joint' ? 'jointAir' : 'air',
+      text: a.kind === 'joint' ? t('sim.jointAirShort', { type: t(`joints.${a.jointType}`), mm: mm(a.mm) }) : t('sim.airShort', { mm: mm(a.mm) })
+    }))
+  ]
+  const look = {
+    gap: { background: 'rgba(244,244,245,0.9)', color: '#3f3f46', border: '1px solid #a1a1aa' },
+    air: { background: 'rgba(24,24,27,0.92)', color: '#e4e4e7', border: '1px dashed #a1a1aa' },
+    jointAir: { background: 'rgba(24,24,27,0.92)', color: '#fde68a', border: `1px solid ${WARNING_COLOR}` }
+  } as const
   return (
     <>
-      {(r.gaps ?? []).map((g, i) => (
-        <Html key={i} position={[g.at.x, g.at.y, g.at.z]} zIndexRange={HTML_Z_RANGE} style={{ pointerEvents: 'none', whiteSpace: 'nowrap' }}>
+      {marks.map((m, i) => (
+        <Html key={i} position={[m.at.x, m.at.y, m.at.z]} zIndexRange={HTML_Z_RANGE} style={{ pointerEvents: 'none', whiteSpace: 'nowrap' }}>
           <div
             data-testid="static-gap"
-            data-bridged={g.bridged ? 'true' : 'false'}
-            style={{
-              transform: 'translate(-50%, -50%)',
-              background: g.bridged ? 'rgba(244,244,245,0.9)' : 'rgba(24,24,27,0.92)',
-              color: g.bridged ? '#3f3f46' : '#fde68a',
-              border: g.bridged ? '1px solid #a1a1aa' : `1px solid ${WARNING_COLOR}`,
-              borderRadius: 3, padding: '0 5px', fontSize: 10, fontWeight: 600, lineHeight: '15px', userSelect: 'none'
-            }}
+            data-kind={m.kind}
+            style={{ transform: 'translate(-50%, -50%)', ...look[m.kind as keyof typeof look], borderRadius: 3, padding: '0 5px', fontSize: 10, fontWeight: 600, lineHeight: '15px', userSelect: 'none' }}
           >
-            {t(g.bridged ? 'sim.gapBridged' : 'sim.gapShort', { mm: fmt(g.mm, i18n.language) })}
+            {m.text}
           </div>
         </Html>
       ))}
