@@ -19,6 +19,7 @@ import { Icon } from './Icon'
 import { useDesignLocked } from '../../hooks/useDesignLocked'
 import { EyeToggle, HighlightToggle } from '../ui/PartsToggles'
 import { CountsCheck } from '../ui/CountsCheck'
+import { assemblyCounts } from '../../utils/activeParts'
 
 function assemblyStats(boards: Board[], customMaterials?: Material[]) {
   if (boards.length === 0) return null
@@ -71,7 +72,7 @@ export function AssemblyDrawer() {
 
   const project = useProjectStore((s) => s.project)
   // assemblies whose tick is on: only their parts are in the view at all
-  const counting = useMemo(() => new Set(project.assemblies.filter((a) => a.visible !== false).map((a) => a.id)), [project.assemblies])
+  const counting = useMemo(() => new Set(project.assemblies.filter(assemblyCounts).map((a) => a.id)), [project.assemblies])
   const addAssembly = useProjectStore((s) => s.addAssembly)
   const addBoard = useProjectStore((s) => s.addBoard)
   const removeAssembly = useProjectStore((s) => s.removeAssembly)
@@ -314,9 +315,9 @@ export function AssemblyDrawer() {
     const subtree = subtreeIds(project.assemblies, assembly.id)
     const stats = assemblyStats(project.assemblies.filter((a) => subtree.has(a.id)).flatMap((a) => a.boards), project.customMaterials)
     const hint = dropHint?.id === assembly.id ? dropHint.where : null
-    const dim = assembly.visible === false ? 'opacity-40' : ''
+    const dim = !assemblyCounts(assembly) ? 'opacity-40' : ''
     // the eye of the group: every part of it and its subgroups that counts (unticked parts are not in the view anyway)
-    const viewIds = project.assemblies.filter((a) => subtree.has(a.id) && a.visible !== false).flatMap((a) => a.boards.map((b) => b.id))
+    const viewIds = project.assemblies.filter((a) => subtree.has(a.id) && assemblyCounts(a)).flatMap((a) => a.boards.map((b) => b.id))
     return (
       <div
         key={assembly.id}
@@ -397,7 +398,7 @@ export function AssemblyDrawer() {
               }}
             />
           ) : (
-            <span className={`flex-1 min-w-0 truncate ${assembly.visible === false ? 'opacity-50' : ''}`} title={assembly.name}>
+            <span className={`flex-1 min-w-0 truncate ${!assemblyCounts(assembly) ? 'opacity-50' : ''}`} title={assembly.name}>
               {assembly.name}
             </span>
           )}
@@ -501,8 +502,8 @@ export function AssemblyDrawer() {
                       <span className="text-chrome-secondary" data-testid="part-label">{labels.get(board.id)}</span> · {board.width}×{board.height}×{board.depth}
                     </div>
                   </div>
-                  <EyeToggle quiet ids={assembly.visible !== false ? [board.id] : []} name={partTitle(labels.get(board.id), board.name)} />
-                  <HighlightToggle quiet ids={assembly.visible !== false ? [board.id] : []} name={partTitle(labels.get(board.id), board.name)} />
+                  <EyeToggle quiet ids={assemblyCounts(assembly) ? [board.id] : []} name={partTitle(labels.get(board.id), board.name)} />
+                  <HighlightToggle quiet ids={assemblyCounts(assembly) ? [board.id] : []} name={partTitle(labels.get(board.id), board.name)} />
                 </div>
               ))}
             </div>

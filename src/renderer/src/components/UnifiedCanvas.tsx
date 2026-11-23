@@ -4,7 +4,7 @@ import { OrbitControls } from '@react-three/drei'
 import { useProjectStore } from '../store/useProjectStore'
 import { useViewHidden } from '../hooks/useViewHidden'
 import { useUIStore, CanvasViewContext } from '../store/useUIStore'
-import { activeJoints } from '../utils/activeParts'
+import { activeJoints, assemblyCounts } from '../utils/activeParts'
 import { Board3D } from './views3d/Board3D'
 import { CameraController } from './CameraController'
 import { OrthoGrid } from './OrthoGrid'
@@ -107,9 +107,9 @@ export function UnifiedCanvas({ forceView }: { forceView?: ViewMode } = {}) {
         {(() => {
           // picked out and seen: an X-ray on parts the eye hides ghosts nothing
           const lit = workspace === 'assembly' ? new Set<string>() : new Set(highlightedParts.filter((id) => !viewHidden.has(id)))
-          const anyHighlight = lit.size > 0 && assemblies.some((a) => a.visible !== false && a.boards.some((b) => lit.has(b.id)))
+          const anyHighlight = lit.size > 0 && assemblies.some((a) => assemblyCounts(a) && a.boards.some((b) => lit.has(b.id)))
           return assemblies
-            .filter((assembly) => assembly.visible !== false)
+            .filter(assemblyCounts)
             .flatMap((assembly) =>
               assembly.boards.map((board) => (
                 <Board3D

@@ -8,6 +8,7 @@ import { subtreeIds } from '../utils/assemblyTree'
 import { cleanShortName, defaultShortName, numberParts, renumberParts, shortNameOf } from '../utils/partLabel'
 import { evalFormula, isParamName, formulaParams, renameFormulaParam } from '../utils/formulaEval'
 import { designChanged, isDesignLocked, tellDesignLocked } from './designLock'
+import { assemblyCounts } from '../utils/activeParts'
 
 function uid(): string {
   return Math.random().toString(36).slice(2, 10)
@@ -372,7 +373,7 @@ export const useProjectStore = create<ProjectState>()(
           if (!self) return s
           const ids = subtreeIds(s.project.assemblies, id)
           // all of it counts: switch it all off; otherwise (none or some): switch it all on
-          const value = !s.project.assemblies.filter((a) => ids.has(a.id)).every((a) => a.visible !== false)
+          const value = !s.project.assemblies.filter((a) => ids.has(a.id)).every(assemblyCounts)
           return {
             project: {
               ...s.project,

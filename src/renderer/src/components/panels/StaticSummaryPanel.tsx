@@ -8,6 +8,7 @@ import { PartName } from '../ui/PartName'
 import { GRAVITY, utilisationCss, type StaticStatus } from '../../services/static-calc'
 import { openGap, type BoardStatic } from '../../services/static-sim'
 import type { Assembly, Board } from '../../types/furniture'
+import { assemblyCounts } from '../../utils/activeParts'
 
 const STATUS_BADGE: Record<StaticStatus, string> = {
   critical: 'bg-danger-dim text-danger-text',
@@ -44,7 +45,7 @@ function SummaryDialog() {
   const rows = useMemo<SummaryRow[]>(() => {
     const out: SummaryRow[] = []
     for (const assembly of assemblies) {
-      if (assembly.visible === false) continue
+      if (!assemblyCounts(assembly)) continue
       for (const board of assembly.boards) {
         const r = sim.results.get(board.id)
         if (r) out.push({ board, assembly, r })

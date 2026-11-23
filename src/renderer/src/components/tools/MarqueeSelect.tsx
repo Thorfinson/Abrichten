@@ -4,6 +4,7 @@ import { useProjectStore } from '../../store/useProjectStore'
 import type { ViewMode } from '../../types/measurement'
 import { cameraDragFor } from '../../utils/canvasInput'
 import * as THREE from 'three'
+import { assemblyCounts } from '../../utils/activeParts'
 
 /** Axis mapping per ortho view: which world axes map to screen X and Y */
 const VIEW_AXES: Record<Exclude<ViewMode, '3d'>, { screenX: 'x' | 'y' | 'z'; screenY: 'x' | 'y' | 'z'; flipY: boolean }> = {
@@ -89,7 +90,7 @@ export function MarqueeSelect({ canvasRef, cameraRef }: MarqueeSelectProps) {
       const hidden = viewHiddenIds(project, useUIStore.getState())
 
       for (const assembly of project.assemblies) {
-        if (assembly.visible === false) continue
+        if (!assemblyCounts(assembly)) continue
         for (const board of assembly.boards) {
           if (hidden.has(board.id)) continue
           // Board AABB in world space (position is corner, not center)

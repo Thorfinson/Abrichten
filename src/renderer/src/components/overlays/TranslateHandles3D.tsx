@@ -11,6 +11,7 @@ import { beginDragHistory, endDragHistory } from '../../utils/dragHistory'
 import { beginTransform, endTransform } from '../../utils/transformLock'
 import type { Board } from '../../types/furniture'
 import { useDesignLocked } from '../../hooks/useDesignLocked'
+import { assemblyCounts } from '../../utils/activeParts'
 
 // Blender-style translate gizmo — 6 arrows (3 axes × 2 directions).
 const ARROW_SHAFT_LEN = 20
@@ -262,7 +263,7 @@ export function TranslateHandles3D(): JSX.Element | null {
   if (selectedBoardIds.length !== 1) return null
 
   const item = project.assemblies
-    .filter((a) => a.visible !== false)
+    .filter(assemblyCounts)
     .flatMap((a) => a.boards.map((b) => ({ board: b, assemblyId: a.id })))
     .find((x) => x.board.id === selectedBoardIds[0])
   if (!item) return null

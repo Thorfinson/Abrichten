@@ -4,6 +4,7 @@ import type { Assembly, CustomHardwareItem, Material } from '../types/furniture'
 import { simulateStatics, type StaticSimulation } from '../services/static-sim'
 import { useProjectStore } from './useProjectStore'
 import { designLockedIn, useUIStore } from './useUIStore'
+import { assemblyCounts } from '../utils/activeParts'
 
 /** Exaggeration of the deformation drawn when it is shown. */
 export const DEFORMATION_SCALE = 20
@@ -78,7 +79,7 @@ export function staticSimulation(
     cache.customMaterials === customMaterials && cache.customHardware === customHardware) {
     return cache.result
   }
-  const visible = assemblies.filter((a) => a.visible !== false)
+  const visible = assemblies.filter(assemblyCounts)
   const boards = visible.flatMap((a) => a.boards)
   // joints may join boards of different assemblies; one into a hidden assembly is skipped there
   const joints = visible.flatMap((a) => a.joints)

@@ -6,6 +6,7 @@ import { useUIStore } from '../../store/useUIStore'
 import { useViewHidden } from '../../hooks/useViewHidden'
 import { detectCollisions3D } from '../../utils/collision'
 import { CANVAS, HTML_Z_RANGE, sceneLabelStyle } from '../canvasTheme'
+import { assemblyCounts } from '../../utils/activeParts'
 
 /** One red overlap box. The box geometry is memoized (and disposed) so the
  *  edges aren't rebuilt — and a BoxGeometry leaked — on every render. */
@@ -48,7 +49,7 @@ export function CollisionOverlay3D() {
   const collisions = useMemo(() => {
     if (!showCollisionOverlay) return []
 
-    const visible = project.assemblies.filter((a) => a.visible !== false)
+    const visible = project.assemblies.filter(assemblyCounts)
 
     // joints let a back panel sit in its dado/rabbet without counting as a collision;
     // parts the assembly step view hides take no part

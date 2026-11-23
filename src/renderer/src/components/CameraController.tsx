@@ -8,6 +8,7 @@ import { fitBounds } from './layout/layoutRules'
 import { WheelClassifier, cameraDragFor, wheelPixels, zoomFactor, type CameraDrag } from '../utils/canvasInput'
 import { isDragActive } from '../utils/transformLock'
 import { isHoveringGizmo } from '../utils/gizmoHover'
+import { assemblyCounts } from '../utils/activeParts'
 
 /**
  * Orthographic camera configuration per 2D view.
@@ -150,7 +151,7 @@ export function CameraController({ orbitRef, containerRef }: {
   // An empty project frames the first metre from the origin.
   const fitBoundsNow = () => fitBounds(
     useProjectStore.getState().project.assemblies
-      .filter((a) => a.visible !== false)
+      .filter(assemblyCounts)
       .flatMap((a) => a.boards)
   )
 
