@@ -126,11 +126,16 @@ export function faceCutout(board: Board, c: BoardCutout): BoardCutout {
   }
 }
 
-/** What is wrong with a cutout, or null: off the face or a cut through the whole board (not
- *  built), or reaching past the board's edge (built, cut back to the edge — e.g. after the
- *  board got smaller while the cutout is measured from the other edge). */
-export type CutoutProblem = 'outside' | 'splits' | 'beyond'
-const notBuilt = (p: CutoutProblem | null): boolean => p === 'outside' || p === 'splits'
+/** What is wrong with a cutout, or null: off the face, a cut through the whole board, or
+ *  overlapping or touching an earlier cutout of the board (not built), or reaching past the
+ *  board's edge (built, cut back to the edge — e.g. after the board got smaller while the
+ *  cutout is measured from the other edge). */
+export type CutoutProblem = 'outside' | 'splits' | 'overlaps' | 'beyond'
+const notBuilt = (p: CutoutProblem | null): boolean => p === 'outside' || p === 'splits' || p === 'overlaps'
+/** Cutouts closer than this (mm) touch: they would leave a sliver or one open shape */
+const TOUCH_MM = 1
+
+/** The problem of one cutout on its own (not looking at the board's other cutouts). */
 export function cutoutProblem(board: Board, raw: BoardCutout): CutoutProblem | null {
   const face = boardFace(board)
   const c = faceCutout(board, raw)
@@ -145,19 +150,53 @@ export function cutoutProblem(board: Board, raw: BoardCutout): CutoutProblem | n
   return c.x < 0 || c.z < 0 || c.x + c.width > face.u || c.z + c.depth > face.v ? 'beyond' : null
 }
 
+/** A cutout on the face as it is built: from the min corner, a rectangle clipped to the face. */
+function builtShape(board: Board, raw: BoardCutout): BoardCutout {
+  const face = boardFace(board)
+  const c = faceCutout(board, raw)
+  if (c.shape === 'circle') return c
+  const x0 = Math.max(0, c.x), z0 = Math.max(0, c.z)
+  const x1 = Math.min(face.u, c.x + c.width), z1 = Math.min(face.v, c.z + c.depth)
+  return { ...c, x: x0, z: z0, width: x1 - x0, depth: z1 - z0 }
+}
+
+/** Two built cutouts overlap or touch (closer than TOUCH_MM). */
+export function cutoutsTouch(a: BoardCutout, b: BoardCutout): boolean {
+  const round = (c: BoardCutout): boolean => c.shape === 'circle'
+  if (round(a) && round(b)) {
+    const ra = a.width / 2, rb = b.width / 2
+    return Math.hypot(a.x + ra - (b.x + rb), a.z + ra - (b.z + rb)) < ra + rb + TOUCH_MM
+  }
+  if (round(a) || round(b)) {
+    const [c, r] = round(a) ? [a, b] : [b, a]
+    const rad = c.width / 2, cx = c.x + rad, cz = c.z + rad
+    const nx = Math.min(Math.max(cx, r.x), r.x + r.width), nz = Math.min(Math.max(cz, r.z), r.z + r.depth)
+    return Math.hypot(cx - nx, cz - nz) < rad + TOUCH_MM
+  }
+  return a.x < b.x + b.width + TOUCH_MM && b.x < a.x + a.width + TOUCH_MM && a.z < b.z + b.depth + TOUCH_MM && b.z < a.z + a.depth + TOUCH_MM
+}
+
+/** The problem of each of the board's cutouts, in list order: its own, or that it overlaps or
+ *  touches an earlier one that is built (`other`: that one's number). */
+export function cutoutProblems(board: Board): { problem: CutoutProblem | null; other?: number }[] {
+  const built: { n: number; c: BoardCutout }[] = []
+  return (board.cutouts ?? []).map((raw, i) => {
+    const own = cutoutProblem(board, raw)
+    if (notBuilt(own)) return { problem: own }
+    const c = builtShape(board, raw)
+    const hit = built.find((b) => cutoutsTouch(b.c, c))
+    if (hit) return { problem: 'overlaps', other: hit.n }
+    built.push({ n: i + 1, c })
+    return { problem: own }
+  })
+}
+
 /** The cutouts that can be built, on the face from its min corner, with their number in the
  *  board's list (1, 2 …, kept when one in between cannot be built). Single source for mesh,
  *  DXF, collisions, statics, lists and drawings. */
 export function numberedCutouts(board: Board): { n: number; cut: BoardCutout }[] {
-  const face = boardFace(board)
-  return (board.cutouts ?? []).flatMap((raw, i) => {
-    if (notBuilt(cutoutProblem(board, raw))) return []
-    const c = faceCutout(board, raw)
-    if (c.shape === 'circle') return [{ n: i + 1, cut: c }]
-    const x0 = Math.max(0, c.x), z0 = Math.max(0, c.z)
-    const x1 = Math.min(face.u, c.x + c.width), z1 = Math.min(face.v, c.z + c.depth)
-    return [{ n: i + 1, cut: { ...c, x: x0, z: z0, width: x1 - x0, depth: z1 - z0 } }]
-  })
+  const problems = cutoutProblems(board)
+  return (board.cutouts ?? []).flatMap((raw, i) => (notBuilt(problems[i].problem) ? [] : [{ n: i + 1, cut: builtShape(board, raw) }]))
 }
 
 /** The cutouts that can be built, clipped to the face, measured from its min corner. */

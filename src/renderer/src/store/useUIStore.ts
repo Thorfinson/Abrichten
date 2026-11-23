@@ -5,7 +5,7 @@ import { useProjectStore } from './useProjectStore'
 import { isInputDevice, type InputDevice } from '../utils/canvasInput'
 import type { ChangedProjectFile } from '../utils/changedFile'
 import { stepHiddenIds } from '../utils/assemblySteps'
-import type { Project } from '../types/furniture'
+import type { Board, Project } from '../types/furniture'
 import { setDesignLockSource } from './designLock'
 
 export type TransformMode = 'translate' | 'rotate' | 'scale'
@@ -215,6 +215,16 @@ export function viewHiddenIds(
   s: Pick<UIState, 'workspace' | 'assemblyStep' | 'hiddenParts'>
 ): Set<string> {
   return s.workspace === 'assembly' ? stepHiddenIds(project, s.assemblyStep) : new Set(s.hiddenParts)
+}
+
+/** The boards a drag can snap to: those that count (the tick) and are seen (viewHiddenIds:
+ *  the eye, or the step view), not the ones being moved. A hidden part is no target. */
+export function snapTargets(project: Pick<Project, 'assemblies' | 'assemblySteps'>, s: Pick<UIState, 'workspace' | 'assemblyStep' | 'hiddenParts'>, moving: Iterable<string>): Board[] {
+  const skip = new Set(moving)
+  const hidden = viewHiddenIds(project, s)
+  return project.assemblies
+    .filter((a) => a.visible !== false)
+    .flatMap((a) => a.boards.filter((b) => !skip.has(b.id) && !hidden.has(b.id)))
 }
 
 /** The step the 3D view shows: in the assembly workspace its current step, else -1 (no step view). */

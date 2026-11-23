@@ -157,7 +157,8 @@ test('cutouts are read in one place (clampCutouts) — every consumer goes throu
     const rel = relative(SRC, file)
     if (rel.startsWith('types/') || allowed[rel]) continue
     const text = (await readFile(file, 'utf8')).replace(/\/\/.*$/gm, '')
-    if (/\.cutouts\b/.test(text)) offenders.push(rel)
+    // read as board.cutouts, or taken apart as { cutouts } = board
+    if (/\.cutouts\b|\{[^}]*\bcutouts\b[^}]*\}\s*=/.test(text)) offenders.push(rel)
   }
   assert.deepEqual(offenders, [], 'read cutouts through clampCutouts / utils/cutoutPlace')
 })
@@ -290,4 +291,44 @@ test('one rule for every picture of a part: the boring list lays it out as the s
   const offenders = []
   for (const file of await sourceFiles(SRC)) if (/\buprightFace\b/.test(await readFile(file, 'utf8'))) offenders.push(relative(SRC, file))
   assert.deepEqual(offenders, [])
+})
+
+// ── several cutouts on one part (second review, 23.11.) ─────────────────────────────
+test('cutouts that overlap or touch an earlier one are not built, and say which', async () => {
+  const { cutoutProblems } = await import('../../src/renderer/src/utils/geometry.ts')
+  const same = board([{ id: 'a', x: 220, z: 55, width: 560, depth: 490 }, { id: 'b', x: 220, z: 55, width: 560, depth: 490 }])
+  assert.deepEqual(cutoutProblems(same).map((p) => [p.problem, p.other ?? null]), [[null, null], ['overlaps', 1]])
+  assert.equal(numberedCutouts(same).length, 1)
+  const top = topFace(buildBoardGeometry(same))
+  assert.ok(Math.abs(top.area - (1000 * 600 - 560 * 490)) < 1, `one hole in the mesh, not none (${top.area})`)
+  // two notches that only together would cut the part in two: they touch
+  const split = board([{ id: 'a', x: 0, z: 200, width: 600, depth: 100 }, { id: 'b', x: 600, z: 200, width: 400, depth: 100 }])
+  assert.equal(cutoutProblems(split)[1].problem, 'overlaps')
+  assert.ok(Math.abs(topFace(buildBoardGeometry(split)).area - (600000 - 60000)) < 1, 'the part stays whole')
+  // a round hole over a rectangle, and two circles
+  assert.equal(cutoutProblems(board([{ id: 'r', x: 100, z: 100, width: 100, depth: 100 }, { id: 'c', shape: 'circle', x: 180, z: 120, width: 60, depth: 60 }]))[1].problem, 'overlaps')
+  assert.equal(cutoutProblems(board([{ id: 'c1', shape: 'circle', x: 100, z: 100, width: 60, depth: 60 }, { id: 'c2', shape: 'circle', x: 150, z: 100, width: 60, depth: 60 }]))[1].problem, 'overlaps')
+  // apart by a hand's width: both built
+  assert.deepEqual(cutoutProblems(board([{ id: 'a', x: 100, z: 100, width: 100, depth: 100 }, { id: 'b', x: 300, z: 100, width: 100, depth: 100 }])).map((p) => p.problem), [null, null])
+})
+
+test('a part turned over is still drawn up the right way, its cutouts where they are in the room', async () => {
+  const { faceDrawing, cutoutOnSheet, edgeSides } = await import('../../src/renderer/src/utils/faceDrawing.ts')
+  // the side wall turned 180° about its depth: its face's "max height" edge is now at the bottom
+  const L2 = { id: 'L2', x: 660, z: 0, width: 50, depth: 70 }
+  const turned = { ...sideWall([L2]), rotation: { x: 0, y: 0, z: 180 } }
+  const d = faceDrawing(turned)
+  assert.deepEqual([d.width, d.height, d.sides.top, d.sides.bottom], [540, 710, 'top', 'bottom'], 'upright, top is top')
+  const room = cutoutInRoom(turned, clampCutouts(turned)[0])
+  const onSheet = cutoutOnSheet(d, clampCutouts(turned)[0])
+  // the sheet's y runs down from the top: a cutout low in the room is low on the sheet
+  const roomTop = turned.position.y + turned.height
+  assert.ok(Math.abs((roomTop - room.y[1]) - onSheet.y) < 1e-6, `sheet y ${onSheet.y} = ${roomTop - room.y[1]} from the top`)
+  // a lying board stood up as a back panel (turned 90° about x): drawn upright, not lying
+  const back = faceDrawing({ ...board([]), rotation: { x: 90, y: 0, z: 0 } })
+  assert.deepEqual([back.sides.top, back.sides.bottom, back.sides.left, back.sides.right], ['top', 'bottom', 'left', 'right'])
+  // a lying board flipped over: still seen from above, the back at the top
+  const flipped = faceDrawing({ ...board([]), rotation: { x: 180, y: 0, z: 0 } })
+  assert.deepEqual([flipped.sides.top, flipped.sides.left], ['back', 'left'])
+  assert.equal(new Set(Object.values(edgeSides(turned))).size, 4)
 })
