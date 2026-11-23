@@ -73,10 +73,24 @@ export function insideCutout(board: Board, box: { minX: number; maxX: number; mi
   if ([r.x, r.y, r.z].some((a) => Math.abs(a % 90) > 1e-6)) return false
   const { u, v } = faceAxesInRoom(board)
   const range = (r: RoomAxis): [number, number] => (r === 'x' ? [box.minX, box.maxX] : r === 'y' ? [box.minY, box.maxY] : [box.minZ, box.maxZ])
-  return clampCutouts(board).some((c) => {
-    const room = cutoutInRoom(board, c)
-    return [u.room, v.room].every((r) => range(r)[0] >= room[r][0] - 0.01 && range(r)[1] <= room[r][1] + 0.01)
-  })
+  const rooms = clampCutouts(board).map((c) => cutoutInRoom(board, c))
+  if (rooms.length === 0) return false
+  // inside the cutouts taken together: notches side by side are one opening (a step), so a post
+  // standing across their shared edge is in it. Cut the box at every cutout edge; each piece must
+  // lie in one cutout (0.01 mm play).
+  const [ua, ub] = range(u.room), [va, vb] = range(v.room)
+  const cuts = (r: RoomAxis, a: number, b: number): number[] =>
+    [a, ...[...new Set(rooms.flatMap((m) => m[r]))].filter((p) => p > a && p < b).sort((p, q) => p - q), b]
+  const us = cuts(u.room, ua, ub), vs = cuts(v.room, va, vb)
+  for (let i = 0; i < us.length - 1; i++) {
+    for (let j = 0; j < vs.length - 1; j++) {
+      const inside = rooms.some((m) =>
+        us[i] >= m[u.room][0] - 0.01 && us[i + 1] <= m[u.room][1] + 0.01 &&
+        vs[j] >= m[v.room][0] - 0.01 && vs[j + 1] <= m[v.room][1] + 0.01)
+      if (!inside) return false
+    }
+  }
+  return true
 }
 
 /** How a cutout is placed for people: its distance from one named edge along each face axis. */
