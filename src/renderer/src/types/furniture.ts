@@ -178,6 +178,12 @@ export interface CustomHardwareItem {
   drillingDiameter?: number
   unitPrice: number
   manufacturer?: string
+  /**
+   * The gap this hardware bridges between the board it is on and its neighbour, from–to in mm
+   * (a side-mounted drawer runner: 12.5–13). Only such a range explains a support or a joint
+   * across air in the statics (services/static-sim, data/hardware bridgingHardware).
+   */
+  bridgesMm?: [number, number]
 }
 
 export interface Project {
@@ -192,6 +198,12 @@ export interface Project {
   materialPrices?: Record<string, number>  // price per m² in currency
   customMaterials?: Material[]
   customHardware?: CustomHardwareItem[]
+  /**
+   * The gap a catalogue hardware item bridges in this project, from–to mm by its id (the
+   * catalogue gives none): only such a range lets the statics count air across it
+   * (data/hardware bridgesOf). The project's own hardware keeps it in its bridgesMm.
+   */
+  hardwareBridges?: Record<string, [number, number]>
   /** Assembly instruction steps in order; boards in no step are not planned yet */
   assemblySteps?: AssemblyStep[]
   laborHours?: number

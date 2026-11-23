@@ -8,6 +8,7 @@ import { isBoardRole } from './boardRole'
 import { cleanShortName, isPartNo, numberParts } from './partLabel'
 import { isParamName } from './formulaEval'
 import { assemblyCounts } from './activeParts'
+import { cleanBridgesMm } from '../data/hardware'
 
 /** Largest accepted size or |position| in mm (100 m). Beyond it the boring and nesting loops blow up. */
 export const MAX_MM = 100_000
@@ -65,6 +66,7 @@ export function validateProject(raw: unknown): Project {
     materialPrices: numberRecord(raw.materialPrices),
     customMaterials: Array.isArray(raw.customMaterials) ? raw.customMaterials.flatMap(validateMaterial) : undefined,
     customHardware: Array.isArray(raw.customHardware) ? raw.customHardware.flatMap(validateHardwareItem) : undefined,
+    hardwareBridges: cleanBridgeMap(raw.hardwareBridges),
     laborHours: optNum(raw.laborHours),
     laborRate: optNum(raw.laborRate),
     overheadPct: optNum(raw.overheadPct)
@@ -218,18 +220,32 @@ function validateMaterial(m: unknown): Material[] {
   }]
 }
 
+/** Project.hardwareBridges: usable ranges by hardware id, else nothing (an empty map is dropped). */
+function cleanBridgeMap(v: unknown): Record<string, [number, number]> | undefined {
+  if (!isRecord(v) || Array.isArray(v)) return undefined
+  const out: Record<string, [number, number]> = {}
+  for (const [id, r] of Object.entries(v)) {
+    const range = cleanBridgesMm(r)
+    if (range && id) out[id] = range
+  }
+  return Object.keys(out).length ? out : undefined
+}
+
 function validateHardwareItem(h: unknown): CustomHardwareItem[] {
   if (!isRecord(h) || typeof h.id !== 'string') return []
   const de = cleanName(h.name, h.id)
+  const { bridgesMm: rawBridges, ...rest } = h
+  const bridgesMm = cleanBridgesMm(rawBridges)
   return [{
-    ...h,
+    ...rest,
     id: h.id,
     name: de,
     nameEn: cleanName(h.nameEn, de),
     category: str(h.category, 'hinges'),
     drillingDiameter: isDimension(h.drillingDiameter) ? h.drillingDiameter : undefined,
     unitPrice: isFiniteNum(h.unitPrice) && h.unitPrice >= 0 ? h.unitPrice : 0,
-    manufacturer: cleanName(h.manufacturer, '') || undefined
+    manufacturer: cleanName(h.manufacturer, '') || undefined,
+    ...(bridgesMm ? { bridgesMm } : {})
   }]
 }
 

@@ -6,7 +6,8 @@ import { useStaticSimulation } from '../../store/useStaticStore'
 import { usePartLabels } from '../../hooks/usePartLabels'
 import { PartName } from '../ui/PartName'
 import { GRAVITY, utilisationCss, type StaticStatus } from '../../services/static-calc'
-import { openGap, type BoardStatic } from '../../services/static-sim'
+import { jointAir, type BoardStatic } from '../../services/static-sim'
+import { partTitle } from '../../utils/partLabel'
 import type { Assembly, Board } from '../../types/furniture'
 import { assemblyCounts } from '../../utils/activeParts'
 
@@ -54,6 +55,35 @@ function SummaryDialog() {
     return out.sort((a, b) => STATUS_ORDER[a.r.status] - STATUS_ORDER[b.r.status] || b.r.uMax - a.r.uMax)
   }, [assemblies, sim])
 
+  // a part named in a note, by its label as everywhere (utils/partLabel)
+  const titles = useMemo(() => new Map(assemblies.flatMap((a) => a.boards).map((b) => [b.id, partTitle(labels.get(b.id), b.name)])), [assemblies, labels])
+  const mmText = (v: number): string => v.toLocaleString(lang, { maximumFractionDigits: 1 })
+  /**
+   * Why a support does not count (services/static-sim SupportAir): a joint across air is a
+   * mistake (amber: close the gap or enter the hardware that bridges it); air at a contact is
+   * no support (grey), the rating already follows from that.
+   */
+  const airNotes = (r: BoardStatic) => {
+    const joints = (r.air ?? []).filter((a) => a.kind === 'joint')
+    const contacts = new Map<number, string[]>()
+    for (const a of r.air ?? []) if (a.kind !== 'joint') contacts.set(a.mm, [...(contacts.get(a.mm) ?? []), titles.get(a.by) ?? a.by])
+    if (!joints.length && !contacts.size) return null
+    return (
+      <>
+        {joints.map((a, i) => (
+          <div key={`j${i}`} className="text-[10px] font-normal text-amber-400 whitespace-normal" data-testid="static-joint-air">
+            {t('sim.jointAir', { type: t(`joints.${a.jointType}`), mm: mmText(a.mm), part: titles.get(a.by) ?? a.by })}
+          </div>
+        ))}
+        {[...contacts].map(([mm, parts]) => (
+          <div key={`c${mm}`} className="text-[10px] font-normal text-chrome-muted whitespace-normal" data-testid="static-air">
+            {t('sim.airNote', { mm: mmText(mm), parts: parts.join(', ') })}
+          </div>
+        ))}
+      </>
+    )
+  }
+
   const close = (): void => setShowStaticSummary(false)
   const select = (row: SummaryRow): void => {
     useUIStore.getState().selectBoard(row.assembly.id, row.board.id)
@@ -70,7 +100,7 @@ function SummaryDialog() {
     return t('sim.location', { a: `${a} ${Math.round(r.maxLocal.a)}`, b: `${b} ${Math.round(r.maxLocal.b)}` })
   }
 
-  const displayed = onlyIssues ? rows.filter((row) => row.r.status !== 'ok' && row.r.status !== 'wallHung') : rows
+  const displayed = onlyIssues ? rows.filter((row) => (row.r.status !== 'ok' && row.r.status !== 'wallHung') || jointAir(row.r) !== null) : rows
   const th = 'px-2 py-1.5 font-medium border-b border-chrome-border'
   const td = 'px-2 py-1 border-b border-chrome-border/60 whitespace-nowrap'
 
@@ -133,16 +163,7 @@ function SummaryDialog() {
                     >
                       <td className={`${td} font-medium`}>
                         <PartName label={labels.get(row.board.id)} name={row.board.name} labelClassName="text-chrome-muted font-normal" />
-                        {(() => {
-                          // a contact across air: shim or close it; a joint across air: it needs hardware that bridges it
-                          const g = openGap(r)
-                          const mm = g ? g.mm.toLocaleString(lang, { maximumFractionDigits: 1 }) : ''
-                          return g && (
-                            <div className="text-[10px] font-normal text-amber-400 whitespace-normal" data-testid="static-gap-note">
-                              {t(g.kind === 'joint' ? 'sim.gapJoint' : 'sim.gapAssumed', { mm })}
-                            </div>
-                          )
-                        })()}
+                        {airNotes(r)}
                       </td>
                       <td className={`${td} text-chrome-muted`}>{row.assembly.name}</td>
                       <td className={`${td} text-right font-mono`}>{num(r.totalLoadN / GRAVITY)}</td>

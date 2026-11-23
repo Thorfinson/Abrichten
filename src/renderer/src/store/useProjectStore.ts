@@ -9,6 +9,7 @@ import { cleanShortName, defaultShortName, numberParts, renumberParts, shortName
 import { evalFormula, isParamName, formulaParams, renameFormulaParam } from '../utils/formulaEval'
 import { designChanged, isDesignLocked, tellDesignLocked } from './designLock'
 import { assemblyCounts } from '../utils/activeParts'
+import { cleanBridgesMm } from '../data/hardware'
 
 function uid(): string {
   return Math.random().toString(36).slice(2, 10)
@@ -192,6 +193,10 @@ interface ProjectState {
   // Custom hardware
   addCustomHardware: (item: Omit<CustomHardwareItem, 'id'>) => string
   removeCustomHardware: (id: string) => void
+  /** Changes a project hardware item (e.g. the gap it bridges, bridgesMm: undefined removes it) */
+  updateCustomHardware: (id: string, updates: Partial<Omit<CustomHardwareItem, 'id'>>) => void
+  /** Sets the gap a catalogue hardware item bridges in this project (undefined removes it) */
+  setHardwareBridges: (hardwareId: string, range: [number, number] | undefined) => void
 
   // Labor & overhead
   setLaborDetails: (hours: number, rate: number, overheadPct: number) => void
@@ -622,15 +627,43 @@ export const useProjectStore = create<ProjectState>()(
 
       addCustomHardware: (item) => {
         const id = uid()
+        const { bridgesMm, ...rest } = item
+        const range = cleanBridgesMm(bridgesMm)
         set((s) => ({
           project: {
             ...s.project,
             updatedAt: now(),
-            customHardware: [...(s.project.customHardware ?? []), { ...item, id }]
+            customHardware: [...(s.project.customHardware ?? []), { ...rest, ...(range ? { bridgesMm: range } : {}), id }]
           }
         }))
         return refused ? '' : id
       },
+
+      updateCustomHardware: (id, updates) =>
+        set((s) => (!s.project.customHardware?.some((h) => h.id === id) ? s : {
+          project: {
+            ...s.project,
+            updatedAt: now(),
+            customHardware: (s.project.customHardware ?? []).map((h) => {
+              if (h.id !== id) return h
+              const { bridgesMm, ...rest } = { ...h, ...updates, id: h.id }
+              // undefined removes the range; an unusable one keeps what was stored
+              const range = 'bridgesMm' in updates && updates.bridgesMm !== undefined && !cleanBridgesMm(updates.bridgesMm) ? h.bridgesMm : cleanBridgesMm(bridgesMm)
+              return { ...rest, ...(range ? { bridgesMm: range } : {}) }
+            })
+          }
+        })),
+
+      setHardwareBridges: (hardwareId, range) =>
+        set((s) => {
+          const clean = cleanBridgesMm(range)
+          if (range !== undefined && !clean) return s   // an unusable range changes nothing
+          const now0 = s.project.hardwareBridges?.[hardwareId]
+          if (clean ? now0?.[0] === clean[0] && now0?.[1] === clean[1] : !now0) return s
+          const { [hardwareId]: _old, ...rest } = s.project.hardwareBridges ?? {}
+          const next = clean ? { ...rest, [hardwareId]: clean } : rest
+          return { project: { ...s.project, updatedAt: now(), hardwareBridges: Object.keys(next).length ? next : undefined } }
+        }),
 
       removeCustomHardware: (id) =>
         set((s) => (!s.project.customHardware?.some((h) => h.id === id) ? s : {

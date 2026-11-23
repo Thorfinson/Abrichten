@@ -24,15 +24,35 @@ function hotSpot(r: BoardStatic, isDe: boolean): string {
   return r.model === 'plane' ? `${at} (${isDe ? 'Spannung in der Plattenebene' : 'in-plane stress'})` : at
 }
 
-/** One line on a critical, warning or unsupported board for the AI; null for the others. */
-function staticNote(name: string, r: BoardStatic | undefined, isDe: boolean): string | null {
+/**
+ * Air the statics did not count for this board (services/static-sim SupportAir), for the AI:
+ * why a support is missing, or a joint that connects nothing. Empty when none.
+ */
+function airNote(r: BoardStatic, nameOf: (id: string) => string, isDe: boolean): string[] {
+  return (r.air ?? []).map((a) => {
+    const mm = a.mm.toFixed(1), by = nameOf(a.by)
+    if (a.kind === 'joint') {
+      return isDe
+        ? `Verbindung vom Typ ${a.jointType} über ${mm} mm Luft zu "${by}" – verbindet nicht (nur ein Kleberbett bis 5 mm oder ein Beschlag mit passendem Bereich „Überbrückt Spalt“ erklärt Luft)`
+        : `joint of type ${a.jointType} across ${mm} mm of air to "${by}" – connects nothing (only a glue bed up to 5 mm or hardware with a fitting "Bridges gap" range explains air)`
+    }
+    return isDe ? `Luft ${mm} mm zu "${by}", kein Auflager` : `air ${mm} mm to "${by}", no support`
+  })
+}
+
+/** One line on a critical, warning or unsupported board, or one with a joint across air, for the AI; null for the others. */
+function staticNote(name: string, r: BoardStatic | undefined, isDe: boolean, nameOf: (id: string) => string = (id) => id): string | null {
   if (!r) return null
+  const air = airNote(r, nameOf, isDe)
   if (r.status === 'unsupported') {
-    return isDe
+    return (isDe
       ? `"${name}": kein ausreichendes Auflager (fällt, kippt oder liegt nur auf einem schmalen Punkt)`
-      : `"${name}": no adequate support (falls, tips or rests on one narrow point)`
+      : `"${name}": no adequate support (falls, tips or rests on one narrow point)`) + (air.length ? `; ${air.join('; ')}` : '')
   }
-  if (r.status !== 'critical' && r.status !== 'warning') return null
+  if (r.status !== 'critical' && r.status !== 'warning') {
+    const joints = air.filter((_, i) => r.air?.[i]?.kind === 'joint')
+    return joints.length ? `"${name}": ${joints.join('; ')}` : null
+  }
   const u = Math.round(r.uMax * 100)
   const level = r.uMax >= 1 ? (isDe ? 'bricht' : 'breaks') : r.status === 'critical' ? (isDe ? 'kritisch' : 'critical') : (isDe ? 'Warnung' : 'warning')
   const where = hotSpot(r, isDe)
@@ -49,6 +69,7 @@ function staticNote(name: string, r: BoardStatic | undefined, isDe: boolean): st
       ? `Mindestdicke ${r.minThicknessMm} mm (aktuell ${Math.round(r.thicknessMm)} mm)`
       : `minimum thickness ${r.minThicknessMm} mm (current ${Math.round(r.thicknessMm)} mm)`)
   }
+  parts.push(...air)
   return `"${name}": ${parts.join(', ')}`
 }
 
@@ -117,6 +138,8 @@ Respond in English.`
     : `Current project: "${project.name}"\n`
   // the part labels the user sees on every list and print ("Herd 2"), so they can be referred to
   const labels = partLabels(project.assemblies)
+  const titles = new Map(project.assemblies.flatMap((a) => a.boards).map((b) => [b.id, partTitle(labels.get(b.id), b.name)]))
+  const titleOf = (id: string): string => titles.get(id) ?? id
   context += isDe
     ? 'Jedes Bauteil beginnt mit seiner Teilenummer (Kurzwort der Baugruppe und Nummer, z. B. "Herd 2"), so wie sie in allen Listen und auf den Teilen steht.\n'
     : 'Each part starts with its part number (the assembly\'s short word and a number, e.g. "Herd 2"), as on every list and on the parts.\n'
@@ -124,7 +147,7 @@ Respond in English.`
   const warnings: string[] = []
   // The load simulation sees the same boards as the 3D heat map: visible assemblies
   const sim = simulateStatics(activeAssemblies(project).flatMap((a) => a.boards), {
-    payloadKg, customMaterials: project.customMaterials, customHardware: project.customHardware,
+    payloadKg, customMaterials: project.customMaterials, customHardware: project.customHardware, hardwareBridges: project.hardwareBridges,
     joints: activeJoints(project).map((j) => j.joint)
   })
 
@@ -146,7 +169,7 @@ Respond in English.`
       context += '\n'
 
       // Same simulation as the static heat map and the static summary
-      const note = staticNote(partTitle(labels.get(board.id), board.name), sim.results.get(board.id), isDe)
+      const note = staticNote(partTitle(labels.get(board.id), board.name), sim.results.get(board.id), isDe, titleOf)
       if (note) warnings.push(note)
     }
   }

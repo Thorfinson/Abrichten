@@ -93,6 +93,8 @@ const DESIGN_ACTIONS = {
   updateCustomMaterial: ['cm1', { name: 'Anders' }],
   addCustomHardware: [{ name: 'Knopf', nameEn: 'Knob', category: 'handle', unitPrice: 1 }],
   removeCustomHardware: ['h1'],
+  updateCustomHardware: ['h1', { bridgesMm: [12.5, 13] }],
+  setHardwareBridges: [hardwareItems[0].id, [1, 3]],
   setLaborDetails: [5, 40, 0.1],
   addHardwareToBoard: ['A', 'a1', hardwareItems[0].id, 1]
 }
