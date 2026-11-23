@@ -299,7 +299,10 @@
     "export": "Bohrliste exportieren",
     "noBoards": "Keine Bretter ausgew\u00e4hlt.",
     "sideInset": "Seitenversatz (mm)",
-    "minHeight": "Mindesh\u00f6he (mm)"
+    "minHeight": "Mindesh\u00f6he (mm)",
+    "rows": "Lochreihen für Bodenträger",
+    "rowsNoPins": "Aus, weil im Projekt keine Bodenträger geplant sind. Einschalten, wenn doch.",
+    "noneWithoutRows": "Keine Bohrungen. Lochreihen für Bodenträger sind aus, weil im Projekt keine Bodenträger geplant sind."
   },
   "nesting": {
     "title": "Plattenbelegung",
@@ -590,7 +593,7 @@
     "holes": "Bohrungen",
     "minHeight": "Mindesthöhe (mm)",
     "boringNoBoards": "Keine stehenden Teile ab {{min}} mm Höhe.",
-    "boringFaceHint": "Blick auf die Fläche: Vorderkante links, Y ab Unterkante",
+    "boringFaceHint": "Wie in der Werkstattzeichnung: X ab der linken Seite, Y ab der Unterkante",
     "paramsHint": "Parameter sind benannte Maße in mm. Tippe in ein Maßfeld eines Bauteils eine Formel; ändert sich der Wert, rechnen alle Bauteile damit neu. Beispiele:",
     "paramNamePlaceholder": "z. B. H, B, TIEFE",
     "sheetPreset": "Plattenformat",
@@ -735,5 +738,68 @@
     "groupAssembly": "Baugruppe",
     "groupRole": "Bauteilart",
     "groupMaterial": "Material"
+  },
+  "designLock": {
+    "change": "Gehört zum Entwurf – dort ändern ({{key}})",
+    "undo": "Die letzte Änderung gehört zum Entwurf – dort rückgängig machen ({{key}}, dann {{undo}})",
+    "redo": "Die nächste Änderung gehört zum Entwurf – dort wiederholen ({{key}}, dann {{redo}})",
+    "hint": "Teile ändern im Entwurf ({{key}})",
+    "inDesign": "im Entwurf ({{key}})",
+    "readOnly": "In der Montage nur zum Lesen – ändern im Entwurf ({{key}})"
+  },
+  "eye": {
+    "hide": "Im Bild ausblenden – zählt weiter mit",
+    "show": "Im Bild zeigen",
+    "mixed": "Teils ausgeblendet – Klick zeigt alle"
+  },
+  "counts": {
+    "on": "Zählt mit: Zuschnitt, Kosten, Pläne, Statik, Montage, Bild",
+    "off": "Zählt nicht mit (Variante aus) – Häkchen setzt sie wieder ein",
+    "some": "Zählt teils mit – einige Untergruppen sind abgewählt",
+    "toggle": "Mitzählen an/aus (Variante)"
+  },
+  "xray": {
+    "on": "Hervorheben – zeigt, wo es sitzt; alles andere tritt zurück",
+    "off": "Hervorhebung aufheben",
+    "mixed": "Teils hervorgehoben – Klick hebt alles auf"
+  },
+  "cutout": {
+    "column": "Ausschnitte",
+    "add": "Ausschnitt",
+    "shape": "Form",
+    "rect": "Rechteck",
+    "circle": "rund",
+    "diameter": "Durchmesser (mm)",
+    "size": {
+      "x": "Breite",
+      "y": "Höhe",
+      "z": "Tiefe"
+    },
+    "edge": {
+      "left": "links",
+      "right": "rechts",
+      "bottom": "unten",
+      "top": "oben",
+      "back": "hinten",
+      "front": "vorn"
+    },
+    "from": "Abstand von",
+    "fromShort": "von",
+    "inRoom": "im Raum",
+    "room": {
+      "x": "von links",
+      "y": "vom Boden",
+      "z": "von hinten"
+    },
+    "kind": {
+      "round": "Loch rund",
+      "notch": "Ausklinkung",
+      "hole": "Ausschnitt"
+    },
+    "problem": {
+      "outside": "liegt nicht ganz auf dem Teil – wird nicht gebaut",
+      "splits": "würde das Teil durchtrennen – wird nicht gebaut",
+      "beyond": "reicht über den Rand des Teils – wird dort gekürzt"
+    }
   }
 }

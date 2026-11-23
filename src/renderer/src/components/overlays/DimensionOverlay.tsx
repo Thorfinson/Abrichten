@@ -2,7 +2,7 @@ import { memo, useMemo } from 'react'
 import { Line, Html } from '@react-three/drei'
 import { useProjectStore } from '../../store/useProjectStore'
 import { useUIStore, useCanvasView } from '../../store/useUIStore'
-import { useStepHidden } from '../../hooks/useStepHidden'
+import { useViewHidden } from '../../hooks/useViewHidden'
 import { boardCorners3D } from '../../utils/projection'
 import { formatValue } from '../../utils/units'
 import type { Board } from '../../types/furniture'
@@ -278,7 +278,7 @@ export function DimensionOverlay() {
   const activeView = useCanvasView()
   const selectedAssemblyId = useUIStore((s) => s.selectedAssemblyId)
   const showAssemblyDims = useUIStore((s) => s.showAssemblyDims)
-  const hidden = useStepHidden()
+  const hidden = useViewHidden()
 
   const selectedBoards = useMemo(() => {
     if (selectedBoardIds.length === 0) return []

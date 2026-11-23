@@ -16,6 +16,7 @@ import { beginDragHistory, endDragHistory } from '../../utils/dragHistory'
 import type { Board, Vec3 } from '../../types/furniture'
 import type { ViewMode } from '../../types/measurement'
 import * as THREE from 'three'
+import { useDesignLocked } from '../../hooks/useDesignLocked'
 
 interface Board3DProps {
   board: Board
@@ -85,7 +86,9 @@ export const Board3D = memo(function Board3D(props: Board3DProps) {
   const current = useUIStore(shownStep)
   const steps = useProjectStore((s) => s.project.assemblySteps)
   const state = boardStepState(steps, current, props.board.id)
-  if (state === 'hidden') return null
+  // the eye hides parts in the design workspace only (store/useUIStore viewHiddenIds)
+  const eyeHidden = useUIStore((s) => s.workspace !== 'assembly' && s.hiddenParts.includes(props.board.id))
+  if (state === 'hidden' || eyeHidden) return null
   if (state === 'normal') return <Board3DBody {...props} />
   return <Board3DBody {...props} highlight={state === 'current'} dimmed={state === 'earlier'} />
 })
@@ -128,11 +131,13 @@ const Board3DBody = memo(function Board3DBody({ board, assemblyId, orbitRef, hig
   const setSnapIndicatorPos = useUIStore((s) => s.setSnapIndicatorPos)
   const updateBoard = useProjectStore((s) => s.updateBoard)
   const nudgeBoards = useProjectStore((s) => s.nudgeBoards)
+  // the assembly workspace selects parts, it does not move them (store/designLock.ts)
+  const locked = useDesignLocked()
   const showJointMarkers = useUIStore((s) => s.showJointMarkers)
   const customMaterials = useProjectStore((s) => s.project.customMaterials)
   const isOrtho = activeView !== '3d'
   /** TransformControls are shown for the single selected board in the 3D view */
-  const showTC = !isOrtho && isPrimary
+  const showTC = !isOrtho && isPrimary && !locked
 
   const camera = useThree((s) => s.camera)
   const gl = useThree((s) => s.gl)
@@ -441,6 +446,7 @@ const Board3DBody = memo(function Board3DBody({ board, assemblyId, orbitRef, hig
     } else if (!isSelected) {
       selectBoard(assemblyId, board.id)
     }
+    if (locked) return
 
     // Start ortho drag
     const worldPos = raycastToPlane(e.nativeEvent.clientX, e.nativeEvent.clientY)

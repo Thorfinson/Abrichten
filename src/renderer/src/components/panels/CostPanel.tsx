@@ -13,6 +13,7 @@ import { getCsvDelimiter } from '../layout/SettingsDialog'
 import { Dialog, Button, FIELD_CLASS, TH_CLASS, TD_CLASS, CHECK_CLASS, SECTION_LABEL_CLASS } from '../ui/Dialog'
 import { groupByRole, roleKey, type RoleGroup } from '../../utils/boardRole'
 import type { BoardRole } from '../../types/furniture'
+import { useDesignHint, useDesignLocked } from '../../hooks/useDesignLocked'
 
 /** Format a number as currency, locale-aware */
 function formatCurrency(value: number, lang: 'de' | 'en'): string {
@@ -65,6 +66,9 @@ export function CostPanel() {
   const project = useProjectStore((s) => s.project)
   const setMaterialPrice = useProjectStore((s) => s.setMaterialPrice)
   const setLaborDetails = useProjectStore((s) => s.setLaborDetails)
+  // prices and labour are project data of the design: read only in the assembly workspace
+  const locked = useDesignLocked()
+  const { readOnly } = useDesignHint()
   const showCostPanel = useUIStore((s) => s.showCostPanel)
   const setShowCostPanel = useUIStore((s) => s.setShowCostPanel)
   const [editingPrices, setEditingPrices] = useState(false)
@@ -286,7 +290,8 @@ th{background:#f0f0f0}tr.g td{font-weight:bold;background:#f7f7f7}tfoot td{font-
                         if (!isNaN(v) && v !== p.price) setMaterialPrice(mat.id, v)
                       }}
                       onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
-                      title={p.source === 'default' ? t('dlg.guidePriceTitle') : undefined}
+                      disabled={locked}
+                      title={locked ? readOnly : p.source === 'default' ? t('dlg.guidePriceTitle') : undefined}
                       className={`${numInput} ${p.source === 'default' ? 'text-accent!' : ''}`}
                     />
                   </label>
@@ -402,6 +407,8 @@ th{background:#f0f0f0}tr.g td{font-weight:bold;background:#f7f7f7}tfoot td{font-
                 step="0.5"
                 value={laborHours}
                 onChange={(e) => setLaborDetails(parseFloat(e.target.value) || 0, laborRate, overheadPct)}
+                disabled={locked}
+                title={locked ? readOnly : undefined}
                 className={`${FIELD_CLASS} w-16 text-right`}
               />
               <span className="text-chrome-hint">h</span>
@@ -414,6 +421,8 @@ th{background:#f0f0f0}tr.g td{font-weight:bold;background:#f7f7f7}tfoot td{font-
                 step="1"
                 value={laborRate}
                 onChange={(e) => setLaborDetails(laborHours, parseFloat(e.target.value) || 0, overheadPct)}
+                disabled={locked}
+                title={locked ? readOnly : undefined}
                 className={`${FIELD_CLASS} w-16 text-right`}
               />
               <span className="text-chrome-hint">{cur}/h</span>
@@ -427,6 +436,8 @@ th{background:#f0f0f0}tr.g td{font-weight:bold;background:#f7f7f7}tfoot td{font-
                 step="1"
                 value={Math.round(overheadPct * 100)}
                 onChange={(e) => setLaborDetails(laborHours, laborRate, (parseFloat(e.target.value) || 0) / 100)}
+                disabled={locked}
+                title={locked ? readOnly : undefined}
                 className={`${FIELD_CLASS} w-16 text-right`}
               />
               <span className="text-chrome-hint">%</span>

@@ -16,7 +16,8 @@ export function SaveToast() {
   return (
     <div
       role="status"
-      className="fixed top-20 left-1/2 -translate-x-1/2 z-40
+      data-testid="app-toast"
+      className="absolute top-3 left-1/2 -translate-x-1/2 z-40
         bg-chrome-deep border border-chrome-border rounded-full
         px-3 py-1 text-[11px] text-chrome-text shadow-lg pointer-events-none"
     >

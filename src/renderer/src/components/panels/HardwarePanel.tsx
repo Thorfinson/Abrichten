@@ -6,6 +6,14 @@ import { useProjectStore } from '../../store/useProjectStore'
 import { hardwareItems, getHardwareByCategory } from '../../data/hardware'
 import type { HardwareCategory, HardwareItem } from '../../data/hardware'
 import type { CustomHardwareItem } from '../../types/furniture'
+import { useDesignHint, useDesignLocked } from '../../hooks/useDesignLocked'
+
+/** Why adding is off in the assembly workspace, else nothing (store/designLock.ts). */
+function useLockedTitle(): string | undefined {
+  const locked = useDesignLocked()
+  const { readOnly } = useDesignHint()
+  return locked ? readOnly : undefined
+}
 
 const CATEGORIES: HardwareCategory[] = ['hinges', 'slides', 'shelfPins', 'handles', 'camLocks']
 type TabType = HardwareCategory | 'custom'
@@ -21,6 +29,7 @@ function HardwareRow({
 }) {
   const { t } = useTranslation()
   const name = lang === 'de' ? item.name : item.nameEn
+  const lockedTitle = useLockedTitle()
 
   return (
     <tr className="text-xs hover:bg-chrome-surface/40">
@@ -49,7 +58,7 @@ function HardwareRow({
           onClick={onAdd}
           className="font-bold"
           aria-label={`${t('hardware.addToBoard')}: ${name}`}
-          title={canAdd ? t('hardware.addToBoard') : (lang === 'de' ? 'Brett auswählen' : 'Select a board first')}
+          title={lockedTitle ?? (canAdd ? t('hardware.addToBoard') : (lang === 'de' ? 'Brett auswählen' : 'Select a board first'))}
         >+</Button>
       </td>
     </tr>
@@ -68,6 +77,9 @@ function CustomHardwareSection({
   const customHardware = customHardwareRaw ?? []
   const addCustomHardware = useProjectStore((s) => s.addCustomHardware)
   const removeCustomHardware = useProjectStore((s) => s.removeCustomHardware)
+  const locked = useDesignLocked()
+  const { readOnly } = useDesignHint()
+  const lockedTitle = locked ? readOnly : undefined
 
   const [name, setName] = useState('')
   const [nameEn, setNameEn] = useState('')
@@ -128,7 +140,7 @@ function CustomHardwareSection({
                     disabled={!canAdd}
                     onClick={() => onAdd(item.id)}
                     className="font-bold"
-                    title={canAdd ? t('hardware.addToBoard') : (lang === 'de' ? 'Brett auswählen' : 'Select a board first')}
+                    title={lockedTitle ?? (canAdd ? t('hardware.addToBoard') : (lang === 'de' ? 'Brett auswählen' : 'Select a board first'))}
                     aria-label={t('hardware.addToBoard')}
                   >+</Button>
                 </td>
@@ -136,6 +148,7 @@ function CustomHardwareSection({
                   <Button
                     variant="danger"
                     size="sm"
+                    disabled={locked}
                     onClick={() => removeCustomHardware(item.id)}
                     aria-label={lang === 'de' ? 'Löschen' : 'Delete'}
                     title={lang === 'de' ? 'Löschen' : 'Delete'}
@@ -192,8 +205,8 @@ function CustomHardwareSection({
           </div>
         </div>
       ) : (
-        <button type="button" onClick={() => setShowForm(true)}
-          className="w-full rounded border border-dashed border-chrome-divider px-3 py-1.5 text-xs text-chrome-secondary outline-none hover:border-action hover:text-chrome-text focus-visible:ring-2 focus-visible:ring-action">
+        <button type="button" onClick={() => setShowForm(true)} disabled={locked} title={locked ? readOnly : undefined}
+          className="w-full rounded border border-dashed border-chrome-divider px-3 py-1.5 text-xs text-chrome-secondary outline-none hover:border-action hover:text-chrome-text focus-visible:ring-2 focus-visible:ring-action disabled:opacity-40 disabled:pointer-events-none">
           + {lang === 'de' ? 'Eigenen Beschlag anlegen' : 'Add Custom Hardware Item'}
         </button>
       )}
@@ -210,11 +223,14 @@ export function HardwarePanel() {
   const selectedAssemblyId = useUIStore((s) => s.selectedAssemblyId)
   const addHardwareToBoard = useProjectStore((s) => s.addHardwareToBoard)
   const [activeCategory, setActiveCategory] = useState<TabType>('hinges')
+  // the catalogue reads in the assembly workspace; adding to a part is the design's
+  const locked = useDesignLocked()
+  const { readOnly } = useDesignHint()
 
   if (!showHardwarePanel) return null
 
   const items: HardwareItem[] = activeCategory !== 'custom' ? getHardwareByCategory(activeCategory) : []
-  const canAdd = selectedBoardIds.length === 1 && selectedAssemblyId !== null
+  const canAdd = !locked && selectedBoardIds.length === 1 && selectedAssemblyId !== null
 
   const tabClass = (active: boolean) =>
     `-mb-px rounded-t border-b-2 px-3 py-1.5 text-xs outline-none focus-visible:ring-2 focus-visible:ring-action ${
@@ -229,7 +245,7 @@ export function HardwarePanel() {
       className="w-[760px]"
       bodyClassName="flex flex-col"
       footer={<>
-        <span className="mr-auto text-xs text-chrome-muted">{canAdd ? t('dlg.hardwareTarget') : t('dlg.hardwareSelectBoard')}</span>
+        <span className="mr-auto text-xs text-chrome-muted">{locked ? readOnly : canAdd ? t('dlg.hardwareTarget') : t('dlg.hardwareSelectBoard')}</span>
         <Button onClick={() => setShowHardwarePanel(false)}>{t('ui.close')}</Button>
       </>}
     >

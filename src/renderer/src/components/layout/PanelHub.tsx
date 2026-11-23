@@ -3,6 +3,7 @@ import { useUIStore } from '../../store/useUIStore'
 import { useDialogFocus } from '../../hooks/useKeyboard'
 import { Icon, type IconName } from './Icon'
 import { SwitchTrack } from './Switch'
+import { useDesignHint, useDesignLocked } from '../../hooks/useDesignLocked'
 
 interface PanelItem {
   labelDe: string
@@ -18,6 +19,8 @@ interface PanelItem {
 interface PanelGroup {
   titleDe: string
   titleEn: string
+  /** Tools that change the design: greyed in the assembly workspace (store/designLock.ts) */
+  design?: true
   items: PanelItem[]
 }
 
@@ -51,6 +54,8 @@ export function PanelHub() {
   const setShowShopDrawings   = useUIStore((s) => s.setShowShopDrawingsPanel)
   const setShowChatPanel      = useUIStore((s) => s.setShowChatPanel)
   const setWorkspace          = useUIStore((s) => s.setWorkspace)
+  const locked                = useDesignLocked()
+  const { inDesign, readOnly } = useDesignHint()
 
   const open = (fn: (v: boolean) => void) => {
     fn(true)
@@ -61,6 +66,7 @@ export function PanelHub() {
     {
       titleDe: 'Entwurf',
       titleEn: 'Design Tools',
+      design: true,
       items: [
         {
           icon: 'cabinet',
@@ -268,16 +274,20 @@ export function PanelHub() {
             <div key={group.titleEn} className="mb-4">
               <div className="px-4 py-1.5 text-[10px] font-semibold text-chrome-muted uppercase tracking-widest">
                 {lang === 'de' ? group.titleDe : group.titleEn}
+                {locked && group.design && <span className="ml-1.5 normal-case tracking-normal font-normal">· {inDesign}</span>}
               </div>
               {group.items.map((item) => {
                 const isSwitch = item.switchOn !== undefined
+                const off = locked && !!group.design
                 return (
                   <button
                     key={item.labelEn}
                     onClick={item.action}
+                    disabled={off}
+                    title={off ? readOnly : undefined}
                     role={isSwitch ? 'switch' : undefined}
                     aria-checked={isSwitch ? item.switchOn : undefined}
-                    className="group w-full flex items-center gap-3 px-4 py-1.5 hover:bg-chrome-surface transition-colors text-left"
+                    className="group w-full flex items-center gap-3 px-4 py-1.5 hover:bg-chrome-surface transition-colors text-left disabled:opacity-40 disabled:hover:bg-transparent"
                   >
                     <span className={`w-7 h-7 flex items-center justify-center rounded-md shrink-0 transition-colors ${
                       item.switchOn ? 'bg-success-dim text-success-text' : 'bg-chrome-deep text-chrome-secondary group-hover:text-chrome-text'
@@ -303,7 +313,9 @@ export function PanelHub() {
           <div className="border-t border-chrome-border mt-2 pt-2">
             <button
               onClick={() => { setShowChatPanel(true); setShowPanelHub(false) }}
-              className="group w-full flex items-center gap-3 px-4 py-1.5 hover:bg-chrome-surface transition-colors text-left"
+              disabled={locked}
+              title={locked ? readOnly : undefined}
+              className="group w-full flex items-center gap-3 px-4 py-1.5 hover:bg-chrome-surface transition-colors text-left disabled:opacity-40 disabled:hover:bg-transparent"
             >
               <span className="w-7 h-7 flex items-center justify-center rounded-md shrink-0 bg-ai-dim text-ai-text">
                 <Icon name="ai" />

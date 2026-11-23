@@ -102,3 +102,18 @@ test('one margin rule for hinge positions; huge quantities are capped', () => {
   const door = board(400, 700, 18, { hardware: [{ hardwareId: 'blum-clip-top-110', quantity: 1e9 }] })
   assert.ok(inferBoringFromHardware(door).length <= 20)
 })
+
+test('whether shelf pins are planned is decided in one place (hasShelfPins) — statics and boring list alike', async () => {
+  const { readdir, readFile } = await import('node:fs/promises')
+  const { join, relative } = await import('node:path')
+  const { hasShelfPins } = await import('../../src/renderer/src/data/hardware.ts')
+  assert.equal(hasShelfPins({ hardware: [{ hardwareId: 'shelf-pin-5mm', quantity: 4 }] }), true)
+  assert.equal(hasShelfPins({ hardware: [{ hardwareId: 'shelf-pin-5mm', quantity: 0 }] }), false)
+  assert.equal(hasShelfPins({ hardware: [{ hardwareId: 'kugelauszug-500', quantity: 1 }] }), false)
+  assert.equal(hasShelfPins({ hardware: [{ hardwareId: 'eigen', quantity: 2 }] }, [{ id: 'eigen', category: 'shelfPins' }]), true)
+  const SRC = new URL('../../src/renderer/src/', import.meta.url).pathname
+  const files = async (d) => (await Promise.all((await readdir(d, { withFileTypes: true })).map((e) => e.isDirectory() ? files(join(d, e.name)) : /\.(ts|tsx)$/.test(e.name) ? [join(d, e.name)] : []))).flat()
+  const offenders = []
+  for (const f of await files(SRC)) if (relative(SRC, f) !== 'data/hardware.ts' && /===\s*'shelfPins'/.test(await readFile(f, 'utf8'))) offenders.push(relative(SRC, f))
+  assert.deepEqual(offenders, [])
+})

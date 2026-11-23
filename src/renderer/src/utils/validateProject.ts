@@ -74,9 +74,11 @@ function validateAssembly(a: unknown, path: string): { assembly: Assembly; rawJo
   if (!isRecord(a)) throw new Error(`${path} is not an object`)
   if (!Array.isArray(a.boards)) throw new Error(`${path}.boards missing`)
   const boards = a.boards.map((b, i) => validateBoard(b, `${path}.boards[${i}]`))
+  // older files saved the X-ray (highlight); it is a view now (store/useUIStore highlightedParts)
+  const { highlight: _view, ...rest } = a
   return {
     assembly: {
-      ...a,
+      ...rest,
       id: str(a.id, crypto.randomUUID()),
       name: cleanName(a.name, 'Baugruppe'),
       visible: a.visible !== false,
@@ -177,7 +179,10 @@ function validateFastener(f: unknown): Fastener[] {
 
 function validateCutout(c: unknown): BoardCutout[] {
   if (!isRecord(c) || !isBounded(c.x) || !isBounded(c.z) || !isBounded(c.width) || !isBounded(c.depth)) return []
-  return [{ id: str(c.id, crypto.randomUUID()), x: c.x, z: c.z, width: c.width, depth: c.depth }]
+  const from = (v: unknown): 'min' | 'max' | undefined => (v === 'min' || v === 'max' ? v : undefined)
+  const refs = { ...(from(c.uFrom) && { uFrom: from(c.uFrom) }), ...(from(c.vFrom) && { vFrom: from(c.vFrom) }) }
+  if (c.shape === 'circle') return [{ id: str(c.id, crypto.randomUUID()), shape: 'circle', x: c.x, z: c.z, width: c.width, depth: c.width, ...refs }]
+  return [{ id: str(c.id, crypto.randomUUID()), x: c.x, z: c.z, width: c.width, depth: c.depth, ...refs }]
 }
 
 /**

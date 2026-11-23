@@ -1,7 +1,7 @@
 import type { JSX } from 'react'
 import { useProjectStore } from '../../store/useProjectStore'
 import { useUIStore } from '../../store/useUIStore'
-import { useStepHidden } from '../../hooks/useStepHidden'
+import { useViewHidden } from '../../hooks/useViewHidden'
 import { grooveBox } from '../../utils/geometry'
 
 /**
@@ -12,7 +12,7 @@ import { grooveBox } from '../../utils/geometry'
 export function JointGrooves3D() {
   const showJointMarkers = useUIStore((s) => s.showJointMarkers)
   const project = useProjectStore((s) => s.project)
-  const hidden = useStepHidden()
+  const hidden = useViewHidden()
 
   if (!showJointMarkers) return null
 

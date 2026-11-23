@@ -6,6 +6,8 @@ import { openProjectFile, saveProjectFile, confirmDiscardChanges } from '../serv
 import { isDragActive, cancelTransform } from '../utils/transformLock'
 import { cancelDragHistory } from '../utils/dragHistory'
 import { isCmdKey, noCmdKey, keyName, digitOf, isLetterKey } from '../utils/shortcutKeys'
+import { undo, redo } from '../services/history'
+import { isDesignLocked, tellDesignLocked } from '../store/designLock'
 
 /** A dialog the UI store doesn't track (e.g. the assembly drawer's joint
  *  dialog) is open — every modal in the app sets aria-modal. */
@@ -52,6 +54,14 @@ export function useKeyboard() {
       // (utils/shortcutKeys). Letters compare in lower case: ⇧ / Caps Lock.
       const cmd = isCmdKey(e)
       const plain = noCmdKey(e)
+      // In the assembly workspace a shortcut that would change the design does nothing
+      // but say where it works (store/designLock.ts) — no half step, no stray selection
+      const designOnly = (): boolean => {
+        if (!isDesignLocked()) return false
+        e.preventDefault()
+        tellDesignLocked('change')
+        return true
+      }
       const k = keyName(e)
 
       // Ctrl+S: save project — also while a modal is open (it changes nothing on screen)
@@ -98,6 +108,7 @@ export function useKeyboard() {
       // J: open joint creation dialog when 2 boards selected
       if (k === 'j' && plain) {
         if (ui.selectedBoardIds.length === 2 && ui.selectedAssemblyId) {
+          if (designOnly()) return
           e.preventDefault()
           ui.setShowJointDialog(true)
         }
@@ -148,6 +159,7 @@ export function useKeyboard() {
 
       // Delete / Backspace: remove selected boards
       if ((e.key === 'Delete' || e.key === 'Backspace') && ui.selectedBoardIds.length > 0 && ui.selectedAssemblyId) {
+        if (designOnly()) return
         e.preventDefault()
         if (ui.selectedBoardIds.length === 1) {
           proj.removeBoard(ui.selectedAssemblyId, ui.selectedBoardIds[0])
@@ -160,6 +172,7 @@ export function useKeyboard() {
 
       // Arrow keys: nudge selected boards (translate) OR resize (scale mode)
       if (e.key.startsWith('Arrow') && ui.selectedBoardIds.length > 0 && ui.selectedAssemblyId) {
+        if (designOnly()) return
         e.preventDefault()
         const step = e.shiftKey ? 10 : 1 // mm
 
@@ -239,14 +252,14 @@ export function useKeyboard() {
       // Ctrl+Z: undo
       if (cmd && k === 'z' && !e.shiftKey) {
         e.preventDefault()
-        useProjectStore.temporal.getState().undo()
+        undo()
         return
       }
 
       // Ctrl+Shift+Z or Ctrl+Y: redo
       if (cmd && ((k === 'z' && e.shiftKey) || k === 'y')) {
         e.preventDefault()
-        useProjectStore.temporal.getState().redo()
+        redo()
         return
       }
 
@@ -269,6 +282,7 @@ export function useKeyboard() {
       if (k === 'd' && !e.altKey && (plain || cmd)) {
         e.preventDefault()
         if (ui.selectedBoardIds.length > 0 && ui.selectedAssemblyId) {
+          if (designOnly()) return
           if (ui.selectedBoardIds.length === 1) {
             const newId = proj.duplicateBoard(ui.selectedAssemblyId, ui.selectedBoardIds[0])
             if (newId) ui.selectBoard(ui.selectedAssemblyId, newId)

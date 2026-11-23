@@ -3,7 +3,7 @@ import * as THREE from 'three'
 import { Html } from '@react-three/drei'
 import { useProjectStore } from '../../store/useProjectStore'
 import { useUIStore } from '../../store/useUIStore'
-import { useStepHidden } from '../../hooks/useStepHidden'
+import { useViewHidden } from '../../hooks/useViewHidden'
 import { detectCollisions3D } from '../../utils/collision'
 import { CANVAS, HTML_Z_RANGE, sceneLabelStyle } from '../canvasTheme'
 
@@ -43,7 +43,7 @@ export function CollisionOverlay3D() {
   const project = useProjectStore((s) => s.project)
   const showCollisionOverlay = useUIStore((s) => s.showCollisionOverlay)
   const setCollisionPairs = useUIStore((s) => s.setCollisionPairs)
-  const hidden = useStepHidden()
+  const hidden = useViewHidden()
 
   const collisions = useMemo(() => {
     if (!showCollisionOverlay) return []

@@ -5,7 +5,9 @@ import { useTranslation } from 'react-i18next'
 import { useProjectStore } from '../../store/useProjectStore'
 import { useUIStore } from '../../store/useUIStore'
 import { inferBoringFromHardware, systemBoringRows } from '../../services/boring-calc'
-import { uprightFace, boardFace } from '../../utils/boardFace'
+import { hasShelfPins } from '../../data/hardware'
+import { boardFace } from '../../utils/boardFace'
+import { faceDrawing } from '../../utils/faceDrawing'
 import { worldAligned } from '../../utils/projection'
 import type { Board } from '../../types/furniture'
 import { csvCell } from '../../utils/textSafety'
@@ -25,8 +27,8 @@ interface BoringHole {
   label: string
   assemblyName: string
   row: HoleRow
-  x: number  // mm from left edge of the board face
-  y: number  // mm from bottom of the board face
+  x: number  // mm from the left side of the part as drawn (utils/faceDrawing, as the shop drawing)
+  y: number  // mm from its bottom side
   diameter: number
   depth: number
 }
@@ -43,11 +45,13 @@ const PREVIEW_HEIGHT_PX = 120
 const PREVIEW_PAD = 6
 
 function BoardBoringPreview({ board, holes, scale }: {
-  board: { id: string; name: string; label: string; width: number; height: number; depth: number }
+  board: Board & { label: string }
   holes: BoringHole[]
   scale: number
 }) {
-  const face = uprightFace(board)
+  // the part as the shop drawing shows it (one rule for every picture of a part)
+  const drawn = faceDrawing(board)
+  const face = { x: drawn.width, y: drawn.height }
   const w = face.x * scale
   const h = face.y * scale
   const boardHoles = holes.filter((ho) => ho.boardId === board.id)
@@ -89,6 +93,11 @@ export function BoringPanel() {
   // null = automatic: on as soon as any board carries hardware (e.g. hinges from the calculator)
   const [autoChoice, setAutoFromHardware] = useState<boolean | null>(null)
   const autoFromHardware = autoChoice ?? project.assemblies.some((a) => a.boards.some((b) => b.hardware?.length))
+  // the 32 mm rows for shelf pins: automatic, on only where shelf pins (Bodenträger) are planned
+  // in the project — no rows of holes in posts, end panels or appliances
+  const pinsPlanned = activeAssemblies(project).some((a) => a.boards.some((b) => hasShelfPins(b, project.customHardware)))
+  const [rowsChoice, setRowsChoice] = useState<boolean | null>(null)
+  const showRows = rowsChoice ?? pinsPlanned
 
   if (!showBoringPanel) return null
 
@@ -110,7 +119,7 @@ export function BoringPanel() {
 
   const allHoles: BoringHole[] = allBoards.flatMap((b) => {
     // spacing is clamped and the row count capped in systemBoringRows (an empty field is 0)
-    const grid: BoringHole[] = systemBoringRows(b, { spacing, startOffset, sideInset, diameter, depth })
+    const grid: BoringHole[] = !showRows ? [] : systemBoringRows(b, { spacing, startOffset, sideInset, diameter, depth })
       .map(({ side, ...h }) => ({ ...h, row: side, boardId: b.id, boardName: b.name, label: b.label, assemblyName: b.assemblyName })) // part-name-ok: label alongside
     if (!autoFromHardware) return grid
 
@@ -129,8 +138,9 @@ export function BoringPanel() {
     return [...grid, ...inferred]
   })
 
-  // One scale for all previews, so their sizes compare
-  const tallest = Math.max(1, ...allBoards.map((b) => uprightFace(b).y))
+  // previews only for parts with holes; one scale for all, so their sizes compare
+  const drilled = allBoards.filter((b) => allHoles.some((h) => h.boardId === b.id))
+  const tallest = Math.max(1, ...drilled.map((b) => faceDrawing(b).height))
   const previewScale = PREVIEW_HEIGHT_PX / tallest
 
   const handleExport = () => {
@@ -184,6 +194,15 @@ export function BoringPanel() {
           {field(t('boring.diameter'), diameter, setDiameter)}
           {field(t('boring.depth'), depth, setDepth)}
           {field(t('dlg.minHeight'), minHeight, setMinHeight)}
+          <label className="flex cursor-pointer items-center gap-1.5 pb-1.5 text-xs text-chrome-secondary" title={pinsPlanned || showRows ? undefined : t('boring.rowsNoPins')}>
+            <input
+              type="checkbox"
+              checked={showRows}
+              onChange={(e) => setRowsChoice(e.target.checked)}
+              className={CHECK_CLASS}
+            />
+            {t('boring.rows')}
+          </label>
           <label className="flex cursor-pointer items-center gap-1.5 pb-1.5 text-xs text-chrome-secondary">
             <input
               type="checkbox"
@@ -195,15 +214,15 @@ export function BoringPanel() {
           </label>
         </div>
 
-        {allBoards.length > 0 && (
+        {drilled.length > 0 && (
           <section className="rounded border border-chrome-border bg-chrome-deep/60 p-3">
             <div className="flex gap-5 overflow-x-auto pb-1">
-              {allBoards.map((b) => (
+              {drilled.map((b) => (
                 <BoardBoringPreview key={b.id} board={b} holes={allHoles} scale={previewScale} />
               ))}
             </div>
             <div className="mt-2 flex gap-4 text-[11px] text-chrome-muted">
-              {(['left', 'right', ...(autoFromHardware ? ['hardware' as const] : [])] as HoleRow[]).map((row) => (
+              {([...(showRows ? ['left', 'right'] as const : []), ...(autoFromHardware ? ['hardware' as const] : [])] as HoleRow[]).map((row) => (
                 <span key={row} className="flex items-center gap-1.5">
                   <span className="inline-block h-2 w-2 rounded-full" style={{ background: ROW_COLOR[row] }} />
                   {rowLabel(row)}
@@ -215,7 +234,9 @@ export function BoringPanel() {
         )}
 
         {allHoles.length === 0 ? (
-          <p className="text-xs italic text-chrome-hint">{t('dlg.boringNoBoards', { min: minHeight })}</p>
+          <p className="text-xs italic text-chrome-hint" data-testid="boring-empty">
+            {showRows || allBoards.length === 0 ? t('dlg.boringNoBoards', { min: minHeight }) : t('boring.noneWithoutRows')}
+          </p>
         ) : (
           <table className="w-full border-collapse text-xs">
             <thead>

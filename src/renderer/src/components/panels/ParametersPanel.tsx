@@ -4,6 +4,7 @@ import { useProjectStore } from '../../store/useProjectStore'
 import { useUIStore } from '../../store/useUIStore'
 import { formulaParams, isParamName } from '../../utils/formulaEval'
 import { Dialog, Button, FIELD_CLASS, LABEL_CLASS, TH_CLASS, TD_CLASS } from '../ui/Dialog'
+import { useDesignLocked } from '../../hooks/useDesignLocked'
 
 /** Count how many boards reference a parameter in their formula strings */
 function countUsage(paramName: string, assemblies: { boards: { widthFormula?: string; heightFormula?: string; depthFormula?: string }[] }[]): number {
@@ -47,7 +48,9 @@ export function ParametersPanel() {
     return map
   }, [entries, project.assemblies])
 
-  if (!showParametersPanel) return null
+  // a tool of the design: not in the assembly workspace (store/designLock.ts)
+  const locked = useDesignLocked()
+  if (locked || !showParametersPanel) return null
 
   const handleAdd = () => {
     const name = newName.trim()

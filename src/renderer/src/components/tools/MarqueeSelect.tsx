@@ -1,6 +1,5 @@
 import { useState, useCallback, useEffect, useRef } from 'react'
-import { useUIStore, useCanvasView, shownStep } from '../../store/useUIStore'
-import { stepHiddenIds } from '../../utils/assemblySteps'
+import { useUIStore, useCanvasView, viewHiddenIds } from '../../store/useUIStore'
 import { useProjectStore } from '../../store/useProjectStore'
 import type { ViewMode } from '../../types/measurement'
 import { cameraDragFor } from '../../utils/canvasInput'
@@ -87,7 +86,7 @@ export function MarqueeSelect({ canvasRef, cameraRef }: MarqueeSelectProps) {
       const project = useProjectStore.getState().project
       const hits = new Map<string, string[]>()
       // parts the assembly step view hides cannot be picked (Del would remove what you cannot see)
-      const hidden = stepHiddenIds(project, shownStep(useUIStore.getState()))
+      const hidden = viewHiddenIds(project, useUIStore.getState())
 
       for (const assembly of project.assemblies) {
         if (assembly.visible === false) continue

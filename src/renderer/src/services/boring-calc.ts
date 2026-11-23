@@ -1,14 +1,22 @@
 import { hardwareItems, hingePositionsMm, HINGE_CUP_EDGE_MM } from '../data/hardware'
-import { uprightFace } from '../utils/boardFace'
+import { faceDrawing } from '../utils/faceDrawing'
 import type { Board } from '../types/furniture'
 
 /** 32 mm system: hole pitch, and the first hole line 37 mm from the front edge */
 const SYSTEM_PITCH_MM = 32
 const SYSTEM_EDGE_MM = 37
 
+/** Holes are given on the part as it is drawn (utils/faceDrawing: standing parts upright,
+ *  lying ones from above with the wall side on top): x from its left side, y from its
+ *  bottom side — the same picture as the shop drawing. */
+const sheetOf = (board: Board): { x: number; y: number } => {
+  const d = faceDrawing(board)
+  return { x: d.width, y: d.height }
+}
+
 export interface InferredBore {
-  x: number       // mm from left edge of board face
-  y: number       // mm from bottom of board face
+  x: number       // mm from the left side of the part as drawn
+  y: number       // mm from its bottom side
   diameter: number // mm
   depth: number    // mm
   side: 'left' | 'right' | 'top' | 'bottom' | 'face'
@@ -16,14 +24,13 @@ export interface InferredBore {
 }
 
 /**
- * Infer bore positions from attached hardware on a board.
- * Returns holes in the board-face coordinate system (looking at the face, see
- * uprightFace: y along the height when it lies in the face), origin at bottom-left.
+ * Infer bore positions from attached hardware on a board, on the part as drawn (sheetOf),
+ * origin at its bottom-left.
  */
 export function inferBoringFromHardware(board: Board): InferredBore[] {
   const bores: InferredBore[] = []
   if (!board.hardware?.length) return bores
-  const face = uprightFace(board)
+  const face = sheetOf(board)
 
   for (const attached of board.hardware) {
     const hw = hardwareItems.find((h) => h.id === attached.hardwareId)
@@ -78,8 +85,8 @@ export interface SystemBoringOptions {
 
 export interface SystemBore {
   side: 'left' | 'right'
-  x: number  // mm from left edge of the face
-  y: number  // mm from bottom of the face
+  x: number  // mm from the left side of the part as drawn
+  y: number  // mm from its bottom side
   diameter: number
   depth: number
 }
@@ -91,7 +98,7 @@ const MIN_SPACING_MM = 1
 
 /** Two rows of shelf-pin holes (32 mm system) on a standing panel's face. */
 export function systemBoringRows(board: Board, opts: SystemBoringOptions): SystemBore[] {
-  const face = uprightFace(board)
+  const face = sheetOf(board)
   const step = Number.isFinite(opts.spacing) ? Math.max(MIN_SPACING_MM, opts.spacing) : 32
   const holes: SystemBore[] = []
   const { diameter, depth } = opts

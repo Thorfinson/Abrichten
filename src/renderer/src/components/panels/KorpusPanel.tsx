@@ -8,6 +8,7 @@ import { computeJointPosition } from '../../utils/geometry'
 import { cuttingDims } from '../../utils/cuttingDims'
 import { Dialog, Button, FIELD_CLASS, SECTION_LABEL_CLASS, TD_CLASS, CHECK_CLASS } from '../ui/Dialog'
 import type { Board, MaterialCategory } from '../../types/furniture'
+import { useDesignLocked } from '../../hooks/useDesignLocked'
 
 type BackPanelType = 'none' | 'groove' | 'face'
 
@@ -137,7 +138,9 @@ export function KorpusPanel() {
     materialId: 'spanplatte'
   })
 
-  if (!showKorpusPanel) return null
+  // a tool of the design: not in the assembly workspace (store/designLock.ts)
+  const locked = useDesignLocked()
+  if (locked || !showKorpusPanel) return null
 
   const set = (patch: Partial<KorpusConfig>) => setCfg((c) => ({ ...c, ...patch }))
 

@@ -5,7 +5,7 @@ import * as THREE from 'three'
 import { useTranslation } from 'react-i18next'
 import type { TFunction } from 'i18next'
 import { useUIStore } from '../../store/useUIStore'
-import { useStepHidden } from '../../hooks/useStepHidden'
+import { useViewHidden } from '../../hooks/useViewHidden'
 import { useProjectStore } from '../../store/useProjectStore'
 import { useStaticSimulation, useStaticStore, modelFieldMax, DEFORMATION_SCALE, type StaticResultType, type StaticScaleMode } from '../../store/useStaticStore'
 import { faceToWorld, worldToFace, type BoardStatic } from '../../services/static-sim'
@@ -16,6 +16,7 @@ import type { Board } from '../../types/furniture'
 import {
   fieldGeometry, contourGeometry, boxCentre, frameOf, nodeNear, nodeWorld, place, displacement, type Rgba, type Vec
 } from './staticFieldGeometry'
+import { useDesignLocked } from '../../hooks/useDesignLocked'
 
 /** The heat map sits this far outside the board; polygonOffset does the rest against z-fighting. */
 const INFLATE_MM = 0.3
@@ -95,6 +96,7 @@ function accentColor(r: BoardStatic): string {
 }
 
 /** Places a load (one undo step) where a lying board's top was clicked. */
+// design-lock-ok: called only while placing a load, which the assembly workspace switches off
 function placeLoad(boardId: string, point: THREE.Vector3, kg: number): void {
   const { project, updateBoard } = useProjectStore.getState()
   for (const assembly of project.assemblies) {
@@ -354,7 +356,7 @@ function LoadArrow({ board, load, r, scale }: { board: Board; load: NonNullable<
 /** Arrows for every load placed on a visible board. */
 function PlacedLoads({ results, scale }: { results: Map<string, BoardStatic>; scale: number }) {
   const assemblies = useProjectStore((s) => s.project.assemblies)
-  const hidden = useStepHidden()
+  const hidden = useViewHidden()
   return (
     <>
       {assemblies.filter((a) => a.visible !== false).flatMap((a) => a.boards.flatMap((b) => {
@@ -393,11 +395,13 @@ function StaticHeatMap() {
   const mode = useStaticStore((s) => s.resultType)
   const contours = useStaticStore((s) => s.showContours)
   const scaleMode = useStaticStore((s) => s.scaleMode)
-  const placing = useStaticStore((s) => s.placingLoad)
+  // placing a load changes the design: never in the assembly workspace (store/designLock.ts)
+  const locked = useDesignLocked()
+  const placing = useStaticStore((s) => s.placingLoad) && !locked
   const placeKg = useStaticStore((s) => s.placeKg)
   const selectedBoardIds = useUIStore((s) => s.selectedBoardIds)
   // the simulation covers the whole furniture; parts the assembly step view hides get no colour
-  const hidden = useStepHidden()
+  const hidden = useViewHidden()
   usePlacementMode(placing)
   // One material for all boards: colour and opacity come per vertex
   const material = useMemo(() => new THREE.MeshLambertMaterial({

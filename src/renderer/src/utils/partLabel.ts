@@ -119,6 +119,7 @@ export function numberParts(assemblies: Assembly[]): Assembly[] {
 }
 
 /** Every assembly numbered 1, 2, 3 … in list order, without gaps. Same arrays where nothing changes. */
+// design-lock-ok: the pure renumbering; the store's renumberParts applies it under the lock
 export function renumberParts(assemblies: Assembly[]): Assembly[] {
   let changed = false
   const next = assemblies.map((a) => {

@@ -10,6 +10,7 @@ import { computeWorldSizeForPixels } from '../../utils/screenSize'
 import { beginDragHistory, endDragHistory } from '../../utils/dragHistory'
 import { beginTransform, endTransform } from '../../utils/transformLock'
 import type { Board } from '../../types/furniture'
+import { useDesignLocked } from '../../hooks/useDesignLocked'
 
 // Blender-style translate gizmo — 6 arrows (3 axes × 2 directions).
 const ARROW_SHAFT_LEN = 20
@@ -57,6 +58,7 @@ interface ArrowProps {
   assemblyId: string
 }
 
+// design-lock-ok: drawn only by TranslateHandles3D, which the assembly workspace leaves out
 function TranslateArrow({ arrow, centre, board, assemblyId }: ArrowProps): JSX.Element {
   const groupRef = useRef<THREE.Group>(null)
   const visibleRef = useRef<THREE.Mesh>(null)
@@ -247,12 +249,15 @@ function TranslateArrow({ arrow, centre, board, assemblyId }: ArrowProps): JSX.E
  * appear edge-on or in front of the board with depthTest=false.
  */
 export function TranslateHandles3D(): JSX.Element | null {
+  // the assembly workspace does not move, size or turn parts (store/designLock.ts)
+  const locked           = useDesignLocked()
   const project          = useProjectStore((s) => s.project)
   const selectedBoardIds = useUIStore((s) => s.selectedBoardIds)
   const activeView       = useCanvasView()
   const activeTool       = useUIStore((s) => s.activeTool)
   const transformMode    = useUIStore((s) => s.transformMode)
 
+  if (locked) return null
   if (activeView === '3d') return null
   if (activeTool !== 'select') return null
   if (transformMode !== 'translate') return null

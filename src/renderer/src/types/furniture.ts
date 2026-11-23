@@ -41,17 +41,27 @@ export interface AttachedHardware {
   quantity: number
 }
 
-/** Rectangular cutout through the full board thickness (height axis),
- *  e.g. for a cooktop or sink in a worktop. x/z are measured from the
- *  board's min-corner in the width/depth plane.
- *  ponytail: rectangles only, always through-thickness — polygonal or
- *  partial-depth cutouts would need a CSG library. */
+/** A cutout through the full thickness of a board, lying or standing: a rectangle (a
+ *  hole inside, a notch — Ausklinkung — at the edge) or a round hole. It sits on the
+ *  board's face (utils/boardFace): x along the face's first axis (u), z along its second
+ *  (v), from the face's min corner; width × depth its size there (a circle: its diameter
+ *  both ways). On a lying board that is x along the width and z along the depth, as before.
+ *  Where it sits in the room and how its edges are named: utils/cutoutPlace.
+ *  ponytail: rectangles and circles, always through the thickness. */
 export interface BoardCutout {
   id: string
-  x: number      // mm from board left edge (width axis)
-  z: number      // mm from board front edge (depth axis)
-  width: number  // mm along width axis
-  depth: number  // mm along depth axis
+  /** Missing: a rectangle */
+  shape?: 'circle'
+  x: number      // mm along the face's first axis (u)
+  z: number      // mm along the face's second axis (v)
+  width: number  // mm along u
+  depth: number  // mm along v
+  /** The edges it is measured from (Bezugskanten) along u and v: at 0 ('min') or at the
+   *  far end ('max'). x and z are its distances from these edges, so it keeps its place
+   *  from them when the board changes size. Missing: measured from 0, shown from the nearer
+   *  edge. Read it through utils/geometry (faceCutout, clampCutouts), never directly. */
+  uFrom?: 'min' | 'max'
+  vFrom?: 'min' | 'max'
 }
 
 /** A load placed on a board's top face: a w × d patch at x/z from the board's
@@ -104,8 +114,6 @@ export interface Assembly {
   /** Parent assembly; missing = top level. The tree order is the array order among siblings. */
   parentId?: string
   visible: boolean
-  /** X-ray highlight: group edges drawn through all other geometry */
-  highlight?: boolean
   /** Short word for the part labels ("Herd" → "Herd 2"); missing = the first word of the name */
   shortName?: string
   boards: Board[]

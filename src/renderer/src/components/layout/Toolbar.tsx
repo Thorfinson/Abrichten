@@ -9,6 +9,8 @@ import { Icon } from './Icon'
 import { WorkspaceSwitcher } from './WorkspaceSwitcher'
 import { IS_MAC } from '../../utils/canvasInput'
 import { keyCombo } from '../../utils/shortcutKeys'
+import { undo, redo } from '../../services/history'
+import { useDesignHint, useDesignLocked } from '../../hooks/useDesignLocked'
 
 function Sep() {
   return <div className="w-px h-4 bg-chrome-divider shrink-0" />
@@ -53,8 +55,9 @@ export function Toolbar() {
   const temporalStore = useProjectStore.temporal
   const undoCount = useStore(temporalStore, (s) => s.pastStates.length)
   const redoCount = useStore(temporalStore, (s) => s.futureStates.length)
-  const undo = useStore(temporalStore, (s) => s.undo)
-  const redo = useStore(temporalStore, (s) => s.redo)
+  // undo and redo keep to the design lock (services/history.ts); the AI builds parts, so not in assembly
+  const locked = useDesignLocked()
+  const { readOnly } = useDesignHint()
 
   const handleNew = () => {
     if (!confirmDiscardChanges('new')) return
@@ -217,11 +220,12 @@ export function Toolbar() {
       {/* AI */}
       <Btn
         onClick={() => setShowChatPanel(!showChatPanel)}
+        disabled={locked}
         className={showChatPanel
           ? 'bg-ai text-ai-text'
           : 'bg-chrome-surface text-ai-text hover:bg-ai-dim hover:text-ai-text'
         }
-        title={!apiKeyConfigured ? (lang === 'de' ? 'API-Schlüssel konfigurieren' : 'Configure API key') : undefined}
+        title={locked ? readOnly : !apiKeyConfigured ? (lang === 'de' ? 'API-Schlüssel konfigurieren' : 'Configure API key') : undefined}
       >
         {t('ai.title')}
       </Btn>

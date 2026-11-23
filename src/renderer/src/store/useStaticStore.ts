@@ -3,7 +3,7 @@ import { create } from 'zustand'
 import type { Assembly, CustomHardwareItem, Material } from '../types/furniture'
 import { simulateStatics, type StaticSimulation } from '../services/static-sim'
 import { useProjectStore } from './useProjectStore'
-import { useUIStore } from './useUIStore'
+import { designLockedIn, useUIStore } from './useUIStore'
 
 /** Exaggeration of the deformation drawn when it is shown. */
 export const DEFORMATION_SCALE = 20
@@ -97,6 +97,11 @@ export function useStaticSimulation(): StaticSimulation {
 }
 
 // Test/debug access, like __projectStore and __uiStore; __staticSimulation is the last run
+// Placing a load changes the design: the assembly workspace switches it off
+useUIStore.subscribe((s, prev) => {
+  if (designLockedIn(s) && !designLockedIn(prev)) useStaticStore.getState().setPlacingLoad(false)
+})
+
 declare global { interface Window { __staticStore?: unknown; __staticSimulation?: () => StaticSimulation | null } }
 if (typeof window !== 'undefined') {
   window.__staticStore = useStaticStore

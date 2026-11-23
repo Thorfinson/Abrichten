@@ -154,14 +154,15 @@ export async function getBoard(page: Page, boardId: string): Promise<BoardState>
   }, boardId)
 }
 
-export async function getUI(page: Page): Promise<{ activeView: string; transformMode: string; selectedBoardIds: string[]; activeTool: string }> {
+export async function getUI(page: Page): Promise<{ activeView: string; transformMode: string; selectedBoardIds: string[]; activeTool: string; hiddenParts: string[] }> {
   return page.evaluate(() => {
     const s = window.__uiStore.getState()
     return {
       activeView: s.activeView,
       transformMode: s.transformMode,
       selectedBoardIds: [...s.selectedBoardIds],
-      activeTool: s.activeTool
+      activeTool: s.activeTool,
+      hiddenParts: [...s.hiddenParts]
     }
   })
 }

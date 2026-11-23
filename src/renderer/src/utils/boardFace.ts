@@ -45,13 +45,3 @@ export function edgeBandingLengthMm(b: Dims & Pick<Board, 'edgeBanding'>): numbe
   const f = boardFace(b)
   return (eb.e1 ? f.u : 0) + (eb.e2 ? f.u : 0) + (eb.e3 ? f.v : 0) + (eb.e4 ? f.v : 0)
 }
-
-/**
- * The face as seen when drilling it: y runs along the height when the height lies
- * in the face (standing panels, doors), x along the other face axis.
- */
-export function uprightFace(b: Dims): { x: number; y: number } {
-  const f = boardFace(b)
-  if (f.uAxis === 'height') return { x: f.v, y: f.u }
-  return { x: f.u, y: f.v }
-}
