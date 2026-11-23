@@ -195,9 +195,14 @@ export const hardwareItems: HardwareItem[] = [
 /** True when the board carries shelf pins (Bodenträger) — the one test, for the statics (a
  *  shelf resting on pins) and the boring list (32 mm rows only where pins are planned). */
 export function hasShelfPins(board: Pick<Board, 'hardware'>, customHardware?: CustomHardwareItem[]): boolean {
+  return carriesHardware(board, 'shelfPins', customHardware)
+}
+
+/** True when the board carries hardware of this category (catalogue or the project's own). */
+export function carriesHardware(board: Pick<Board, 'hardware'>, category: HardwareCategory, customHardware?: CustomHardwareItem[]): boolean {
   return (board.hardware ?? []).some((h) => h.quantity > 0 && (
-    hardwareItems.find((i) => i.id === h.hardwareId)?.category === 'shelfPins' ||
-    customHardware?.find((i) => i.id === h.hardwareId)?.category === 'shelfPins'))
+    hardwareItems.find((i) => i.id === h.hardwareId)?.category === category ||
+    customHardware?.find((i) => i.id === h.hardwareId)?.category === category))
 }
 
 export function getHardwareByCategory(cat: HardwareCategory): HardwareItem[] {

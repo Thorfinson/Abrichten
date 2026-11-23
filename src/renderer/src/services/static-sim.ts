@@ -1,6 +1,6 @@
 import type { Board, CustomHardwareItem, Joint, Material, PlacedLoad } from '../types/furniture'
 import { getMaterialById, permanentMaterial, GAMMA_M } from '../data/materials'
-import { hasShelfPins } from '../data/hardware'
+import { carriesHardware, hasShelfPins } from '../data/hardware'
 import { worldAligned, dimDirection } from '../utils/projection'
 import { boardFace, type BoardFace } from '../utils/boardFace'
 import { clampCutouts } from '../utils/geometry'
@@ -55,6 +55,8 @@ export type { StaticBox, StaticField } from './static-fe'
 const FLOOR_Y_MM = 0.5
 /** Gap (or overlap) up to which two faces touch. */
 const CONTACT_MM = 5
+/** A contact or joint across more air than this is reported as a gap (SupportGap); less is rounding */
+const GAP_SHOWN_MM = 0.5
 /** How far a board may reach into another at its end (groove, dado, tenon) and still rest on it. */
 const MAX_PENETRATION_MM = 25
 /** Overlaps below this are rounding noise. */
@@ -105,6 +107,10 @@ interface Support extends ContactSupport {
   by: number
   /** Contact area, for sharing a rigid board's load (mm²) */
   area: number
+  /** Air between the two boards that this support is counted across (mm); missing: they touch */
+  gap?: number
+  /** The gap is bridged on purpose by hardware (a drawer runner on one of the boards) */
+  bridged?: boolean
 }
 
 interface Member {
@@ -139,6 +145,23 @@ interface Member {
 
 /** A force handed down to a supporting board (world point of its centre, N). */
 export interface StaticReaction { x: number; y: number; z: number; F: number; to: string | null }
+
+/**
+ * A support counted across a gap: a contact the boards do not really make (within the
+ * contact tolerance), or a joint across air. It still counts, but the board is never
+ * rated "ok" for it unless hardware bridges it on purpose (BoardStatic.gaps).
+ */
+export interface SupportGap {
+  /** The board it rests on or is joined to; null for the floor */
+  by: string | null
+  kind: 'below' | 'end' | 'joint'
+  /** Width of the gap (mm) */
+  mm: number
+  /** Bridged on purpose by hardware (a drawer runner): shown, no warning */
+  bridged: boolean
+  /** Where (world mm), for the 3D label */
+  at: { x: number; y: number; z: number }
+}
 
 export interface BoardStatic {
   boardId: string
@@ -177,6 +200,8 @@ export interface BoardStatic {
   minThicknessMm: number | null
   /** Forces this board hands to its supports */
   reactions: StaticReaction[]
+  /** Supports counted across a gap; missing when none */
+  gaps?: SupportGap[]
 }
 
 export interface StaticSimulation {
@@ -282,7 +307,7 @@ function buildMember(raw: Board, index: number, options: SimulationOptions): Mem
  * broad faces of a panel standing on edge are no ends, and a horizontal board met with
  * its own end face is a continuation (a worktop seam), not a support.
  */
-function endContact(b: StaticBox, s: StaticBox, sVertical: boolean, ends: readonly HAxis[]): { rect: Rect; area: number; axis: HAxis } | null {
+function endContact(b: StaticBox, s: StaticBox, sVertical: boolean, ends: readonly HAxis[]): { rect: Rect; area: number; axis: HAxis; gap: number } | null {
   const oy = overlap(b.y0, b.y1, s.y0, s.y1)
   if (oy <= MIN_OVERLAP_MM) return null
   for (const a of ends) {
@@ -295,7 +320,8 @@ function endContact(b: StaticBox, s: StaticBox, sVertical: boolean, ends: readon
     if (lo(s, a) >= hi(b, a) - pen && lo(s, a) <= hi(b, a) + CONTACT_MM && hi(s, a) > hi(b, a) + MIN_OVERLAP_MM) at = hi(b, a)
     else if (hi(s, a) <= lo(b, a) + pen && hi(s, a) >= lo(b, a) - CONTACT_MM && lo(s, a) < lo(b, a) - MIN_OVERLAP_MM) at = lo(b, a)
     if (at === null) continue
-    return { rect: make(a, at, at, Math.max(lo(b, o), lo(s, o)), Math.min(hi(b, o), hi(s, o))), area: oy * across, axis: a }
+    const gap = at === hi(b, a) ? lo(s, a) - hi(b, a) : lo(b, a) - hi(s, a)
+    return { rect: make(a, at, at, Math.max(lo(b, o), lo(s, o)), Math.min(hi(b, o), hi(s, o))), area: oy * across, axis: a, gap }
   }
   return null
 }
@@ -333,7 +359,8 @@ function findSupports(members: Member[]): void {
       const oz = overlap(b.z0, b.z1, sb.z0, sb.z1)
       if (Math.abs(sb.y1 - b.y0) <= CONTACT_MM && sb.y0 < b.y0 && ox > MIN_OVERLAP_MM && oz > MIN_OVERLAP_MM) {
         const rect = { x0: Math.max(b.x0, sb.x0), x1: Math.min(b.x1, sb.x1), z0: Math.max(b.z0, sb.z0), z1: Math.min(b.z1, sb.z1) }
-        m.supports.push({ kind: 'below', by: s.index, rect, area: ox * oz, y0: b.y0, y1: b.y0 })
+        const gap = b.y0 - sb.y1
+        m.supports.push({ kind: 'below', by: s.index, rect, area: ox * oz, y0: b.y0, y1: b.y0, ...(gap > GAP_SHOWN_MM ? { gap } : {}) })
         s.covers.push(rect)
         if (m.lying && s.lying && ox * oz >= LAYER_COVERAGE * rectArea(footprint(b))) s.layers.push({ index: m.index, rect })
         continue
@@ -343,7 +370,7 @@ function findSupports(members: Member[]): void {
       if (!end) continue
       const y0 = Math.max(b.y0, sb.y0), y1 = Math.min(b.y1, sb.y1)
       const pins = m.lying && m.pins ? pinPositions(m, end.rect, end.axis) : undefined
-      m.supports.push({ kind: 'end', by: s.index, rect: end.rect, area: end.area, y0, y1, pins })
+      m.supports.push({ kind: 'end', by: s.index, rect: end.rect, area: end.area, y0, y1, pins, ...(end.gap > GAP_SHOWN_MM ? { gap: end.gap } : {}) })
     }
   }
 }
@@ -385,7 +412,12 @@ function contactRegion(a: StaticBox, b: StaticBox, gap: number): StaticBox | nul
  * A joint replaces the contact of its pair; boards without joints keep the contact rules.
  * Every joint braces both boards (bucklingGap).
  */
-function applyJoints(members: Member[], joints: Pick<Joint, 'boardA' | 'boardB'>[]): void {
+/** Air between two boxes (mm): the largest separation along an axis; 0 when they touch or overlap. */
+function separation(a: StaticBox, b: StaticBox): number {
+  return Math.max(0, b.x0 - a.x1, a.x0 - b.x1, b.y0 - a.y1, a.y0 - b.y1, b.z0 - a.z1, a.z0 - b.z1)
+}
+
+function applyJoints(members: Member[], joints: Pick<Joint, 'boardA' | 'boardB'>[], customHardware?: CustomHardwareItem[]): void {
   const n = members.length
   const index = new Map(members.map((m) => [m.raw.id, m.index]))
   const pairs = new Map<string, { a: number; b: number; region: StaticBox }>()
@@ -458,7 +490,10 @@ function applyJoints(members: Member[], joints: Pick<Joint, 'boardA' | 'boardB'>
       ;[carrier, held] = dist[a] < dist[b] ? [a, b] : [b, a]
     }
     if (carrier < 0 || members[held].supports.some((s) => s.kind === 'floor')) continue
-    members[held].supports.push(jointSupport(carrier, region))
+    // a joint across air: a drawer runner bridges it on purpose, anything else is a gap
+    const gap = separation(members[a].box, members[b].box)
+    const bridged = carriesHardware(members[a].raw, 'slides', customHardware) || carriesHardware(members[b].raw, 'slides', customHardware)
+    members[held].supports.push({ ...jointSupport(carrier, region), ...(gap > GAP_SHOWN_MM ? { gap, bridged } : {}) })
   }
 }
 
@@ -886,7 +921,7 @@ export function simulateStatics(boards: Board[], options: SimulationOptions): St
   const members = boards.map((b, i) => buildMember(b, i, options))
   const indexById = new Map(members.map((m) => [m.raw.id, m.index]))
   findSupports(members)
-  applyJoints(members, options.joints ?? [])
+  applyJoints(members, options.joints ?? [], options.customHardware)
   const processed = new Array<boolean>(members.length).fill(false)
   const results = new Map<string, BoardStatic>()
   let solved = 0
@@ -917,6 +952,16 @@ export function simulateStatics(boards: Board[], options: SimulationOptions): St
     }
   }
 
+  // supports counted across a gap: reported with their width, and a board resting on one
+  // is never rated "ok" (unless hardware bridges it on purpose)
+  for (const m of members) {
+    const r = results.get(m.raw.id)
+    const gaps = supportGaps(m, members)
+    if (!r || gaps.length === 0) continue
+    const open = gaps.some((g) => !g.bridged)
+    results.set(m.raw.id, { ...r, gaps, status: open && r.status === 'ok' ? 'warning' : r.status })
+  }
+
   let critical = 0, warning = 0, unsupported = 0
   for (const r of results.values()) {
     if (r.status === 'critical') critical++
@@ -924,6 +969,25 @@ export function simulateStatics(boards: Board[], options: SimulationOptions): St
     else if (r.status === 'unsupported') unsupported++
   }
   return { results, critical, warning, unsupported, durationMs: performance.now() - t0, solved }
+}
+
+/** The widest gap a board's support is assumed across without hardware bridging it, or null. */
+export function openGap(r: Pick<BoardStatic, 'gaps'>): SupportGap | null {
+  const open = (r.gaps ?? []).filter((g) => !g.bridged)
+  return open.length ? open.reduce((a, b) => (b.mm > a.mm ? b : a)) : null
+}
+export function openGapMm(r: Pick<BoardStatic, 'gaps'>): number | null {
+  return openGap(r)?.mm ?? null
+}
+
+function supportGaps(m: Member, members: Member[]): SupportGap[] {
+  return m.supports.flatMap((s) => s.gap === undefined || s.kind === 'floor' ? [] : [{
+    by: s.by >= 0 ? members[s.by].raw.id : null,
+    kind: s.kind,
+    mm: Math.round(s.gap * 10) / 10,
+    bridged: !!s.bridged,
+    at: { x: (s.rect.x0 + s.rect.x1) / 2, y: s.kind === 'below' ? s.y0 - s.gap / 2 : (s.y0 + s.y1) / 2, z: (s.rect.z0 + s.rect.z1) / 2 }
+  }])
 }
 
 /** Empties the solution cache and the remembered contact states (tests, benchmarks). */

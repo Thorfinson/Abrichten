@@ -6,7 +6,7 @@ import { useStaticSimulation } from '../../store/useStaticStore'
 import { usePartLabels } from '../../hooks/usePartLabels'
 import { PartName } from '../ui/PartName'
 import { GRAVITY, utilisationCss, type StaticStatus } from '../../services/static-calc'
-import type { BoardStatic } from '../../services/static-sim'
+import { openGap, type BoardStatic } from '../../services/static-sim'
 import type { Assembly, Board } from '../../types/furniture'
 
 const STATUS_BADGE: Record<StaticStatus, string> = {
@@ -130,7 +130,19 @@ function SummaryDialog() {
                       onKeyDown={(e) => { if (e.key === 'Enter') select(row) }}
                       className="cursor-pointer hover:bg-chrome-hover focus:bg-chrome-hover outline-none"
                     >
-                      <td className={`${td} font-medium`}><PartName label={labels.get(row.board.id)} name={row.board.name} labelClassName="text-chrome-muted font-normal" /></td>
+                      <td className={`${td} font-medium`}>
+                        <PartName label={labels.get(row.board.id)} name={row.board.name} labelClassName="text-chrome-muted font-normal" />
+                        {(() => {
+                          // a contact across air: shim or close it; a joint across air: it needs hardware that bridges it
+                          const g = openGap(r)
+                          const mm = g ? g.mm.toLocaleString(lang, { maximumFractionDigits: 1 }) : ''
+                          return g && (
+                            <div className="text-[10px] font-normal text-amber-400 whitespace-normal" data-testid="static-gap-note">
+                              {t(g.kind === 'joint' ? 'sim.gapJoint' : 'sim.gapAssumed', { mm })}
+                            </div>
+                          )
+                        })()}
+                      </td>
                       <td className={`${td} text-chrome-muted`}>{row.assembly.name}</td>
                       <td className={`${td} text-right font-mono`}>{num(r.totalLoadN / GRAVITY)}</td>
                       <td className={`${td} text-right font-mono`}>
