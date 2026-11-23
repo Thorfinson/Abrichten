@@ -12,6 +12,7 @@ import { beginDragHistory, endDragHistory } from '../../utils/dragHistory'
 import { beginTransform, endTransform } from '../../utils/transformLock'
 import type { Board } from '../../types/furniture'
 import { HTML_Z_RANGE } from '../canvasTheme'
+import { useDesignLocked } from '../../hooks/useDesignLocked'
 
 // 6 face-anchored resize cubes (3 axes × 2 directions) — Blender-style.
 // Dragging a cube moves that single face outward/inward while the opposite
@@ -51,6 +52,7 @@ interface CubeProps {
   assemblyId: string
 }
 
+// design-lock-ok: drawn only by ResizeHandles3D, which the assembly workspace leaves out
 function ResizeCube({ face, board, assemblyId }: CubeProps): JSX.Element {
   const meshRef = useRef<THREE.Mesh>(null)
   const hitRef = useRef<THREE.Mesh>(null)
@@ -250,12 +252,15 @@ function ResizeCube({ face, board, assemblyId }: CubeProps): JSX.Element {
  * board centre overlapping (perpendicular to view).
  */
 export function ResizeHandles3D(): JSX.Element | null {
+  // the assembly workspace does not move, size or turn parts (store/designLock.ts)
+  const locked           = useDesignLocked()
   const project          = useProjectStore((s) => s.project)
   const selectedBoardIds = useUIStore((s) => s.selectedBoardIds)
   const activeView       = useCanvasView()
   const activeTool       = useUIStore((s) => s.activeTool)
   const transformMode    = useUIStore((s) => s.transformMode)
 
+  if (locked) return null
   if (activeView === '3d') return null
   if (activeTool !== 'select') return null
   if (transformMode !== 'scale') return null

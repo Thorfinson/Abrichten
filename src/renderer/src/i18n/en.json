@@ -299,7 +299,10 @@
     "export": "Export Boring List",
     "noBoards": "No boards selected.",
     "sideInset": "Side inset (mm)",
-    "minHeight": "Min height (mm)"
+    "minHeight": "Min height (mm)",
+    "rows": "Rows for shelf pins",
+    "rowsNoPins": "Off because no shelf pins are planned in the project. Switch on if they are.",
+    "noneWithoutRows": "No holes. Rows for shelf pins are off because no shelf pins are planned in the project."
   },
   "nesting": {
     "title": "Sheet layout",
@@ -590,7 +593,7 @@
     "holes": "holes",
     "minHeight": "Min height (mm)",
     "boringNoBoards": "No standing parts of {{min}} mm height or more.",
-    "boringFaceHint": "Face view: front edge on the left, Y from the bottom edge",
+    "boringFaceHint": "As in the shop drawing: X from the left side, Y from the bottom edge",
     "paramsHint": "Parameters are named dimensions in mm. Type a formula into a board’s dimension field; when the value changes, every board using it is recalculated. Examples:",
     "paramNamePlaceholder": "e.g. H, W, DEPTH",
     "sheetPreset": "Sheet size",
@@ -737,5 +740,68 @@
     "groupAssembly": "Assembly",
     "groupRole": "Part role",
     "groupMaterial": "Material"
+  },
+  "designLock": {
+    "change": "Belongs to the design – change it there ({{key}})",
+    "undo": "The last change belongs to the design – undo it there ({{key}}, then {{undo}})",
+    "redo": "The next change belongs to the design – redo it there ({{key}}, then {{redo}})",
+    "hint": "Change parts in the design ({{key}})",
+    "inDesign": "in the design ({{key}})",
+    "readOnly": "Read only in assembly – change it in the design ({{key}})"
+  },
+  "eye": {
+    "hide": "Hide in the view – still counts",
+    "show": "Show in the view",
+    "mixed": "Partly hidden – click shows all"
+  },
+  "counts": {
+    "on": "Counts: cutting list, costs, plans, statics, assembly, view",
+    "off": "Does not count (variant off) – tick to bring it back",
+    "some": "Partly counts – some subgroups are unticked",
+    "toggle": "Count on/off (variant)"
+  },
+  "xray": {
+    "on": "Highlight – shows where it sits; everything else steps back",
+    "off": "Remove the highlight",
+    "mixed": "Partly highlighted – click removes all"
+  },
+  "cutout": {
+    "column": "Cut-outs",
+    "add": "Cut-out",
+    "shape": "Shape",
+    "rect": "rectangle",
+    "circle": "round",
+    "diameter": "Diameter (mm)",
+    "size": {
+      "x": "Width",
+      "y": "Height",
+      "z": "Depth"
+    },
+    "edge": {
+      "left": "left",
+      "right": "right",
+      "bottom": "bottom",
+      "top": "top",
+      "back": "back",
+      "front": "front"
+    },
+    "from": "Distance from",
+    "fromShort": "from",
+    "inRoom": "in the room",
+    "room": {
+      "x": "from the left",
+      "y": "from the floor",
+      "z": "from the back"
+    },
+    "kind": {
+      "round": "round hole",
+      "notch": "notch",
+      "hole": "cut-out"
+    },
+    "problem": {
+      "outside": "not wholly on the part – not built",
+      "splits": "would cut the part in two – not built",
+      "beyond": "reaches past the edge of the part – cut back there"
+    }
   }
 }

@@ -277,15 +277,20 @@ test.describe('Static heat map', () => {
     await expect(page.getByTestId('static-place-hint')).toBeVisible()
     const past = (await undoState(page)).past
 
-    // a pixel on the shelf's top face near its front-left corner, not covered by a label or card
+    // a pixel on the shelf's top face, not covered by a label, card or the legend: tried
+    // over the whole face, front-left first
     const pixel = await page.evaluate((id) => {
       const r = window.__r3f, THREE = r.THREE
       const meshes: any[] = []
       r.scene.traverse((o: any) => { if (o.isMesh && o.userData?.staticBoardId) meshes.push(o) })
+      const board = window.__projectStore.getState().project.assemblies.flatMap((a: any) => a.boards).find((b: any) => b.id === id)
+      const top = board.position.y + board.height
       const rect = r.gl.domElement.getBoundingClientRect()
       const ray = new THREE.Raycaster()
-      for (const [x, z] of [[90, 240], [110, 220], [80, 200], [130, 250], [150, 230]]) {
-        const p = new THREE.Vector3(x, 358, z).project(r.camera)
+      const spots: [number, number][] = []
+      for (let i = 1; i < 10; i++) for (let k = 9; k > 0; k--) spots.push([board.position.x + (board.width * i) / 10, board.position.z + (board.depth * k) / 10])
+      for (const [x, z] of spots) {
+        const p = new THREE.Vector3(x, top, z).project(r.camera)
         const s = { x: rect.left + ((p.x + 1) / 2) * rect.width, y: rect.top + ((1 - p.y) / 2) * rect.height }
         if (document.elementFromPoint(s.x, s.y) !== r.gl.domElement) continue
         ray.setFromCamera(new THREE.Vector2(p.x, p.y), r.camera)

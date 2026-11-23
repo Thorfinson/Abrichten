@@ -6,8 +6,10 @@ import { HINGE_CUP_EDGE_MM, hingePositionsMm, hardwareItems, withHinges } from '
 import { getMaterialById } from '../../data/materials'
 import { usePartLabels } from '../../hooks/usePartLabels'
 import { partTitle } from '../../utils/partLabel'
-import { boardFace, uprightFace } from '../../utils/boardFace'
+import { boardFace } from '../../utils/boardFace'
+import { faceDrawing } from '../../utils/faceDrawing'
 import type { Board } from '../../types/furniture'
+import { useDesignLocked } from '../../hooks/useDesignLocked'
 
 /** Epic 18a: recommend hinge count based on door height and weight */
 function recommendHingeCount(doorHeightMm: number, doorWeightKg: number = 10): number {
@@ -185,7 +187,8 @@ export function HingeCalcPanel() {
   useEffect(() => {
     if (!showHingeCalcPanel || !door) return
     const b = door.board
-    const height = Math.round(uprightFace(b).y)
+    // the door's height as drawn (standing parts upright, utils/faceDrawing)
+    const height = Math.round(faceDrawing(b).height)
     const density = getMaterialById(b.materialId, customMaterials)?.density ?? 700
     const weight = Math.max(0.5, Math.round((b.weightKg ?? (density * b.width * b.height * b.depth) / 1e9) * 2) / 2)
     setDoorHeight(height)
@@ -194,7 +197,9 @@ export function HingeCalcPanel() {
     setHingeCount(recommendHingeCount(height, weight))
   }, [showHingeCalcPanel, doorId]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  if (!showHingeCalcPanel) return null
+  // a tool of the design: not in the assembly workspace (store/designLock.ts)
+  const locked = useDesignLocked()
+  if (locked || !showHingeCalcPanel) return null
 
   const close = () => setShowHingeCalcPanel(false)
   const sys = HINGE_SYSTEMS.find((h) => h.id === hingeId) ?? HINGE_SYSTEMS[0]

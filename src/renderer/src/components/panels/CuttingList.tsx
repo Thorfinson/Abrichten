@@ -19,6 +19,8 @@ import { groupByRole, roleKey } from '../../utils/boardRole'
 import { BOARD_ROLES, type Board, type BoardRole } from '../../types/furniture'
 import { joinLabels, partLabels, partOrder } from '../../utils/partLabel'
 import { renumberPartsAsked } from '../../services/partNumbers'
+import { useDesignHint, useDesignLocked } from '../../hooks/useDesignLocked'
+import { describeCutouts } from '../../utils/cutoutText'
 
 function edgeBandingLabel(board: Board): string {
   const eb = board.edgeBanding
@@ -52,6 +54,8 @@ interface Row {
   thickness: number
   grain: GrainRelation | null
   ebLabel: string
+  /** Cutouts as the workshop reads them (utils/cutoutText), '; ' between */
+  cutLabel: string
   ebMm: number
   qty?: number
 }
@@ -95,6 +99,9 @@ export function CuttingList() {
   const [filterText, setFilterText] = useState('')
   const [filterMaterial, setFilterMaterial] = useState('')
   const [groupIdentical, setGroupIdentical] = useState(false)
+  // new numbers change the design: not in the assembly workspace (store/designLock.ts)
+  const locked = useDesignLocked()
+  const { readOnly } = useDesignHint()
   const [filterRoleState, setFilterRole] = useState<RoleFilter>('')
   const [groupRoleState, setGroupRole] = useState(false)
   const [exportToast, setExportToast] = useState<string | null>(null)
@@ -129,16 +136,19 @@ export function CuttingList() {
           thickness: dims.thickness,
           grain: dims.grain,
           ebLabel: edgeBandingLabel(board),
+          cutLabel: describeCutouts(board, t).map((c) => c.text).join('; '),
           ebMm: edgeBandingLengthMm(board)
         })
       }
     }
     return result
-  }, [project.assemblies, project.customMaterials, lang])
+  }, [project.assemblies, project.customMaterials, lang, t])
 
   // The role column and controls appear once a part has a role; until then the list is as before
   // (and a filter or grouping left over from then does nothing)
   const rolesUsed = rawRows.some((r) => r.role)
+  // the cutout column appears once a part has a cutout
+  const cutsUsed = rawRows.some((r) => r.cutLabel)
   const filterRole: RoleFilter = rolesUsed ? filterRoleState : ''
   const groupRole = rolesUsed && groupRoleState
 
@@ -167,7 +177,7 @@ export function CuttingList() {
     if (!groupIdentical) return filtered
     const map = new Map<string, Row & { qty: number }>()
     for (const r of filtered) {
-      const key = `${r.materialId}|${r.length}|${r.width}|${r.thickness}|${r.grain}|${r.ebLabel}|${r.role ?? ''}`
+      const key = `${r.materialId}|${r.length}|${r.width}|${r.thickness}|${r.grain}|${r.ebLabel}|${r.cutLabel}|${r.role ?? ''}`
       const prev = map.get(key)
       map.set(key, prev
         ? { ...prev, qty: prev.qty + 1, ebMm: prev.ebMm + r.ebMm, nr: Math.min(prev.nr, r.nr), labels: [...prev.labels, ...r.labels] }
@@ -253,7 +263,7 @@ export function CuttingList() {
   const roleLabel = (role: BoardRole | undefined): string => t(roleKey(role))
   const pieceCount = (rows: Row[]): number => rows.reduce((s, r) => s + (r.qty ?? 1), 0)
   /** Columns of the table and the print: the role column only once roles are used */
-  const columnCount = 9 + (rolesUsed ? 1 : 0) + (groupIdentical ? 1 : 0)
+  const columnCount = 9 + (cutsUsed ? 1 : 0) + (rolesUsed ? 1 : 0) + (groupIdentical ? 1 : 0)
 
   const buildCsvRows = (rows: Row[]) => {
     const headers = [
@@ -264,6 +274,7 @@ export function CuttingList() {
       ...dimHeaders,
       t('cutting.grain'),
       t('cutting.edgeBanding'),
+      ...(cutsUsed ? [t('cutout.column')] : []),
       ...(rolesUsed ? [t('role.label')] : []),
       ...(groupIdentical ? [t('cutting.qty')] : [])
     ]
@@ -273,6 +284,7 @@ export function CuttingList() {
       csvRows.push([
         joinLabels(r.labels), r.assemblyName, r.name, r.material,
         dim(r.length), dim(r.width), dim(r.thickness), grainLabel(r.grain), r.ebLabel,
+        ...(cutsUsed ? [r.cutLabel] : []),
         ...(rolesUsed ? [roleLabel(r.role)] : []),
         ...(groupIdentical ? [r.qty ?? 1] : [])
       ].map(csvCell).join(sep))
@@ -294,13 +306,14 @@ export function CuttingList() {
   const handlePrint = () => {
     const colHeaders = [
       t('partLabel.nr'), t('board.name'), t('cutting.assembly'), t('board.material'), ...dimHeaders,
-      t('cutting.grain'), t('cutting.edgeBanding'), ...(rolesUsed ? [t('role.label')] : []), ...(groupIdentical ? [t('cutting.qty')] : [])
+      t('cutting.grain'), t('cutting.edgeBanding'), ...(cutsUsed ? [t('cutout.column')] : []), ...(rolesUsed ? [t('role.label')] : []), ...(groupIdentical ? [t('cutting.qty')] : [])
     ]
     const numeric = new Set([4, 5, 6, ...(groupIdentical ? [columnCount - 1] : [])])   // length, width, thickness, quantity: right-aligned
     const rows = roleGroups.flatMap((g) => [
       ...(groupRole ? [`<tr class="g"><td colspan="${columnCount}">${escapeHtml(`${roleLabel(g.role)} · ${t('role.pieces', { count: pieceCount(g.items) })}`)}</td></tr>`] : []),
       ...g.items.map((r) => {
         const cols: (string | number)[] = [joinLabels(r.labels), r.name, r.assemblyName, r.material, dim(r.length), dim(r.width), dim(r.thickness), grainLabel(r.grain), r.ebLabel]
+        if (cutsUsed) cols.push(r.cutLabel)
         if (rolesUsed) cols.push(roleLabel(r.role))
         if (groupIdentical) cols.push(r.qty ?? 1)
         return `<tr>${cols.map((c, ci) => `<td${numeric.has(ci) ? ' class="n"' : ''}>${escapeHtml(String(c))}</td>`).join('')}</tr>`
@@ -447,7 +460,7 @@ ${barPlanHtml(barGroups, barSettings, lengthFormat, t)}
           </label>
         </>}
         <span className="ml-auto text-[11px] text-chrome-hint">{t('dlg.cutHint')}</span>
-        <Button size="sm" onClick={renumberPartsAsked} title={t('partLabel.renumberHint')}>{t('partLabel.renumber')}</Button>
+        <Button size="sm" onClick={renumberPartsAsked} disabled={locked} title={locked ? readOnly : t('partLabel.renumberHint')}>{t('partLabel.renumber')}</Button>
       </div>
 
       {/* Table */}
@@ -467,6 +480,7 @@ ${barPlanHtml(barGroups, barSettings, lengthFormat, t)}
                 <SortTh col="thickness"    label={dimHeaders[2]} sortCol={sortCol} sortDir={sortDir} onSort={handleSort} align="right" title={t('dlg.thicknessTitle')} />
                 <th className={`${TH_CLASS} text-center`} title={t('dlg.grainTitle')}>{t('cutting.grain')}</th>
                 <th className={`${TH_CLASS} text-center`}>{t('cutting.edgeBanding')}</th>
+                {cutsUsed && <th className={TH_CLASS}>{t('cutout.column')}</th>}
                 {rolesUsed && <th className={TH_CLASS}>{t('role.label')}</th>}
                 {groupIdentical && <th className={`${TH_CLASS} text-right`}>{t('cutting.qty')}</th>}
               </tr>
@@ -500,6 +514,11 @@ ${barPlanHtml(barGroups, barSettings, lengthFormat, t)}
                         ? <span className="text-info">{r.ebLabel}</span>
                         : <span className="text-chrome-hint">—</span>}
                     </td>
+                    {cutsUsed && (
+                      <td className={`${TD_CLASS} text-chrome-secondary`} data-testid="cut-cutouts">
+                        {r.cutLabel || <span className="text-chrome-hint">—</span>}
+                      </td>
+                    )}
                     {rolesUsed && (
                       <td className={`${TD_CLASS} text-chrome-secondary`}>
                         {r.role ? roleLabel(r.role) : <span className="text-chrome-hint">—</span>}

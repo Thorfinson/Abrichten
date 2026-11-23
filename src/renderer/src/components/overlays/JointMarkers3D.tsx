@@ -1,6 +1,6 @@
 import { useProjectStore } from '../../store/useProjectStore'
 import { useUIStore } from '../../store/useUIStore'
-import { useStepHidden } from '../../hooks/useStepHidden'
+import { useViewHidden } from '../../hooks/useViewHidden'
 import { computeJointPosition } from '../../utils/geometry'
 import type { Board, Joint } from '../../types/furniture'
 
@@ -38,7 +38,7 @@ function JointMarker({ joint, allBoards }: { joint: Joint; allBoards: Board[] })
 export function JointMarkers3D() {
   const project = useProjectStore((s) => s.project)
   const showJointMarkers = useUIStore((s) => s.showJointMarkers)
-  const hidden = useStepHidden()
+  const hidden = useViewHidden()
 
   if (!showJointMarkers) return null
 

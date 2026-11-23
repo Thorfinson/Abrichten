@@ -12,6 +12,7 @@ import { computeWorldSizeForPixels } from '../../utils/screenSize'
 import type { Board } from '../../types/furniture'
 import type { ViewMode } from '../../types/measurement'
 import { HTML_Z_RANGE } from '../canvasTheme'
+import { useDesignLocked } from '../../hooks/useDesignLocked'
 
 // Blender-style rotation rings — one per axis (X, Y, Z), centred on the board.
 const RING_RADIUS = 30
@@ -55,6 +56,7 @@ interface RingProps {
   assemblyId: string
 }
 
+// design-lock-ok: drawn only by RotationHandle3D, which the assembly workspace leaves out
 function RotationRing({ axis, centre, board, assemblyId }: RingProps): JSX.Element {
   const meshRef = useRef<THREE.Mesh>(null)
   const { camera, gl, raycaster } = useThree()
@@ -231,12 +233,15 @@ function RotationRing({ axis, centre, board, assemblyId }: RingProps): JSX.Eleme
  * which still acts as a clickable strip for rotating around those axes.
  */
 export function RotationHandle3D(): JSX.Element | null {
+  // the assembly workspace does not move, size or turn parts (store/designLock.ts)
+  const locked           = useDesignLocked()
   const project          = useProjectStore((s) => s.project)
   const selectedBoardIds = useUIStore((s) => s.selectedBoardIds)
   const activeView       = useCanvasView()
   const activeTool       = useUIStore((s) => s.activeTool)
   const transformMode    = useUIStore((s) => s.transformMode)
 
+  if (locked) return null
   if (activeView === '3d') return null
   if (activeTool !== 'select') return null
   if (transformMode !== 'rotate') return null

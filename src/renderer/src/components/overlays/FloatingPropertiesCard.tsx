@@ -9,74 +9,22 @@ import { DimInput, Vec3Input } from '../layout/DimensionInputs'
 import { openJointEditor } from '../panels/JointDialog'
 import { BoardLoadField, BoardWeightField } from './BoardLoadField'
 import { boardFace, edgeBandingLengthMm } from '../../utils/boardFace'
+import { EDGE_KEYS, edgeSides, faceDrawing, type EdgeKey, type SheetSide } from '../../utils/faceDrawing'
 import { worldAligned } from '../../utils/projection'
 import { roleKey } from '../../utils/boardRole'
 import { partLabel } from '../../utils/partLabel'
 import { usePartLabels } from '../../hooks/usePartLabels'
 import { PartName } from '../ui/PartName'
 import { BOARD_ROLES, type Board, type BoardCutout, type BoardRole, type EdgeBanding, type Fastener, type MaterialCategory, type Vec3 } from '../../types/furniture'
+import { useDesignLocked } from '../../hooks/useDesignLocked'
+import { CommitInput } from '../ui/CommitInput'
+import { CutoutEditor } from './CutoutEditor'
 
 /** Dark <option>/<optgroup> styling so native dropdowns are readable on the
  *  glass card (Chromium renders option lists with the OS-default white bg,
  *  which made white-on-white text unreadable). */
 const OPTION_DARK = 'bg-gray-800 text-white'
 const OPTGROUP_DARK = 'bg-gray-800 text-white/50'
-
-interface CommitInputProps extends Omit<React.InputHTMLAttributes<HTMLInputElement>, 'value' | 'onChange' | 'onBlur' | 'onKeyDown' | 'onFocus'> {
-  value: string | number
-  /** Called once with the edited text — on blur or Enter, only if it changed */
-  onCommit: (text: string) => void
-}
-
-/**
- * Input that edits a local draft and commits it once, on blur or Enter, so
- * typing a name or a number is one undo step (and one scene update) instead
- * of one per keystroke. Esc puts the stored value back.
- */
-function CommitInput({ value, onCommit, ...rest }: CommitInputProps) {
-  const [draft, setDraft] = useState(String(value))
-  const focused = useRef(false)
-  const live = useRef({ draft, value, onCommit })
-  live.current = { draft, value, onCommit }
-
-  // Follow outside changes (undo, drag, …) unless the user is editing
-  useEffect(() => {
-    if (!focused.current) setDraft(String(value))
-  }, [value])
-
-  const commit = (): void => {
-    const { draft: d, value: v, onCommit: fn } = live.current
-    if (d !== String(v)) fn(d)
-  }
-
-  // Unmounted while editing (e.g. another board got selected): keep the edit
-  useEffect(() => () => { if (focused.current) commit() }, []) // eslint-disable-line react-hooks/exhaustive-deps
-
-  return (
-    <input
-      {...rest}
-      value={draft}
-      onFocus={() => { focused.current = true }}
-      onChange={(e) => setDraft(e.target.value)}
-      onBlur={() => {
-        if (!focused.current) return // Esc already reverted
-        focused.current = false
-        commit()
-        // A rejected edit (e.g. not a number) leaves the stored value: show it again
-        requestAnimationFrame(() => { if (!focused.current) setDraft(String(live.current.value)) })
-      }}
-      onKeyDown={(e) => {
-        if (e.key === 'Enter') e.currentTarget.blur()
-        else if (e.key === 'Escape') {
-          e.preventDefault()   // Esc reverts the field; it must not also deselect the board
-          focused.current = false
-          setDraft(String(live.current.value))
-          e.currentTarget.blur()
-        }
-      }}
-    />
-  )
-}
 
 // ── Collapsible sections (open state remembered per viewer) ─────────────────
 
@@ -144,28 +92,30 @@ function Section({ id, title, open, onToggle, summary, action, children }: Secti
   )
 }
 
-const EDGE_KEYS = ['e1', 'e2', 'e3', 'e4'] as const
+const SIDE_PLACE: Record<SheetSide, string> = {
+  top: 'top-0 left-5 right-5 h-4',
+  bottom: 'bottom-0 left-5 right-5 h-4',
+  left: 'left-0 top-5 bottom-5 w-4 [writing-mode:vertical-rl] rotate-180',
+  right: 'right-0 top-5 bottom-5 w-4 [writing-mode:vertical-rl]'
+}
 
 /**
- * Edge banding as a face diagram: E1/E2 run along the first face axis (top and
- * bottom bar), E3/E4 along the second (left and right bar). Each bar toggles.
+ * Edge banding as a face diagram, laid out like the shop drawing (utils/faceDrawing): a
+ * standing part upright, a lying one seen from above, the wall side at the top. Each bar
+ * toggles its edge E1–E4.
  */
 function EdgeBandingPicker({ board, onChange }: { board: Board; onChange: (eb: EdgeBanding) => void }) {
   const { t } = useTranslation()
   const face = boardFace(board)
+  const drawing = faceDrawing(board)
+  const sideOf = edgeSides(board)
   const eb = board.edgeBanding ?? {}
-  const len = (k: (typeof EDGE_KEYS)[number]): number => (k === 'e1' || k === 'e2' ? face.u : face.v)
-  const place: Record<(typeof EDGE_KEYS)[number], string> = {
-    e1: 'top-0 left-5 right-5 h-4',
-    e2: 'bottom-0 left-5 right-5 h-4',
-    e3: 'left-0 top-5 bottom-5 w-4 [writing-mode:vertical-rl] rotate-180',
-    e4: 'right-0 top-5 bottom-5 w-4 [writing-mode:vertical-rl]'
-  }
+  const len = (k: EdgeKey): number => (k === 'e1' || k === 'e2' ? face.u : face.v)
   return (
     <div>
-      <div className="relative h-24">
+      <div className="relative h-24" data-testid="edge-picker">
         <div className="absolute inset-5 rounded-sm border border-white/10 bg-white/5 flex items-center justify-center text-[9px] text-white/40 font-mono">
-          {face.u} × {face.v}
+          {drawing.width} × {drawing.height}
         </div>
         {EDGE_KEYS.map((k) => {
           const on = !!eb[k]
@@ -175,9 +125,11 @@ function EdgeBandingPicker({ board, onChange }: { board: Board; onChange: (eb: E
               key={k}
               type="button"
               aria-pressed={on}
+              data-edge={k}
+              data-side={sideOf[k]}
               title={t('func.edgeTitle', { edge: k.toUpperCase(), len: len(k) })}
               onClick={() => onChange({ ...eb, [k]: !on })}
-              className={`absolute ${place[k]} flex items-center justify-center rounded-sm text-[9px] font-mono leading-none transition-colors outline-none focus-visible:ring-1 focus-visible:ring-action ${
+              className={`absolute ${SIDE_PLACE[sideOf[k]]} flex items-center justify-center rounded-sm text-[9px] font-mono leading-none transition-colors outline-none focus-visible:ring-1 focus-visible:ring-action ${
                 on ? 'bg-accent text-chrome-deep font-bold' : 'bg-white/8 text-white/45 hover:bg-white/15 hover:text-white/80'
               }`}
             >
@@ -287,8 +239,10 @@ export function FloatingPropertiesCard() {
   const showStaticOverlay   = useUIStore((s) => s.showStaticOverlay)
   const [openSections, toggleSection] = useOpenSections()
   const labels = usePartLabels()
+  // the card edits the design: the assembly workspace does not show it (store/designLock.ts)
+  const locked = useDesignLocked()
 
-  if (selectedBoardIds.length === 0 || !selectedAssemblyId) return null
+  if (locked || selectedBoardIds.length === 0 || !selectedAssemblyId) return null
 
   const assembly = project.assemblies.find((a) => a.id === selectedAssemblyId)
   if (!assembly) return null
@@ -440,33 +394,8 @@ export function FloatingPropertiesCard() {
     handleUpdate({ rotation: rot })
   }
 
-  // ── Cutouts (through-thickness openings, e.g. cooktop / sink) ────────────
+  // ── Cutouts: their own editor (CutoutEditor, utils/cutoutPlace) ──────────
   const cutouts = board.cutouts ?? []
-
-  const handleAddCutout = () => {
-    // Default: cooktop-sized opening centered in the board's width/depth plane
-    const w = Math.min(560, Math.max(50, board.width - 80))
-    const d = Math.min(490, Math.max(50, board.depth - 80))
-    const cut: BoardCutout = {
-      id: crypto.randomUUID(),
-      x: Math.round((board.width - w) / 2),
-      z: Math.round((board.depth - d) / 2),
-      width: w,
-      depth: d
-    }
-    handleUpdate({ cutouts: [...cutouts, cut] })
-  }
-
-  const handleCutoutChange = (id: string, field: keyof Omit<BoardCutout, 'id'>, value: number) => {
-    if (isNaN(value)) return
-    handleUpdate({
-      cutouts: cutouts.map((c) => (c.id === id ? { ...c, [field]: value } : c))
-    })
-  }
-
-  const handleRemoveCutout = (id: string) => {
-    handleUpdate({ cutouts: cutouts.filter((c) => c.id !== id) })
-  }
 
   // Joints may span assemblies: collect from all visible ones, remember the owner for removal
   const boardJoints = activeJoints(project)
@@ -649,45 +578,8 @@ export function FloatingPropertiesCard() {
           {...sectionProps('cutouts')}
           title={t('board.cutouts')}
           summary={cutouts.length > 0 ? String(cutouts.length) : undefined}
-          action={(
-            <button
-              onClick={() => { handleAddCutout(); if (!openSections.cutouts) toggleSection('cutouts') }}
-              className="text-[10px] text-blue-400 hover:text-blue-300 leading-none shrink-0"
-              title={t('board.addCutout')}
-            >
-              + {t('actions.new')}
-            </button>
-          )}
         >
-          {cutouts.map((c, idx) => (
-            <div key={c.id} className="flex items-center gap-1 mb-1">
-              <span className="text-[9px] text-white/40 w-3 shrink-0">{idx + 1}</span>
-              {([
-                ['x', c.x, 'X', board.width],
-                ['z', c.z, 'Y', board.depth],
-                ['width', c.width, t('board.width')[0], board.width - c.x],
-                ['depth', c.depth, t('board.depth')[0], board.depth - c.z]
-              ] as const).map(([field, value, label, max]) => (
-                <label key={field} className="flex items-center gap-0.5 flex-1 min-w-0" title={`${label} (mm)`}>
-                  <span className="text-[9px] text-white/40">{label}</span>
-                  <CommitInput
-                    key={`${board.id}-${c.id}-${field}`}
-                    type="number"
-                    min={0}
-                    max={Math.max(0, max)}
-                    value={value}
-                    onCommit={(text) => handleCutoutChange(c.id, field, parseFloat(text))}
-                    className="w-full min-w-0 text-[10px] bg-white/8 border border-white/15 text-white rounded px-1 py-0.5 outline-none"
-                  />
-                </label>
-              ))}
-              <button
-                onClick={() => handleRemoveCutout(c.id)}
-                className="text-white/40 hover:text-red-400 text-[11px] leading-none shrink-0"
-                title={t('board.removeCutout')}
-              >✕</button>
-            </div>
-          ))}
+          <CutoutEditor board={board} onChange={(next) => handleUpdate({ cutouts: next.length ? next : undefined })} />
         </Section>
 
         {/* Joints touching this board — click one to edit it, ✕ removes it */}

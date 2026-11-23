@@ -1,8 +1,9 @@
 import type { Board, CustomHardwareItem, Joint, Material, PlacedLoad } from '../types/furniture'
 import { getMaterialById, permanentMaterial, GAMMA_M } from '../data/materials'
-import { hardwareItems } from '../data/hardware'
+import { hasShelfPins } from '../data/hardware'
 import { worldAligned, dimDirection } from '../utils/projection'
 import { boardFace, type BoardFace } from '../utils/boardFace'
+import { clampCutouts } from '../utils/geometry'
 import { GRAVITY, DEFLECTION_WARNING_RATIO, rateMember, minBeamThickness, minPanelThickness, type StaticStatus } from './static-calc'
 import {
   solveLying, solveStanding, layerField, plateRigidity, restingField, clearContactMemo, SHELF_PIN_INSET_MM,
@@ -249,12 +250,6 @@ function faceRect(map: (x: number, z: number) => { x: number; z: number }, x: nu
 function clip(r: Rect, b: StaticBox): Rect | null {
   const out = { x0: Math.max(r.x0, b.x0), x1: Math.min(r.x1, b.x1), z0: Math.max(r.z0, b.z0), z1: Math.min(r.z1, b.z1) }
   return out.x1 >= out.x0 && out.z1 >= out.z0 ? out : null
-}
-
-function hasShelfPins(raw: Board, customHardware?: CustomHardwareItem[]): boolean {
-  return (raw.hardware ?? []).some((h) => h.quantity > 0 && (
-    hardwareItems.find((i) => i.id === h.hardwareId)?.category === 'shelfPins' ||
-    customHardware?.find((i) => i.id === h.hardwareId)?.category === 'shelfPins'))
 }
 
 function buildMember(raw: Board, index: number, options: SimulationOptions): Member {
@@ -547,8 +542,9 @@ interface OwnLoads {
 function ownLoads(m: Member, payloadKg: number): OwnLoads {
   const raw = m.raw
   const map = m.lying ? faceToWorld(raw) : null
-  const cuts = map ? (raw.cutouts ?? []) : []
-  const cut = cuts.reduce((s, c) => s + c.width * c.depth, 0)
+  // cutouts as on the face (utils/geometry clampCutouts); a round hole weighs as a circle
+  const cuts = map ? clampCutouts(raw) : []
+  const cut = cuts.reduce((s, c) => s + (c.shape === 'circle' ? Math.PI * (c.width / 2) ** 2 : c.width * c.depth), 0)
   const volumeM3 = (Math.max(0, raw.width * raw.depth - cut) * raw.height) / 1e9
   // a part with its own weight (Board.weightKg) spreads it over its volume
   const weight = ownWeight(raw)
@@ -748,7 +744,7 @@ function memberKey(m: Member, own: OwnLoads, members: Member[]): string {
     m.received.map((l) => [l.rect, l.y, l.F, l.from]),
     m.covers,
     m.layers.map((l) => [l.rect, members[l.index].material ?? null, members[l.index].grain, members[l.index].face.thickness]),
-    m.lying ? (m.raw.cutouts ?? []) : [], m.raw.rotation, m.raw.width, m.raw.depth, m.raw.height,
+    m.lying ? clampCutouts(m.raw) : [], m.raw.rotation, m.raw.width, m.raw.depth, m.raw.height,
     own
   ])
 }
@@ -794,7 +790,8 @@ function solveMember(m: Member, own: OwnLoads, members: Member[]): Outcome {
     const fastened = m.supports.some((s) => s.kind === 'joint')
     if (!fastened && !isStable(m, loads, ['x', 'z'])) return { result: { ...base, status: 'unsupported' }, transfers: [] }
     const map = faceToWorld(m.raw)
-    const cutouts = map ? (m.raw.cutouts ?? []).flatMap((c) => {
+    // the plate model has no round cells: a round hole takes out its square (on the safe side)
+    const cutouts = map ? clampCutouts(m.raw).flatMap((c) => {
       const r = clip(faceRect(map, c.x, c.z, c.width, c.depth), m.box)
       return r ? [r] : []
     }) : []

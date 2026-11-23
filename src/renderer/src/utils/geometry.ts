@@ -113,23 +113,63 @@ export function polygonArea(points: MeasurementPoint[]): number {
   return Math.abs(area) / 2
 }
 
-/** Cutouts clipped to the board's width/depth plane; slivers under 1 mm are dropped.
- *  Single source of truth for mesh, DXF and any other consumer. */
-export function clampCutouts(board: Board): BoardCutout[] {
-  return (board.cutouts ?? []).flatMap((c) => {
-    const x0 = Math.max(0, c.x)
-    const z0 = Math.max(0, c.z)
-    const x1 = Math.min(board.width, c.x + c.width)
-    const z1 = Math.min(board.depth, c.z + c.depth)
-    return x1 - x0 >= 1 && z1 - z0 >= 1
-      ? [{ ...c, x: x0, z: z0, width: x1 - x0, depth: z1 - z0 }]
-      : []
+/** A stored cutout on the face, measured from the face's min corner (its x/z may be
+ *  stored from the far edges, BoardCutout.uFrom/vFrom). */
+export function faceCutout(board: Board, c: BoardCutout): BoardCutout {
+  const face = boardFace(board)
+  const depth = c.shape === 'circle' ? c.width : c.depth
+  return {
+    ...c,
+    depth,
+    x: c.uFrom === 'max' ? face.u - c.x - c.width : c.x,
+    z: c.vFrom === 'max' ? face.v - c.z - depth : c.z
+  }
+}
+
+/** What is wrong with a cutout, or null: off the face or a cut through the whole board (not
+ *  built), or reaching past the board's edge (built, cut back to the edge — e.g. after the
+ *  board got smaller while the cutout is measured from the other edge). */
+export type CutoutProblem = 'outside' | 'splits' | 'beyond'
+const notBuilt = (p: CutoutProblem | null): boolean => p === 'outside' || p === 'splits'
+export function cutoutProblem(board: Board, raw: BoardCutout): CutoutProblem | null {
+  const face = boardFace(board)
+  const c = faceCutout(board, raw)
+  if (c.shape === 'circle') {
+    return c.width >= 1 && c.x >= 0 && c.z >= 0 && c.x + c.width <= face.u && c.z + c.width <= face.v ? null : 'outside'
+  }
+  const x0 = Math.max(0, c.x), z0 = Math.max(0, c.z)
+  const x1 = Math.min(face.u, c.x + c.width), z1 = Math.min(face.v, c.z + c.depth)
+  if (x1 - x0 < 1 || z1 - z0 < 1) return 'outside'
+  // across the whole face one way: the board would fall in two (or vanish)
+  if ((x0 <= 0 && x1 >= face.u) || (z0 <= 0 && z1 >= face.v)) return 'splits'
+  return c.x < 0 || c.z < 0 || c.x + c.width > face.u || c.z + c.depth > face.v ? 'beyond' : null
+}
+
+/** The cutouts that can be built, on the face from its min corner, with their number in the
+ *  board's list (1, 2 …, kept when one in between cannot be built). Single source for mesh,
+ *  DXF, collisions, statics, lists and drawings. */
+export function numberedCutouts(board: Board): { n: number; cut: BoardCutout }[] {
+  const face = boardFace(board)
+  return (board.cutouts ?? []).flatMap((raw, i) => {
+    if (notBuilt(cutoutProblem(board, raw))) return []
+    const c = faceCutout(board, raw)
+    if (c.shape === 'circle') return [{ n: i + 1, cut: c }]
+    const x0 = Math.max(0, c.x), z0 = Math.max(0, c.z)
+    const x1 = Math.min(face.u, c.x + c.width), z1 = Math.min(face.v, c.z + c.depth)
+    return [{ n: i + 1, cut: { ...c, x: x0, z: z0, width: x1 - x0, depth: z1 - z0 } }]
   })
 }
 
-/** A clamped cutout that reaches the board edge is a notch (Ausklinkung), not a hole. */
+/** The cutouts that can be built, clipped to the face, measured from its min corner. */
+export function clampCutouts(board: Board): BoardCutout[] {
+  return numberedCutouts(board).map((e) => e.cut)
+}
+
+/** A clamped rectangle that reaches the edge of the face is a notch (Ausklinkung), not a hole. */
 export function isNotch(board: Board, c: BoardCutout): boolean {
-  return c.x <= 0 || c.z <= 0 || c.x + c.width >= board.width || c.z + c.depth >= board.depth
+  if (c.shape === 'circle') return false
+  const face = boardFace(board)
+  return c.x <= 0 || c.z <= 0 || c.x + c.width >= face.u || c.z + c.depth >= face.v
 }
 
 /**
@@ -176,16 +216,6 @@ export function notchedOutline(width: number, depth: number, notches: BoardCutou
   })
 }
 
-/** True when the box lies inside one of the board's cutouts (unrotated boards only). */
-export function insideCutout(board: Board, box: { minX: number; maxX: number; minZ: number; maxZ: number }): boolean {
-  const r = board.rotation
-  if (r.x !== 0 || r.y !== 0 || r.z !== 0) return false   // ponytail: rotated boards keep the plain box test
-  const x0 = box.minX - board.position.x
-  const x1 = box.maxX - board.position.x
-  const z0 = box.minZ - board.position.z
-  const z1 = box.maxZ - board.position.z
-  return clampCutouts(board).some((c) => x0 >= c.x && x1 <= c.x + c.width && z0 >= c.z && z1 <= c.z + c.depth)
-}
 
 // ── Drawer box ────────────────────────────────────────────────────────────────
 

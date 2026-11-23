@@ -38,6 +38,7 @@ export function endDragHistory(): void {
   const current = temporal.getState()
   // Drop any future-states (a fresh action invalidates redo) and append the
   // pre-drag snapshot as the new most-recent past state.
+  // design-lock-ok: records the finished drag as one undo step; the project itself is not touched
   temporal.setState({
     pastStates: [...current.pastStates, snapshot as unknown as never],
     futureStates: []
@@ -50,6 +51,7 @@ export function endDragHistory(): void {
  *  tracking without adding a step. No-op outside a drag. */
 export function cancelDragHistory(): void {
   if (snapshot === null) return
+  // design-lock-ok: puts back the project from before a drag, which only the design workspace starts
   useProjectStore.setState({ project: snapshot.project })
   snapshot = null
   useProjectStore.temporal.getState().resume()

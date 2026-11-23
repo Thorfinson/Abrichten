@@ -116,11 +116,27 @@ test.describe('Dialogs', () => {
 
     await open(page, 'setShowBoringPanel')
     const boring = page.getByRole('dialog', { name: /32mm/ })
+    // no shelf pins planned in the sample: no rows of holes until they are switched on
+    const rows = boring.getByRole('checkbox', { name: /Lochreihen für Bodenträger|Rows for shelf pins/ })
+    await expect(rows).not.toBeChecked()
+    await expect(boring.getByTestId('boring-empty')).toContainText('keine Bodenträger')
+    await expect(rows.locator('xpath=..')).toHaveAttribute('title', /keine Bodenträger/)
+    await rows.check()
+    await expect(rows.locator('xpath=..')).not.toHaveAttribute('title', /.+/)
     // columns: No., assembly, name, side, …
     const sides = await boring.locator('tbody tr td:nth-child(4)').allInnerTexts()
     expect(new Set(sides.map((s) => s.trim()))).toEqual(new Set(['links', 'rechts']))
     const labels = await boring.locator('tbody tr td:nth-child(1)').allInnerTexts()
     expect(new Set(labels.map((s) => s.trim()))).toEqual(new Set(['Wandschrank 1', 'Wandschrank 2']))
+  })
+
+  test('boring list: rows for shelf pins come on by themselves once shelf pins are planned', async ({ page }) => {
+    const { assemblyId } = await bootWithSample(page)
+    await page.evaluate((a) => window.__projectStore.getState().updateBoard(a, 'b-boden', { hardware: [{ hardwareId: 'shelf-pin-5mm', quantity: 4 }] }), assemblyId)
+    await open(page, 'setShowBoringPanel')
+    const boring = page.getByRole('dialog', { name: /32mm/ })
+    await expect(boring.getByRole('checkbox', { name: /Lochreihen für Bodenträger|Rows for shelf pins/ })).toBeChecked()
+    await expect(boring.locator('tbody tr').first()).toBeVisible()
   })
 
   test('nesting optimises on open and again when an input changes', async ({ page }) => {
@@ -206,10 +222,14 @@ test.describe('Dialogs', () => {
     await expect(page.getByRole('dialog', { name: /Verbindung hinzufügen|Add Joint/ })).toBeVisible()
     await page.keyboard.press('Escape')
 
-    // hide the assembly: hidden, nothing selected
+    // hide the assembly: the eye hides its parts in the view (they still count — the tick stays), nothing selected;
+    // with one part already hidden it still hides them all (not a toggle that shows them again)
+    await page.evaluate(() => window.__uiStore.getState().togglePartsInView(['b-deckel']))
     await menuAt('b-boden')
     await menu.getByRole('menuitem', { name: /Baugruppe ausblenden|Hide assembly/ }).click()
-    expect(await page.evaluate((a) => window.__projectStore.getState().project.assemblies.find((x: any) => x.id === a).visible, assemblyId)).toBe(false)
+    expect(await page.evaluate((a) => window.__projectStore.getState().project.assemblies.find((x: any) => x.id === a).visible, assemblyId)).not.toBe(false)
+    expect((await getUI(page)).hiddenParts).toContain('b-boden')
+    expect((await getUI(page)).hiddenParts).toContain('b-deckel')
     expect((await getUI(page)).selectedBoardIds).toEqual([])
   })
 })

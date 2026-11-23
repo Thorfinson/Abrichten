@@ -3,8 +3,8 @@ import { bootWithSample } from './helpers'
 
 /*
  * The step view of the assembly workspace is one consistent state: parts of later steps
- * are hidden — and cannot be picked with ⌘A / Ctrl+A, so Del never removes a part you
- * cannot see; stepping back drops them from the selection. The static legend stays with
+ * are hidden — and cannot be picked with ⌘A / Ctrl+A; Del removes nothing in this
+ * workspace (it reads the design); stepping back drops them from the selection. The static legend stays with
  * the static colours; the parts in no step are listed once.
  */
 
@@ -28,11 +28,12 @@ test.describe('Assembly workspace: what is hidden stays out of reach', () => {
     await page.keyboard.press('Control+a')
     await expect.poll(() => selected(page)).toEqual(['b-boden', 'b-deckel', 'b-einlegeboden', 'b-links', 'b-rechts'])
 
-    // Del removes what you see, never the hidden back panel
+    // Del removes nothing here: the assembly workspace reads the design (store/designLock.ts)
+    // and says where deleting works
     await page.keyboard.press('Delete')
-    const left = await page.evaluate(() => window.__projectStore.getState().project.assemblies[0].boards.map((b: any) => b.id))
-    expect(left).toEqual(['b-rueckwand'])
-    await page.evaluate(() => window.__projectStore.temporal.getState().undo())
+    const left = await page.evaluate(() => window.__projectStore.getState().project.assemblies[0].boards.length)
+    expect(left).toBe(6)
+    await expect(page.getByText('Gehört zum Entwurf – dort ändern')).toBeVisible()
 
     // step 2 shows the back panel; select it, go back to step 1: it leaves the selection
     await page.evaluate((a) => {

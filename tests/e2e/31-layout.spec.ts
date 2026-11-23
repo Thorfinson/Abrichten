@@ -41,8 +41,8 @@ test.describe('Layout chrome', () => {
     const drawerBox = (await drawer.boundingBox())!
 
     await expect.poll(async () => (await canvasRect(page)).x).toBeGreaterThanOrEqual(drawerBox.x + drawerBox.width - 1)
-    const after = await canvasRect(page)
-    expect(after.width).toBeLessThan(before.width - drawerBox.width + 2)
+    // the canvas follows its box a moment later (react-three-fiber measures debounced)
+    await expect.poll(async () => (await canvasRect(page)).width).toBeLessThan(before.width - drawerBox.width + 2)
     expect((await tabs.boundingBox())!.x).toBeGreaterThan(tabsBefore.x + drawerBox.width - 2)
 
     // B closes it again and the canvas takes the full width back

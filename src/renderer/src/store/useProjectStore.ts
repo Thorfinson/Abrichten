@@ -7,6 +7,7 @@ import { cleanSteps } from '../utils/assemblySteps'
 import { subtreeIds } from '../utils/assemblyTree'
 import { cleanShortName, defaultShortName, numberParts, renumberParts, shortNameOf } from '../utils/partLabel'
 import { evalFormula, isParamName, formulaParams, renameFormulaParam } from '../utils/formulaEval'
+import { designChanged, isDesignLocked, tellDesignLocked } from './designLock'
 
 function uid(): string {
   return Math.random().toString(36).slice(2, 10)
@@ -145,7 +146,6 @@ interface ProjectState {
   moveAssembly: (id: string, targetId: string | null, where: AssemblyDrop) => void
   /** Visibility and X-ray apply to the whole subtree. */
   toggleAssemblyVisibility: (id: string) => void
-  toggleAssemblyHighlight: (id: string) => void
 
   // Board (single)
   addBoard: (assemblyId: string, board: Omit<Board, 'id'>) => string
@@ -240,11 +240,24 @@ const initialProject = createEmptyProject()
 export const useProjectStore = create<ProjectState>()(
   temporal(
     (rawSet, get) => {
+      // Every change goes through here. In the assembly workspace only the assembly plan
+      // may change (store/designLock.ts): any other change is refused, whichever button,
+      // key, panel or AI answer asked for it, and the user is told where it belongs.
+      // Loading or starting a project (`load`) is not a change of the design.
       // Every change that touches the parts numbers new ones (Board.partNo): the next
       // free number of their assembly, in the same set — so in the same undo step.
       // (No action replaces the whole state, so `set` takes partial updates only.)
-      const set = (partial: Partial<ProjectState> | ((s: ProjectState) => Partial<ProjectState>)): void => rawSet((s) => {
+      // `refused` tells an action that returns a new id that nothing was made (the id
+      // would point at nothing): it then returns '', null, [] or false instead.
+      let refused = false
+      const set = (partial: Partial<ProjectState> | ((s: ProjectState) => Partial<ProjectState>), load = false): void => rawSet((s) => {
+        refused = false
         const next = typeof partial === 'function' ? partial(s) : partial
+        if (!load && next.project && next.project !== s.project && isDesignLocked() && designChanged(s.project, next.project)) {
+          refused = true
+          tellDesignLocked('change')
+          return s
+        }
         const assemblies = next.project?.assemblies
         if (!next.project || !assemblies || assemblies === s.project.assemblies) return next
         const numbered = numberParts(assemblies)
@@ -271,27 +284,27 @@ export const useProjectStore = create<ProjectState>()(
       // a fresh project starts a fresh history: undo must not bring back the previous one
       loadProject: (project) => {
         const loaded = validateProject(project)
-        set({ project: loaded, savedProject: loaded })
+        set({ project: loaded, savedProject: loaded }, true)
         useProjectStore.temporal.getState().clear()
       },
 
       resetProject: () => {
         const fresh = createEmptyProject()
-        set({ project: fresh, savedProject: fresh })
+        set({ project: fresh, savedProject: fresh }, true)
         useProjectStore.temporal.getState().clear()
       },
 
       addAssembly: (name, parentId) => {
         const id = uid()
         set((s) => {
-          // a subgroup takes the parent's eye and X-ray state; an unknown parent means top level
+          // a subgroup takes the parent's tick (counts or not); an unknown parent means top level
           const parent = parentId ? s.project.assemblies.find((a) => a.id === parentId) : undefined
           const added: Assembly = parent
-            ? { id, name, parentId: parent.id, visible: parent.visible, highlight: parent.highlight, boards: [], joints: [] }
+            ? { id, name, parentId: parent.id, visible: parent.visible, boards: [], joints: [] }
             : { id, name, visible: true, boards: [], joints: [] }
           return { project: { ...s.project, updatedAt: now(), assemblies: [...s.project.assemblies, added] } }
         })
-        return id
+        return refused ? '' : id
       },
 
       removeAssembly: (id) =>
@@ -327,7 +340,7 @@ export const useProjectStore = create<ProjectState>()(
         if (list.some((a) => a.id !== id && a.boards.length > 0 && shortNameOf(a).toLocaleLowerCase('de') === word)) return false
         set((s) => withAssemblies(s, mapAssembly(s.project.assemblies, id, (a) =>
           (a.shortName === cleaned ? a : { ...a, shortName: cleaned }))))
-        return true
+        return !refused
       },
 
       renumberParts: () =>
@@ -344,11 +357,11 @@ export const useProjectStore = create<ProjectState>()(
         const rest = list.filter((a) => a.id !== id)
         const at = where === 'inside' || !target ? rest.length : rest.indexOf(target) + (where === 'after' ? 1 : 0)
         if (parentId === moving.parentId && at === list.indexOf(moving)) return   // same place, no undo step
-        // the moved subtree takes the new parent's eye and X-ray state
+        // the moved subtree takes the new parent's tick
         const parent = parentId ? list.find((a) => a.id === parentId) : undefined
         const subtree = subtreeIds(list, id)
         const inherit = (a: Assembly): Assembly =>
-          parent && subtree.has(a.id) ? { ...a, visible: parent.visible, highlight: parent.highlight } : a
+          parent && subtree.has(a.id) ? { ...a, visible: parent.visible } : a
         const placed = [...rest.slice(0, at), { ...moving, parentId }, ...rest.slice(at)].map(inherit)
         set((s) => ({ project: { ...s.project, updatedAt: now(), assemblies: placed } }))
       },
@@ -358,7 +371,8 @@ export const useProjectStore = create<ProjectState>()(
           const self = s.project.assemblies.find((a) => a.id === id)
           if (!self) return s
           const ids = subtreeIds(s.project.assemblies, id)
-          const value = !self.visible
+          // all of it counts: switch it all off; otherwise (none or some): switch it all on
+          const value = !s.project.assemblies.filter((a) => ids.has(a.id)).every((a) => a.visible !== false)
           return {
             project: {
               ...s.project,
@@ -368,26 +382,11 @@ export const useProjectStore = create<ProjectState>()(
           }
         }),
 
-      toggleAssemblyHighlight: (id) =>
-        set((s) => {
-          const self = s.project.assemblies.find((a) => a.id === id)
-          if (!self) return s
-          const ids = subtreeIds(s.project.assemblies, id)
-          const value = !self.highlight
-          return {
-            project: {
-              ...s.project,
-              updatedAt: now(),
-              assemblies: s.project.assemblies.map((a) => (ids.has(a.id) ? { ...a, highlight: value } : a))
-            }
-          }
-        }),
-
       addBoard: (assemblyId, board) => {
         const id = uid()
         // a new part never brings a number: it gets the next free one of its assembly
         set((s) => withAssemblies(s, mapAssembly(s.project.assemblies, assemblyId, (a) => ({ ...a, boards: [...a.boards, { ...board, id, partNo: undefined }] }))))
-        return id
+        return refused ? '' : id
       },
 
       updateBoard: (assemblyId, boardId, updates) =>
@@ -425,7 +424,7 @@ export const useProjectStore = create<ProjectState>()(
             )
           }
         }))
-        return newId
+        return refused ? null : newId
       },
 
       // Batch operations (single set() for atomic undo/redo)
@@ -472,7 +471,7 @@ export const useProjectStore = create<ProjectState>()(
           }
         }))
 
-        return duplicates.map((d) => d.id)
+        return refused ? [] : duplicates.map((d) => d.id)
       },
 
       nudgeBoards: (assemblyId, boardIds, delta) => {
@@ -527,7 +526,7 @@ export const useProjectStore = create<ProjectState>()(
       addJoint: (assemblyId, joint) => {
         const id = uid()
         set((s) => withAssemblies(s, mapAssembly(s.project.assemblies, assemblyId, (a) => ({ ...a, joints: [...a.joints, { ...joint, id }] }))))
-        return id
+        return refused ? '' : id
       },
 
       updateJoint: (assemblyId, jointId, updates) =>
@@ -545,7 +544,7 @@ export const useProjectStore = create<ProjectState>()(
         const newBoards: Board[] = boards.map((b, i) => ({ ...b, id: ids[i], partNo: undefined }))
         if (newBoards.length === 0) return ids
         set((s) => withAssemblies(s, mapAssembly(s.project.assemblies, assemblyId, (a) => ({ ...a, boards: [...a.boards, ...newBoards] }))))
-        return ids
+        return refused ? [] : ids
       },
 
       setParameter: (name, value) =>
@@ -597,7 +596,7 @@ export const useProjectStore = create<ProjectState>()(
             customMaterials: [...(s.project.customMaterials ?? []), { ...mat, id }]
           }
         }))
-        return id
+        return refused ? '' : id
       },
 
       removeCustomMaterial: (id) =>
@@ -629,7 +628,7 @@ export const useProjectStore = create<ProjectState>()(
             customHardware: [...(s.project.customHardware ?? []), { ...item, id }]
           }
         }))
-        return id
+        return refused ? '' : id
       },
 
       removeCustomHardware: (id) =>

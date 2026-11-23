@@ -118,6 +118,7 @@ test.describe('Calculation panels', () => {
     await page.evaluate(() => window.__uiStore.getState().setShowBoringPanel(true))
     const dialog = page.getByRole('dialog', { name: /32mm/ })
     await expect(dialog).toBeVisible()
+    await dialog.getByRole('checkbox', { name: /Lochreihen für Bodenträger|Rows for shelf pins/ }).check()
     const spacing = dialog.locator('input[type="number"]').first()
     await spacing.fill('')
     await spacing.fill('0')

@@ -5,6 +5,8 @@ import { useProjectStore } from './useProjectStore'
 import { isInputDevice, type InputDevice } from '../utils/canvasInput'
 import type { ChangedProjectFile } from '../utils/changedFile'
 import { stepHiddenIds } from '../utils/assemblySteps'
+import type { Project } from '../types/furniture'
+import { setDesignLockSource } from './designLock'
 
 export type TransformMode = 'translate' | 'rotate' | 'scale'
 
@@ -152,6 +154,17 @@ export interface UIState {
   /** How the parts column groups the parts (the assembly workspace shows its steps instead) */
   drawerGroupBy: DrawerGroupBy
   setDrawerGroupBy: (groupBy: DrawerGroupBy) => void
+  /** Parts the eye hides in the design workspace: a view only — they still count in every
+   *  list and total (that is the assembly's tick, Assembly.visible). Not saved in the file. */
+  hiddenParts: string[]
+  /** The eye of a part or a group: hides them all when all are shown, else shows them all */
+  togglePartsInView: (ids: string[]) => void
+  /** Hide (or show) these parts, whatever they were before — the menu's "hide assembly" */
+  setPartsHidden: (ids: string[], hidden: boolean) => void
+  /** Parts the X-ray picks out in the design workspace (others are ghosted): a view, not saved */
+  highlightedParts: string[]
+  /** The X-ray of a part or a group: same rule as the eye */
+  togglePartsHighlight: (ids: string[]) => void
 }
 
 export type Workspace = 'design' | 'assembly'
@@ -168,6 +181,41 @@ const MODAL_FLAGS = [
 ] as const satisfies readonly (keyof UIState)[]
 
 export type ModalId = (typeof MODAL_FLAGS)[number] | 'contextMenu' | 'welcome' | 'changedFile'
+
+/** The design is read-only: the assembly workspace changes only the assembly plan (store/designLock.ts). */
+export const designLockedIn = (s: Pick<UIState, 'workspace'>): boolean => s.workspace === 'assembly'
+
+/** Tools that only change the design: closed when the assembly workspace opens. */
+const DESIGN_TOOLS = ['showKorpusPanel', 'showDrawerCalcPanel', 'showHingeCalcPanel', 'showTolerancePanel',
+  'showParametersPanel', 'showMaterialsPanel', 'showChatPanel', 'showJointDialog'] as const
+
+/** Of the given parts: none in the list (shown, not picked out), all of them, or some. */
+export type ViewState = 'shown' | 'hidden' | 'mixed'
+export function viewStateOf(ids: readonly string[], list: readonly string[]): ViewState {
+  if (ids.length === 0) return 'shown'
+  const inList = new Set(list)
+  const n = ids.filter((id) => inList.has(id)).length
+  return n === 0 ? 'shown' : n === ids.length ? 'hidden' : 'mixed'
+}
+
+/** One click rule for the eye and the X-ray of a part or a group: none of them in the
+ *  list → all go in; some or all → all come out. Returns the new list. */
+export function toggleAll(list: readonly string[], ids: readonly string[]): string[] {
+  const these = new Set(ids)
+  return viewStateOf(ids, list) === 'shown' ? [...new Set([...list, ...ids])] : list.filter((id) => !these.has(id))
+}
+
+/**
+ * The parts the view hides right now — one rule for the boards, every layer drawn over
+ * them, ⌘A and the marquee: in the assembly workspace what the step view hides (later
+ * steps, parts in no step), in the design workspace what the eye hides.
+ */
+export function viewHiddenIds(
+  project: Pick<Project, 'assemblies' | 'assemblySteps'>,
+  s: Pick<UIState, 'workspace' | 'assemblyStep' | 'hiddenParts'>
+): Set<string> {
+  return s.workspace === 'assembly' ? stepHiddenIds(project, s.assemblyStep) : new Set(s.hiddenParts)
+}
 
 /** The step the 3D view shows: in the assembly workspace its current step, else -1 (no step view). */
 export const shownStep = (s: Pick<UIState, 'workspace' | 'assemblyStep'>): number => (s.workspace === 'assembly' ? s.assemblyStep : -1)
@@ -262,14 +310,40 @@ export const useUIStore = create<UIState>((set, get) => ({
   setWorkspace: (workspace) => {
     if (!WORKSPACES.includes(workspace) || workspace === get().workspace) return
     // entering assembly clears the selection (it may sit on parts the step view hides)
-    set({ workspace, ...(workspace === 'assembly' ? { selectedBoardIds: [] } : {}) })
+    // and closes the design tools and the context menu (they would change the design)
+    // back in design, parts the eye hides leave the selection (Del never hits a hidden part)
+    if (workspace !== 'assembly') {
+      set((s) => {
+        const hidden = new Set(s.hiddenParts)
+        const kept = s.selectedBoardIds.filter((id) => !hidden.has(id))
+        return kept.length === s.selectedBoardIds.length ? { workspace } : { workspace, selectedBoardIds: kept }
+      })
+      return
+    }
+    set({ workspace, selectedBoardIds: [], contextMenu: null, ...(Object.fromEntries(DESIGN_TOOLS.map((flag) => [flag, false])) as Partial<UIState>) })
   },
   drawerGroupBy: 'assembly',
   setDrawerGroupBy: (groupBy) => set({ drawerGroupBy: groupBy }),
+  hiddenParts: [],
+  // hidden parts leave the selection, so Del never hits a part you cannot see
+  togglePartsInView: (ids) => set((s) => {
+    if (ids.length === 0) return {}
+    const hiddenParts = toggleAll(s.hiddenParts, ids)
+    const hidden = new Set(hiddenParts)
+    return { hiddenParts, selectedBoardIds: s.selectedBoardIds.filter((id) => !hidden.has(id)) }
+  }),
+  setPartsHidden: (ids, hidden) => set((s) => {
+    if (ids.length === 0) return {}
+    const drop = new Set(ids)
+    const hiddenParts = hidden ? [...new Set([...s.hiddenParts, ...ids])] : s.hiddenParts.filter((id) => !drop.has(id))
+    return hidden ? { hiddenParts, selectedBoardIds: s.selectedBoardIds.filter((id) => !drop.has(id)) } : { hiddenParts }
+  }),
+  highlightedParts: [],
+  togglePartsHighlight: (ids) => set((s) => (ids.length === 0 ? {} : { highlightedParts: toggleAll(s.highlightedParts, ids) })),
   // another step may hide selected parts: they leave the selection, so Del never hits a part you cannot see
   setAssemblyStep: (index) => set((s) => {
     const assemblyStep = Number.isFinite(index) ? Math.max(0, Math.round(index)) : 0
-    const hidden = stepHiddenIds(useProjectStore.getState().project, shownStep({ ...s, assemblyStep }))
+    const hidden = viewHiddenIds(useProjectStore.getState().project, { ...s, assemblyStep })
     const kept = s.selectedBoardIds.filter((id) => !hidden.has(id))
     return kept.length === s.selectedBoardIds.length ? { assemblyStep } : { assemblyStep, selectedBoardIds: kept }
   }),
@@ -293,13 +367,13 @@ export const useUIStore = create<UIState>((set, get) => ({
       }
     }),
 
-  // ⌘A: the parts you can see — in the assembly workspace not those the step view hides
+  // ⌘A: the parts you can see — not those the step view or the eye hides
   selectAllBoards: (assemblyId) =>
     set((s) => {
       const proj = useProjectStore.getState().project
       const assembly = proj.assemblies.find((a) => a.id === assemblyId)
       if (!assembly) return {}
-      const hidden = stepHiddenIds(proj, shownStep(s))
+      const hidden = viewHiddenIds(proj, s)
       return {
         selectedAssemblyId: assemblyId,
         selectedBoardIds: assembly.boards.filter((b) => !hidden.has(b.id)).map((b) => b.id)
@@ -382,6 +456,16 @@ export const useUIStore = create<UIState>((set, get) => ({
     else if (top) set({ [top]: false })
   },
 }))
+
+// The workspace is the one source of the design lock the project store applies
+setDesignLockSource(() => designLockedIn(useUIStore.getState()))
+
+// Another project brings its own parts: what the eye hid and the X-ray picked out belongs to the one before
+useProjectStore.subscribe((state, prev) => {
+  if (state.project.id === prev.project.id) return
+  const ui = useUIStore.getState()
+  if (ui.hiddenParts.length || ui.highlightedParts.length) useUIStore.setState({ hiddenParts: [], highlightedParts: [] })
+})
 
 /**
  * View of the canvas a component renders in. QuadLayout gives every quadrant

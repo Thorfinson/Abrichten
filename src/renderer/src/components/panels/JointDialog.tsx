@@ -10,6 +10,7 @@ import { usePartLabels } from '../../hooks/usePartLabels'
 import { partTitle } from '../../utils/partLabel'
 import { PartName } from '../ui/PartName'
 import type { Board, Fastener, FastenerType, Joint, JointType } from '../../types/furniture'
+import { useDesignLocked } from '../../hooks/useDesignLocked'
 
 const JOINT_TYPES: JointType[] = ['butt', 'miter', 'dado', 'rabbet', 'dowel', 'biscuit', 'screw', 'pocket_screw', 'lap', 'glued']
 
@@ -90,7 +91,9 @@ export function JointDialog() {
     if (stale) setShowJointDialog(false)
   }, [stale, setShowJointDialog])
 
-  if (!showJointDialog || stale) return null
+  // a tool of the design: not in the assembly workspace (store/designLock.ts)
+  const locked = useDesignLocked()
+  if (locked || !showJointDialog || stale) return null
   // Fresh form state on every opening: the form unmounts while the dialog is closed
   if (editTarget && owner && joint) {
     return <JointForm key={joint.id} ownerId={owner.id} joint={joint} />
@@ -105,6 +108,7 @@ interface JointFormProps {
   joint?: Joint
 }
 
+// design-lock-ok: shown only inside JointDialog, which the assembly workspace leaves out
 function JointForm({ ownerId, joint }: JointFormProps) {
   const { t, i18n } = useTranslation()
   const lang = i18n.language as 'de' | 'en'

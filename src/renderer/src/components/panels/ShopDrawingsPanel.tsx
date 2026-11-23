@@ -13,6 +13,9 @@ import { partLabels } from '../../utils/partLabel'
 import { Dialog, Button } from '../ui/Dialog'
 import type { TFunction } from 'i18next'
 import type { Board, Material, Project } from '../../types/furniture'
+import { clampCutouts, numberedCutouts } from '../../utils/geometry'
+import { describeCutouts, faceSideNames } from '../../utils/cutoutText'
+import { EDGE_KEYS, cutoutOnSheet, edgeSegment, faceDrawing } from '../../utils/faceDrawing'
 
 const SCALE = 0.25          // 1mm → 0.25px (approx 1:4 for print preview)
 const MAX_BOARD_PX = 200    // max rendered board face in px
@@ -30,11 +33,16 @@ function fitText(text: string, widthPx: number, fontPx: number): string {
 }
 
 /** `label`: the part label ("Herd 2", utils/partLabel), in the title block's right column */
-function boardSvg(board: Board, projectName: string, lang: 'de' | 'en', customMaterials?: Material[], label = ''): string {
+function boardSvg(board: Board, projectName: string, lang: 'de' | 'en', customMaterials?: Material[], label = '', sides?: { left: string; right: string; top: string; bottom: string }): string {
   // Show the face (boardFace): the two dimensions besides the thickness
   const face = boardFace(board)
-  const rawW = face.u
-  const rawH = face.v
+  // the sides are named only where they are read: on parts with cutouts ("0 von oben")
+  const showSides = !!sides && clampCutouts(board).length > 0
+  const top = showSides ? 24 : 10
+  // laid on the sheet as the part stands (utils/faceDrawing): standing parts upright, lying ones from above
+  const drawing = faceDrawing(board)
+  const rawW = drawing.width
+  const rawH = drawing.height
   const scale = Math.min(SCALE, MAX_BOARD_PX / Math.max(rawW, rawH))
   const w = rawW * scale
   const h = rawH * scale
@@ -42,10 +50,10 @@ function boardSvg(board: Board, projectName: string, lang: 'de' | 'en', customMa
   const scaleN = Math.round(1 / scale)
 
   // Title block: strip below the drawing, two rows
-  const tbY = 10 + h + 28
+  const tbY = top + h + (showSides ? 34 : 28)
   const tbH = 44
   // Scale bar: 100mm reference bar
-  const sbY = 10 + h + 16
+  const sbY = top + h + (showSides ? 24 : 16)
   const sbLen = 100 * scale  // 100mm in px
   const sbX = 30
 
@@ -59,27 +67,40 @@ function boardSvg(board: Board, projectName: string, lang: 'de' | 'en', customMa
   const labelPx = Math.max(5, Math.min(9, colB / (Math.max(1, label.length) * 0.56)))
   const matLine = `${materialName(board, lang, customMaterials)} · t=${face.thickness}mm · ${face.u} × ${face.v} mm`
 
-  // Grain arrow (along the first face axis = horizontal, second = vertical)
+  // Grain arrow along the face axis it follows, on the sheet across or up and down
   let grainLine = ''
-  if (board.grainDirection === face.uAxis) {
+  const grainSheet = board.grainDirection === face.uAxis ? drawing.sheetAxis.u : board.grainDirection === face.vAxis ? drawing.sheetAxis.v : null
+  if (grainSheet === 'x') {
     const cx = w / 2, cy = h / 2, len = Math.min(w, h) * 0.3
     grainLine = `<line x1="${cx - len}" y1="${cy}" x2="${cx + len}" y2="${cy}" stroke="#d97706" stroke-width="1.5" marker-end="url(#arrow)"/>`
-  } else if (board.grainDirection === face.vAxis) {
+  } else if (grainSheet === 'y') {
     const cx = w / 2, cy = h / 2, len = Math.min(w, h) * 0.3
     grainLine = `<line x1="${cx}" y1="${cy - len}" x2="${cx}" y2="${cy + len}" stroke="#d97706" stroke-width="1.5" marker-end="url(#arrow)"/>`
   }
 
-  // Edge banding marks on the board rect at (30, 10): E1/E2 along the first face
-  // axis (top/bottom), E3/E4 along the second (left/right)
+  // Edge banding marks: E1/E2 run along the first face axis (at v = 0 and v = V),
+  // E3/E4 along the second (at u = 0 and u = U), placed on the sheet like the face
   const eb = board.edgeBanding ?? {}
-  const edge = (x1: number, y1: number, x2: number, y2: number) =>
-    `<line x1="${30 + x1}" y1="${10 + y1}" x2="${30 + x2}" y2="${10 + y2}" stroke="#2563eb" stroke-width="3"/>`
-  const edgeLines = [
-    eb.e1 ? edge(0, 0, w, 0) : '',
-    eb.e2 ? edge(0, h, w, h) : '',
-    eb.e3 ? edge(0, 0, 0, h) : '',
-    eb.e4 ? edge(w, 0, w, h) : ''
-  ].join('')
+  const edge = (pu: number, pv: number, du: number, dv: number): string => {
+    const r = drawing.rect(pu, pv, du, dv)
+    return `<line x1="${30 + r.x * scale}" y1="${top + r.y * scale}" x2="${30 + (r.x + r.w) * scale}" y2="${top + (r.y + r.h) * scale}" stroke="#2563eb" stroke-width="3"/>`
+  }
+  const edgeLines = EDGE_KEYS.map((k) => (eb[k] ? edge(...edgeSegment(board, k)) : '')).join('')
+
+  // Cutouts on the face (utils/geometry), numbered as in the editor and below the drawing
+  const cutShapes = numberedCutouts(board).map(({ n, cut: c }) => {
+    const r = cutoutOnSheet(drawing, c)
+    const x = 30 + r.x * scale, y = top + r.y * scale, cw = r.w * scale, ch = r.h * scale
+    const shape = c.shape === 'circle'
+      ? `<circle cx="${x + cw / 2}" cy="${y + ch / 2}" r="${cw / 2}" fill="#fff" stroke="#c2410c" stroke-width="0.8"/>`
+      : `<rect x="${x}" y="${y}" width="${cw}" height="${ch}" fill="#fff" stroke="#c2410c" stroke-width="0.8"/>`
+    return `${shape}<text x="${x + cw / 2}" y="${y + ch / 2 + 2.5}" font-size="7" text-anchor="middle" fill="#c2410c">${n}</text>`
+  }).join('')
+  // The sides named in the room (hinten, oben …), so drawing and part agree (utils/cutoutText)
+  const sideNames = showSides && sides ? `<text x="${30 + w / 2}" y="${top - 14}" font-size="5.5" text-anchor="middle" fill="#888">${escapeHtml(sides.top)}</text>
+  <text x="${30 + w / 2}" y="${top + h + 10}" font-size="5.5" text-anchor="middle" fill="#888">${escapeHtml(sides.bottom)}</text>
+  <text x="${30 + w + 3}" y="${top + h / 2 + 2}" font-size="5.5" fill="#888">${escapeHtml(sides.right)}</text>
+  <text x="5" y="${top + h / 2}" font-size="5.5" text-anchor="middle" fill="#888" transform="rotate(-90,5,${top + h / 2})">${escapeHtml(sides.left)}</text>` : ''
 
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${svgW}" height="${svgH}" style="display:block;margin:auto">
   <defs>
@@ -88,15 +109,17 @@ function boardSvg(board: Board, projectName: string, lang: 'de' | 'en', customMa
     </marker>
   </defs>
   <!-- Board rect -->
-  <rect x="30" y="10" width="${w}" height="${h}" fill="#f5f0e8" stroke="#333" stroke-width="0.8"/>
+  <rect x="30" y="${top}" width="${w}" height="${h}" fill="#f5f0e8" stroke="#333" stroke-width="0.8"/>
+  ${cutShapes}
   ${edgeLines}
-  <g transform="translate(30,10)">${grainLine}</g>
+  ${sideNames}
+  <g transform="translate(30,${top})">${grainLine}</g>
   <!-- First face dim (top) -->
-  <text x="${30 + w / 2}" y="8" font-size="7" text-anchor="middle" fill="#333">${face.u}</text>
-  <line x1="30" y1="4" x2="${30 + w}" y2="4" stroke="#333" stroke-width="0.5"/>
+  <text x="${30 + w / 2}" y="${top - 2}" font-size="7" text-anchor="middle" fill="#333">${rawW}</text>
+  <line x1="30" y1="${top - 6}" x2="${30 + w}" y2="${top - 6}" stroke="#333" stroke-width="0.5"/>
   <!-- Second face dim (left) -->
-  <text x="14" y="${10 + h / 2}" font-size="7" text-anchor="middle" fill="#333" transform="rotate(-90,14,${10 + h / 2})">${face.v}</text>
-  <line x1="26" y1="10" x2="26" y2="${10 + h}" stroke="#333" stroke-width="0.5"/>
+  <text x="16" y="${top + h / 2}" font-size="7" text-anchor="middle" fill="#333" transform="rotate(-90,16,${top + h / 2})">${rawH}</text>
+  <line x1="26" y1="${top}" x2="26" y2="${top + h}" stroke="#333" stroke-width="0.5"/>
   <!-- Scale bar: 100mm reference -->
   <line x1="${sbX}" y1="${sbY}" x2="${sbX + sbLen}" y2="${sbY}" stroke="#666" stroke-width="1"/>
   <line x1="${sbX}" y1="${sbY - 3}" x2="${sbX}" y2="${sbY + 3}" stroke="#666" stroke-width="1"/>
@@ -135,7 +158,8 @@ function shopDrawingsHtml(project: Project, lang: 'de' | 'en', t: TFunction): st
 
   const labels = partLabels(project.assemblies)
   const rows = allBoards.map(({ board, assemblyName }) => {
-    const svg = boardSvg(board, project.name, lang, project.customMaterials, labels.get(board.id))
+    const svg = boardSvg(board, project.name, lang, project.customMaterials, labels.get(board.id), faceSideNames(board, t))
+    const cuts = describeCutouts(board, t)
     const matName = escapeHtml(materialName(board, lang, project.customMaterials))
     const face = boardFace(board)
     const eb = board.edgeBanding ?? {}
@@ -148,6 +172,7 @@ function shopDrawingsHtml(project: Project, lang: 'de' | 'en', t: TFunction): st
     <div>${matName} · t=${face.thickness}mm · ${face.u} × ${face.v} mm</div>
     ${edges ? `<div style="color:#2563eb">${lang === 'de' ? 'Kantenband' : 'Edge Banding'}: ${edges}</div>` : ''}
     ${grain ? `<div style="color:#d97706">${escapeHtml(t('cutting.grain'))}: ${escapeHtml(grain)}</div>` : ''}
+    ${cuts.map((c) => `<div style="color:#c2410c;text-align:left">${c.n} ${escapeHtml(c.text)}</div>`).join('')}
   </div>
 </div>`
   }).join('')

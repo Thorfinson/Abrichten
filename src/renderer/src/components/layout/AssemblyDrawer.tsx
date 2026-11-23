@@ -16,6 +16,9 @@ import { PartName } from '../ui/PartName'
 import { setShortNameTold } from '../../services/partNumbers'
 import type { DrawerGroupBy } from '../../store/useUIStore'
 import { Icon } from './Icon'
+import { useDesignLocked } from '../../hooks/useDesignLocked'
+import { EyeToggle, HighlightToggle } from '../ui/PartsToggles'
+import { CountsCheck } from '../ui/CountsCheck'
 
 function assemblyStats(boards: Board[], customMaterials?: Material[]) {
   if (boards.length === 0) return null
@@ -57,6 +60,9 @@ export function AssemblyDrawer() {
 
   const shown   = useUIStore((s) => s.showAssemblyDrawer)
   const workspace = useUIStore((s) => s.workspace)
+  // parts the eye hides: their rows are dimmed (the eye itself says it, too)
+  const hiddenParts = useUIStore((s) => s.hiddenParts)
+  const hiddenSet = useMemo(() => new Set(hiddenParts), [hiddenParts])
   // the assembly workspace shows its steps in this column instead (AssemblyStepList)
   const show = shown && workspace !== 'assembly'
   const groupBy = useUIStore((s) => s.drawerGroupBy)
@@ -64,6 +70,8 @@ export function AssemblyDrawer() {
   const [closedGroups, setClosedGroups] = useState<Set<string>>(new Set())
 
   const project = useProjectStore((s) => s.project)
+  // assemblies whose tick is on: only their parts are in the view at all
+  const counting = useMemo(() => new Set(project.assemblies.filter((a) => a.visible !== false).map((a) => a.id)), [project.assemblies])
   const addAssembly = useProjectStore((s) => s.addAssembly)
   const addBoard = useProjectStore((s) => s.addBoard)
   const removeAssembly = useProjectStore((s) => s.removeAssembly)
@@ -71,7 +79,6 @@ export function AssemblyDrawer() {
   const moveAssembly = useProjectStore((s) => s.moveAssembly)
   const moveBoardsToAssembly = useProjectStore((s) => s.moveBoardsToAssembly)
   const toggleAssemblyVisibility = useProjectStore((s) => s.toggleAssemblyVisibility)
-  const toggleAssemblyHighlight = useProjectStore((s) => s.toggleAssemblyHighlight)
   const addJoint = useProjectStore((s) => s.addJoint)
   const selectBoard = useUIStore((s) => s.selectBoard)
   const selectAllBoards = useUIStore((s) => s.selectAllBoards)
@@ -125,6 +132,10 @@ export function AssemblyDrawer() {
   } | null>(null)
   const [jointType, setJointType] = useState<JointType>('dado')
   const jointDialogRef = useDialogFocus<HTMLDivElement>(jointDialog !== null)
+  // the assembly menu and the joint dialog float outside the column: the assembly
+  // workspace (which only reads the design) closes them (store/designLock.ts)
+  const locked = useDesignLocked()
+  useEffect(() => { if (locked) { setAssemblyMenu(null); setJointDialog(null) } }, [locked])
 
   // Esc closes the joint dialog (and only it — preventDefault keeps the
   // global Esc from also deselecting or closing the drawer)
@@ -188,7 +199,7 @@ export function AssemblyDrawer() {
   const handleAddSubAssembly = (parentId: string) => {
     const id = addAssembly(t('sidebar.newAssemblyName') + ' ' + (project.assemblies.length + 1), parentId)
     setExpandedIds((prev) => new Set(prev).add(parentId))
-    selectBoard(id, null)
+    if (id) selectBoard(id, null)
     setAssemblyMenu(null)
   }
 
@@ -304,6 +315,8 @@ export function AssemblyDrawer() {
     const stats = assemblyStats(project.assemblies.filter((a) => subtree.has(a.id)).flatMap((a) => a.boards), project.customMaterials)
     const hint = dropHint?.id === assembly.id ? dropHint.where : null
     const dim = assembly.visible === false ? 'opacity-40' : ''
+    // the eye of the group: every part of it and its subgroups that counts (unticked parts are not in the view anyway)
+    const viewIds = project.assemblies.filter((a) => subtree.has(a.id) && a.visible !== false).flatMap((a) => a.boards.map((b) => b.id))
     return (
       <div
         key={assembly.id}
@@ -333,7 +346,7 @@ export function AssemblyDrawer() {
           onDragOver={(e) => handleHeaderDragOver(e, assembly.id)}
           onDrop={(e) => handleHeaderDrop(e, assembly.id)}
           onDragEnd={handleDragEnd}
-          className={`text-[13px] font-medium px-1.5 py-1 rounded cursor-pointer flex items-center gap-1 ${
+          className={`group text-[13px] font-medium px-1.5 py-1 rounded cursor-pointer flex items-center gap-1 ${
             selectedAssemblyId === assembly.id && selectedBoardIds.length === 0
               ? 'bg-action/25 text-chrome-text'
               : 'text-chrome-text hover:bg-chrome-surface'
@@ -364,50 +377,11 @@ export function AssemblyDrawer() {
             <Icon name={open ? 'chevronDown' : 'chevronRight'} className="w-3 h-3" strokeWidth={2.25} />
           </button>
           <span
-            className="shrink-0 text-chrome-hint hover:text-chrome-secondary cursor-grab active:cursor-grabbing select-none mr-0.5"
+            className="shrink-0 hidden group-hover:inline text-chrome-hint hover:text-chrome-secondary cursor-grab active:cursor-grabbing select-none mr-0.5"
             title={lang === 'de' ? 'Ziehen: auf den Rand zum Sortieren, auf die Mitte zum Einhängen' : 'Drag: onto the edge to reorder, onto the middle to nest'}
           >⠿</span>
-          <button
-            onClick={(e) => {
-              e.stopPropagation()
-              toggleAssemblyVisibility(assembly.id)
-            }}
-            className={`shrink-0 w-5 h-5 flex items-center justify-center rounded hover:bg-chrome-hover ${
-              assembly.visible !== false ? 'text-chrome-secondary' : 'text-chrome-hint'
-            }`}
-            title={t('sidebar.toggleVisibility')}
-            aria-label={t('sidebar.toggleVisibility')}
-            aria-pressed={assembly.visible !== false}
-          >
-            {assembly.visible !== false ? (
-              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                <path strokeLinecap="round" strokeLinejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-              </svg>
-            ) : (
-              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" />
-              </svg>
-            )}
-          </button>
-          <button
-            onClick={(e) => {
-              e.stopPropagation()
-              toggleAssemblyHighlight(assembly.id)
-            }}
-            className={`shrink-0 w-5 h-5 flex items-center justify-center rounded hover:bg-chrome-hover ${
-              assembly.highlight ? 'text-accent' : 'text-chrome-hint'
-            }`}
-            title={t('sidebar.highlightAssembly')}
-            aria-label={t('sidebar.highlightAssembly')}
-            aria-pressed={assembly.highlight === true}
-          >
-            {/* X-ray cube icon */}
-            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.6}>
-              <path strokeLinecap="round" strokeLinejoin="round"
-                d="M8 6h13v13H8zM3 3h13v13H3zM3 3l5 3M16 3l5 3M3 16l5 3M16 16l5 3" />
-            </svg>
-          </button>
+          {/* the tick (counts, a variant) leads; the eye and X-ray (only the view) close the row */}
+          <CountsCheck assembly={assembly} />
           {renamingAssemblyId === assembly.id ? (
             <input
               autoFocus
@@ -469,6 +443,8 @@ export function AssemblyDrawer() {
               </button>
             )
           })())}
+          <EyeToggle ids={viewIds} name={assembly.name} />
+          <HighlightToggle ids={viewIds} name={assembly.name} />
         </div>
 
         {open && (
@@ -499,11 +475,11 @@ export function AssemblyDrawer() {
                     boardDrag.current = { fromAssemblyId: assembly.id, boardIds: ids }
                   }}
                   onDragEnd={handleDragEnd}
-                  className={`text-xs px-2 py-1 rounded cursor-pointer flex items-center gap-1.5 ${
+                  className={`group/row text-xs px-2 py-1 rounded cursor-pointer flex items-center gap-1.5 ${
                     selectedBoardIds.includes(board.id)
                       ? 'bg-action/25 text-chrome-text'
                       : 'text-chrome-secondary hover:bg-chrome-surface hover:text-chrome-text'
-                  }`}
+                  } ${hiddenSet.has(board.id) ? 'opacity-50' : ''}`}
                   onClick={(e) => {
                     if (e.ctrlKey || e.metaKey) {
                       toggleBoardSelection(assembly.id, board.id)
@@ -519,12 +495,14 @@ export function AssemblyDrawer() {
                   <div className="flex-1 min-w-0">
                     {/* part-name-ok: the label leads the line below */}
                     <div className="truncate leading-tight">{board.name}</div>
-                    <div className={`text-[10px] font-mono leading-tight ${
+                    <div className={`truncate text-[10px] font-mono leading-tight ${
                       selectedBoardIds.includes(board.id) ? 'text-info' : 'text-chrome-hint'
                     }`}>
                       <span className="text-chrome-secondary" data-testid="part-label">{labels.get(board.id)}</span> · {board.width}×{board.height}×{board.depth}
                     </div>
                   </div>
+                  <EyeToggle quiet ids={assembly.visible !== false ? [board.id] : []} name={partTitle(labels.get(board.id), board.name)} />
+                  <HighlightToggle quiet ids={assembly.visible !== false ? [board.id] : []} name={partTitle(labels.get(board.id), board.name)} />
                 </div>
               ))}
             </div>
@@ -631,7 +609,7 @@ export function AssemblyDrawer() {
       {show && (
         <aside
           aria-label={t('layout.drawer.title')}
-          className="w-64 shrink-0 bg-chrome-bg text-chrome-text border-r border-chrome-border flex flex-col min-h-0"
+          className="w-72 shrink-0 bg-chrome-bg text-chrome-text border-r border-chrome-border flex flex-col min-h-0"
         >
           <div className="flex items-center gap-2 h-8 px-3 border-b border-chrome-border shrink-0">
             <h3 className="text-[11px] font-semibold text-chrome-muted uppercase tracking-wider">{groupBy === 'assembly' ? t('layout.drawer.title') : t('workspace.parts')}</h3>
@@ -664,6 +642,7 @@ export function AssemblyDrawer() {
               const open = !closedGroups.has(g.key)
               return (
                 <div key={g.key} className="mb-1" data-testid={`part-group-${g.key}`}>
+                  <div className="flex items-center gap-1 pr-1">
                   <button
                     type="button"
                     aria-expanded={open}
@@ -672,13 +651,16 @@ export function AssemblyDrawer() {
                       if (next.has(g.key)) next.delete(g.key); else next.add(g.key)
                       return next
                     })}
-                    className="w-full flex items-center gap-1.5 px-1.5 py-1 rounded text-xs font-medium text-chrome-text hover:bg-chrome-surface"
+                    className="flex-1 min-w-0 flex items-center gap-1.5 px-1.5 py-1 rounded text-xs font-medium text-chrome-text hover:bg-chrome-surface"
                   >
                     <Icon name={open ? 'chevronDown' : 'chevronRight'} className="w-3 h-3" strokeWidth={2.25} />
                     <span className="inline-block w-2.5 h-2.5 rounded-sm shrink-0" style={{ backgroundColor: g.color }} />
                     <span className="flex-1 text-left truncate">{g.labelIsKey ? t(g.label) : g.label}</span>
                     <span className="text-[10px] font-mono text-chrome-muted tabular-nums">{g.items.length}</span>
                   </button>
+                  <EyeToggle ids={g.items.filter((i) => counting.has(i.assemblyId)).map((i) => i.board.id)} name={g.labelIsKey ? t(g.label) : g.label} />
+                  <HighlightToggle ids={g.items.filter((i) => counting.has(i.assemblyId)).map((i) => i.board.id)} name={g.labelIsKey ? t(g.label) : g.label} />
+                  </div>
                   {open && g.items.map(({ assemblyId, board }) => (
                     <div
                       key={board.id}
@@ -687,11 +669,11 @@ export function AssemblyDrawer() {
                         else boardItemRefs.current.delete(board.id)
                       }}
                       title={`${assemblyPath(project.assemblies, assemblyId)} · ${board.width}×${board.height}×${board.depth}mm`}
-                      className={`ml-4 text-xs px-2 py-1 rounded cursor-pointer flex items-center gap-1.5 ${
+                      className={`group/row ml-4 text-xs px-2 py-1 rounded cursor-pointer flex items-center gap-1.5 ${
                         selectedBoardIds.includes(board.id)
                           ? 'bg-action/25 text-chrome-text'
                           : 'text-chrome-secondary hover:bg-chrome-surface hover:text-chrome-text'
-                      }`}
+                      } ${hiddenSet.has(board.id) || !counting.has(assemblyId) ? 'opacity-50' : ''}`}
                       onClick={(e) => {
                         if (e.ctrlKey || e.metaKey) toggleBoardSelection(assemblyId, board.id)
                         else selectBoard(assemblyId, board.id)
@@ -701,10 +683,12 @@ export function AssemblyDrawer() {
                       <div className="flex-1 min-w-0">
                         {/* part-name-ok: the label leads the line below */}
                         <div className="truncate leading-tight">{board.name}</div>
-                        <div className={`text-[10px] font-mono leading-tight ${selectedBoardIds.includes(board.id) ? 'text-info' : 'text-chrome-hint'}`}>
+                        <div className={`truncate text-[10px] font-mono leading-tight ${selectedBoardIds.includes(board.id) ? 'text-info' : 'text-chrome-hint'}`}>
                           <span className="text-chrome-secondary" data-testid="part-label">{labels.get(board.id)}</span> · {board.width}×{board.height}×{board.depth}
                         </div>
                       </div>
+                      <EyeToggle quiet ids={counting.has(assemblyId) ? [board.id] : []} name={partTitle(labels.get(board.id), board.name)} />
+                      <HighlightToggle quiet ids={counting.has(assemblyId) ? [board.id] : []} name={partTitle(labels.get(board.id), board.name)} />
                     </div>
                   ))}
                 </div>
@@ -724,7 +708,7 @@ export function AssemblyDrawer() {
       )}
 
       {/* Assembly context menu */}
-      {assemblyMenu && (
+      {assemblyMenu && !locked && (
         <div
           ref={assemblyMenuRef}
           className="fixed bg-chrome-bg text-chrome-text rounded-md shadow-2xl border border-chrome-border py-1 z-[100] min-w-[160px]"
@@ -751,7 +735,7 @@ export function AssemblyDrawer() {
             }}
             className="w-full text-left px-4 py-1.5 text-sm hover:bg-chrome-surface"
           >
-            {t('sidebar.toggleVisibility')}
+            {t('counts.toggle')}
           </button>
           <button
             onClick={() => handleAddSubAssembly(assemblyMenu.id)}
@@ -811,7 +795,7 @@ export function AssemblyDrawer() {
       )}
 
       {/* Joint creation dialog */}
-      {jointDialog && (() => {
+      {jointDialog && !locked && (() => {
         const assembly = project.assemblies.find((a) => a.id === jointDialog.assemblyId)
         const boardA = assembly?.boards.find((b) => b.id === jointDialog.boardAId)
         const boardB = assembly?.boards.find((b) => b.id === jointDialog.boardBId)

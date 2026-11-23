@@ -40,6 +40,10 @@ import { useAutoSave } from './hooks/useAutoSave'
 import { restoreAutoSave } from './services/projectFile'
 import { useUnsavedChanges } from './hooks/useUnsavedChanges'
 import { StaticLegend } from './components/overlays/StaticLegend'
+import { setDesignLockedNotice } from './store/designLock'
+import { designKey } from './hooks/useDesignLocked'
+import { keyCombo } from './utils/shortcutKeys'
+import i18n from './i18n'
 
 export default function App() {
   useKeyboard()
@@ -52,6 +56,11 @@ export default function App() {
 
   // Restore project from IndexedDB on startup (an unreadable save is kept as a backup)
   useEffect(() => { restoreAutoSave() }, [])
+
+  // A change the assembly workspace refuses says where it belongs (store/designLock.ts)
+  useEffect(() => setDesignLockedNotice((kind) => useUIStore.getState().setExportStatus(
+    i18n.t(`designLock.${kind}`, { key: designKey(), undo: keyCombo('Z', ['cmd']), redo: keyCombo('Z', ['cmd', 'shift']) })
+  )), [])
 
   // Every project load — sample, open file, restore, new — frames the model.
   // A loaded or new project always brings its own id.
@@ -80,6 +89,8 @@ export default function App() {
             {viewLayout === 'quad' ? <QuadLayout /> : <UnifiedCanvas />}
             {/* Floating cards over the canvas (z-30) */}
             <ToolStrip />
+            {/* Messages sit at the top of the canvas, under the view tabs: they never cover a control */}
+            <SaveToast />
             <FloatingPropertiesCard />
             <ContextHUD />
             <AssemblyTimeline />
@@ -99,7 +110,7 @@ export default function App() {
       <StatusBar unsaved={unsaved} />
 
       {/* AI drawer (fixed, overlays the canvas) */}
-      {showChatPanel && <ChatPanel />}
+      {showChatPanel && workspace !== 'assembly' && <ChatPanel />}
 
       {/* Modals & overlays */}
       <ShortcutsOverlay />
@@ -124,7 +135,6 @@ export default function App() {
       <MaterialsPanel />
       <WelcomeDialog />
       <ChangedFileDialog />
-      <SaveToast />
     </div>
   )
 }

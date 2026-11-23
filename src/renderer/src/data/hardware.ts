@@ -1,4 +1,4 @@
-import type { AttachedHardware } from '../types/furniture'
+import type { AttachedHardware, Board, CustomHardwareItem } from '../types/furniture'
 
 export type HardwareCategory = 'hinges' | 'slides' | 'shelfPins' | 'handles' | 'camLocks'
 
@@ -191,6 +191,14 @@ export const hardwareItems: HardwareItem[] = [
     unitPrice: 0.95
   }
 ]
+
+/** True when the board carries shelf pins (Bodenträger) — the one test, for the statics (a
+ *  shelf resting on pins) and the boring list (32 mm rows only where pins are planned). */
+export function hasShelfPins(board: Pick<Board, 'hardware'>, customHardware?: CustomHardwareItem[]): boolean {
+  return (board.hardware ?? []).some((h) => h.quantity > 0 && (
+    hardwareItems.find((i) => i.id === h.hardwareId)?.category === 'shelfPins' ||
+    customHardware?.find((i) => i.id === h.hardwareId)?.category === 'shelfPins'))
+}
 
 export function getHardwareByCategory(cat: HardwareCategory): HardwareItem[] {
   return hardwareItems.filter((h) => h.category === cat)

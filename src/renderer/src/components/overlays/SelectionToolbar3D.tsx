@@ -10,6 +10,7 @@ import { Icon } from '../layout/Icon'
 import { clampCentre } from '../layout/layoutRules'
 import { usePartLabels } from '../../hooks/usePartLabels'
 import { PartName } from '../ui/PartName'
+import { useDesignLocked } from '../../hooks/useDesignLocked'
 
 /** Lift above the board's top centre so the pill clears the TC gizmo (~70 px) */
 const LIFT_PX = 80
@@ -35,6 +36,8 @@ export function SelectionToolbar3D() {
   const duplicateBoard = useProjectStore((s) => s.duplicateBoard)
   const updateBoard    = useProjectStore((s) => s.updateBoard)
   const selectBoard    = useUIStore((s) => s.selectBoard)
+  // the assembly workspace names the part only: copying, turning, deleting belong to the design
+  const locked         = useDesignLocked()
 
   // Screen position of the pill: projected board top, lifted, then clamped so
   // the whole pill stays inside this canvas (a quad quadrant clips otherwise).
@@ -88,7 +91,7 @@ export function SelectionToolbar3D() {
     <Html position={[px, py, pz]} center zIndexRange={HTML_Z_RANGE} calculatePosition={calculatePosition}>
       <div
         ref={pillRef}
-        className="flex items-center gap-0.5 pl-2.5 pr-1 py-0.5 rounded-full border border-chrome-border bg-chrome-deep/95 shadow-lg text-chrome-text whitespace-nowrap"
+        className={`flex items-center gap-0.5 pl-2.5 ${locked ? 'pr-2.5' : 'pr-1'} py-0.5 rounded-full border border-chrome-border bg-chrome-deep/95 shadow-lg text-chrome-text whitespace-nowrap`}
         style={{ pointerEvents: 'auto', userSelect: 'none' }}
         onPointerDown={(e) => e.stopPropagation()}
       >
@@ -101,36 +104,40 @@ export function SelectionToolbar3D() {
         <span className="text-[11px] font-medium max-w-[180px] truncate" data-testid="selection-pill-name">
           <PartName label={labels.get(board.id)} name={board.name} labelClassName="text-chrome-muted" />
         </span>
-        {/* Divider */}
-        <span className="w-px h-3.5 bg-chrome-divider mx-1" />
-        <button
-          onClick={handleDuplicate}
-          title={t('ui.duplicate')}
-          aria-label={t('ui.duplicate')}
-          className={`${iconBtn} text-chrome-muted hover:text-chrome-text hover:bg-chrome-surface`}
-        >
-          <Icon name="copy" className="w-3.5 h-3.5" />
-        </button>
-        <button
-          onClick={handleRotate90}
-          title={t('ui.rotate90')}
-          aria-label={t('ui.rotate90')}
-          className={`${iconBtn} text-chrome-muted hover:text-chrome-text hover:bg-chrome-surface`}
-        >
-          <Icon name="rotate" className="w-3.5 h-3.5" />
-        </button>
-        {/* Transform mode badge */}
-        <span className="font-mono text-[9px] px-1 mx-0.5 rounded bg-chrome-surface text-chrome-muted leading-4">
-          {transformMode === 'translate' ? 'G' : transformMode === 'rotate' ? 'R' : 'T'}
-        </span>
-        <button
-          onClick={handleDelete}
-          title={t('ui.delete')}
-          aria-label={t('ui.delete')}
-          className={`${iconBtn} text-danger/80 hover:text-danger-text hover:bg-danger-dim`}
-        >
-          <Icon name="trash" className="w-3.5 h-3.5" />
-        </button>
+        {!locked && (
+          <>
+            {/* Divider */}
+            <span className="w-px h-3.5 bg-chrome-divider mx-1" />
+            <button
+              onClick={handleDuplicate}
+              title={t('ui.duplicate')}
+              aria-label={t('ui.duplicate')}
+              className={`${iconBtn} text-chrome-muted hover:text-chrome-text hover:bg-chrome-surface`}
+            >
+              <Icon name="copy" className="w-3.5 h-3.5" />
+            </button>
+            <button
+              onClick={handleRotate90}
+              title={t('ui.rotate90')}
+              aria-label={t('ui.rotate90')}
+              className={`${iconBtn} text-chrome-muted hover:text-chrome-text hover:bg-chrome-surface`}
+            >
+              <Icon name="rotate" className="w-3.5 h-3.5" />
+            </button>
+            {/* Transform mode badge */}
+            <span className="font-mono text-[9px] px-1 mx-0.5 rounded bg-chrome-surface text-chrome-muted leading-4">
+              {transformMode === 'translate' ? 'G' : transformMode === 'rotate' ? 'R' : 'T'}
+            </span>
+            <button
+              onClick={handleDelete}
+              title={t('ui.delete')}
+              aria-label={t('ui.delete')}
+              className={`${iconBtn} text-danger/80 hover:text-danger-text hover:bg-danger-dim`}
+            >
+              <Icon name="trash" className="w-3.5 h-3.5" />
+            </button>
+          </>
+        )}
       </div>
     </Html>
   )

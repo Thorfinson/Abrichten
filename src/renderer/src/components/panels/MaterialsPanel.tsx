@@ -5,6 +5,7 @@ import { useUIStore } from '../../store/useUIStore'
 import { Dialog, Button, FIELD_CLASS, LABEL_CLASS, SECTION_LABEL_CLASS, CHECK_CLASS } from '../ui/Dialog'
 import { materials as builtinMaterials } from '../../data/materials'
 import type { Material, MaterialCategory } from '../../types/furniture'
+import { useDesignLocked } from '../../hooks/useDesignLocked'
 
 const CATEGORY_LABELS: Record<MaterialCategory, { de: string; en: string }> = {
   solid_wood: { de: 'Massivholz',  en: 'Solid Wood' },
@@ -78,7 +79,9 @@ export function MaterialsPanel() {
   const [form, setForm] = useState<FormState>(formDefaults())
   const [error, setError] = useState('')
 
-  if (!showMaterialsPanel) return null
+  // a tool of the design: not in the assembly workspace (store/designLock.ts)
+  const locked = useDesignLocked()
+  if (locked || !showMaterialsPanel) return null
 
   const handleClose = () => {
     setShowMaterialsPanel(false)

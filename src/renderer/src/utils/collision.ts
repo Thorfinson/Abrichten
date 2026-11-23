@@ -1,6 +1,6 @@
 import type { Board, Joint } from '../types/furniture'
 import { boardCorners3D, projectAABB, type Rect2D } from './projection'
-import { insideCutout } from './geometry'
+import { insideCutout } from './cutoutPlace'
 import { boardFace } from './boardFace'
 
 export interface CollisionPair {
@@ -221,6 +221,7 @@ function buildSorted(boards: Board[]): BoardEntry[] {
 function overlapsOnlyInCutout(a: { board: Board; aabb: AABB3D }, b: { board: Board; aabb: AABB3D }): boolean {
   const box = {
     minX: Math.max(a.aabb.minX, b.aabb.minX), maxX: Math.min(a.aabb.maxX, b.aabb.maxX),
+    minY: Math.max(a.aabb.minY, b.aabb.minY), maxY: Math.min(a.aabb.maxY, b.aabb.maxY),
     minZ: Math.max(a.aabb.minZ, b.aabb.minZ), maxZ: Math.min(a.aabb.maxZ, b.aabb.maxZ)
   }
   return insideCutout(a.board, box) || insideCutout(b.board, box)

@@ -5,6 +5,7 @@ import { useStaticSimulation, useStaticStore, modelFieldMax, DEFORMATION_SCALE, 
 import { UTILISATION_GRADIENT_CSS, UTILISATION_STOPS, UNSUPPORTED_COLOR, NEUTRAL_COLOR, SUPPORT_COLOR, JOINT_COLOR } from '../../services/static-calc'
 import { MAX_LOAD_KG } from '../../utils/validateProject'
 import { Icon } from '../layout/Icon'
+import { useDesignLocked } from '../../hooks/useDesignLocked'
 
 /** Number field for a kg value that applies every valid entry while typing; empty reports undefined, Esc restores the value it had on focus. */
 export function KgInput({ value, onChange, placeholder, ariaLabel, className }: {
@@ -79,7 +80,9 @@ function LegendCard() {
   const toggleContours = useStaticStore((s) => s.toggleContours)
   const scaleMode = useStaticStore((s) => s.scaleMode)
   const setScaleMode = useStaticStore((s) => s.setScaleMode)
-  const placing = useStaticStore((s) => s.placingLoad)
+  // the assembly workspace reads the loads; placing them is the design's
+  const locked = useDesignLocked()
+  const placing = useStaticStore((s) => s.placingLoad) && !locked
   const setPlacing = useStaticStore((s) => s.setPlacingLoad)
   const placeKg = useStaticStore((s) => s.placeKg)
   const setPlaceKg = useStaticStore((s) => s.setPlaceKg)
@@ -252,27 +255,29 @@ function LegendCard() {
         </div>
 
         {/* Placing loads: a click on the top of a lying board puts placeKg there */}
-        <div className="flex items-center justify-between gap-3 mt-2 pt-2 border-t border-chrome-border">
-          <button
-            data-testid="static-place-load"
-            aria-pressed={placing}
-            onClick={() => setPlacing(!placing)}
-            className={`h-6 px-2.5 rounded text-[11px] font-medium border transition-colors ${placing
-              ? 'bg-action text-action-text border-action'
-              : 'border-chrome-border text-chrome-secondary hover:bg-chrome-hover'}`}
-          >
-            ↓ {t('sim.placeLoad')}
-          </button>
-          <label className="flex items-center gap-1.5 text-chrome-secondary">
-            {t('sim.placeKg')}
-            <KgInput
-              value={placeKg}
-              onChange={(kg) => { if (kg !== undefined && kg > 0) setPlaceKg(kg) }}
-              ariaLabel={t('sim.placeKg')}
-            />
-            <span className="text-chrome-muted">kg</span>
-          </label>
-        </div>
+        {!locked && (
+          <div className="flex items-center justify-between gap-3 mt-2 pt-2 border-t border-chrome-border">
+            <button
+              data-testid="static-place-load"
+              aria-pressed={placing}
+              onClick={() => setPlacing(!placing)}
+              className={`h-6 px-2.5 rounded text-[11px] font-medium border transition-colors ${placing
+                ? 'bg-action text-action-text border-action'
+                : 'border-chrome-border text-chrome-secondary hover:bg-chrome-hover'}`}
+            >
+              ↓ {t('sim.placeLoad')}
+            </button>
+            <label className="flex items-center gap-1.5 text-chrome-secondary">
+              {t('sim.placeKg')}
+              <KgInput
+                value={placeKg}
+                onChange={(kg) => { if (kg !== undefined && kg > 0) setPlaceKg(kg) }}
+                ariaLabel={t('sim.placeKg')}
+              />
+              <span className="text-chrome-muted">kg</span>
+            </label>
+          </div>
+        )}
         {placing && (
           <div data-testid="static-place-hint" className="mt-1 text-chrome-secondary">{t('sim.placeLoadHint', { kg: placeKg })}</div>
         )}

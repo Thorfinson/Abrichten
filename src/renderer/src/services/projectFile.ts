@@ -95,6 +95,7 @@ async function restore(): Promise<void> {
     if (entry) {
       useProjectStore.getState().loadProject(entry.project)
       // crash recovery: changes that never reached a file stay marked as unsaved
+      // design-lock-ok: only the saved copy (for the unsaved marker), not the project
       if (entry.unsaved) useProjectStore.setState({ savedProject: entry.saved ? validateProject(entry.saved) : null })
     }
   } catch (err) {
