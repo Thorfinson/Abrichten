@@ -805,6 +805,7 @@
     "problem": {
       "outside": "not wholly on the part – not built",
       "splits": "would cut the part in two – not built",
+      "splitsWith": "would cut the part in two together with cut-out {{n}} – not built",
       "beyond": "reaches past the edge of the part – cut back there",
       "overlaps": "overlaps or touches cut-out {{n}} – not built"
     }

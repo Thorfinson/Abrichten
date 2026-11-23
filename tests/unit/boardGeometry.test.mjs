@@ -301,15 +301,82 @@ test('cutouts that overlap or touch an earlier one are not built, and say which'
   assert.equal(numberedCutouts(same).length, 1)
   const top = topFace(buildBoardGeometry(same))
   assert.ok(Math.abs(top.area - (1000 * 600 - 560 * 490)) < 1, `one hole in the mesh, not none (${top.area})`)
-  // two notches that only together would cut the part in two: they touch
+  // two notches that only together would cut the part in two: the second is not built, and says with which
   const split = board([{ id: 'a', x: 0, z: 200, width: 600, depth: 100 }, { id: 'b', x: 600, z: 200, width: 400, depth: 100 }])
-  assert.equal(cutoutProblems(split)[1].problem, 'overlaps')
+  assert.deepEqual(cutoutProblems(split).map((p) => [p.problem, p.other ?? null]), [[null, null], ['splits', 1]])
   assert.ok(Math.abs(topFace(buildBoardGeometry(split)).area - (600000 - 60000)) < 1, 'the part stays whole')
   // a round hole over a rectangle, and two circles
   assert.equal(cutoutProblems(board([{ id: 'r', x: 100, z: 100, width: 100, depth: 100 }, { id: 'c', shape: 'circle', x: 180, z: 120, width: 60, depth: 60 }]))[1].problem, 'overlaps')
   assert.equal(cutoutProblems(board([{ id: 'c1', shape: 'circle', x: 100, z: 100, width: 60, depth: 60 }, { id: 'c2', shape: 'circle', x: 150, z: 100, width: 60, depth: 60 }]))[1].problem, 'overlaps')
   // apart by a hand's width: both built
   assert.deepEqual(cutoutProblems(board([{ id: 'a', x: 100, z: 100, width: 100, depth: 100 }, { id: 'b', x: 300, z: 100, width: 100, depth: 100 }])).map((p) => p.problem), [null, null])
+})
+
+// Second review, 23.11.: edges that meet on paper must meet in the computer too, whichever edge a
+// cut-out is measured from (100.1 + 100.3 is 200.39999999999998 in floating point).
+test('cut-out edges that meet on paper meet in the check, whatever edge they are measured from', async () => {
+  const { cutoutProblems } = await import('../../src/renderer/src/utils/geometry.ts')
+  const rows = (b) => cutoutProblems(b).map((p) => [p.problem, p.other ?? null])
+  // a step, the first notch measured from the right edge: x = 1000 − 749.3 − 250.7 is not 0 in floating point
+  const A = { id: 'a', x: 749.3, z: 0, width: 250.7, depth: 100, uFrom: 'max' }
+  const B = { id: 'b', x: 0, z: 100, width: 300, depth: 100 }
+  assert.deepEqual(rows(board([{ ...A, x: 0, uFrom: undefined }, B])), [[null, null], [null, null]], 'from the left')
+  assert.deepEqual(rows(board([A, B])), [[null, null], [null, null]], 'from the right')
+  assert.deepEqual(rows(board([B, A])), [[null, null], [null, null]], 'the other order')
+  // a real split hidden by a hairline: 100.1 + 100.3 ≠ 200.4
+  assert.deepEqual(rows(board([{ id: 'a', x: 0, z: 100.1, width: 300, depth: 100.3 }, { id: 'b', x: 250, z: 200.4, width: 100, depth: 399.6 }])), [[null, null], ['splits', 1]])
+  // the same split, the second measured from the front edge (z = 600 − 489.9 − 10.1)
+  const C = { id: 'a', x: 400, z: 0, width: 200, depth: 100 }
+  assert.deepEqual(rows(board([C, { id: 'b', x: 500, z: 100, width: 500, depth: 10.1 }])), [[null, null], ['splits', 1]])
+  assert.deepEqual(rows(board([C, { id: 'b', x: 500, z: 489.9, width: 500, depth: 10.1, vFrom: 'max' }])), [[null, null], ['splits', 1]])
+  // a part standing across the shared edge of two notches side by side is in the opening, not a collision
+  const two = board([{ id: 'a', x: 0, z: 0, width: 200, depth: 100 }, { id: 'b', x: 200, z: 0, width: 100, depth: 150 }])
+  assert.equal(insideCutout(two, { minX: 250, maxX: 350, minY: 0, maxY: 18, minZ: 200, maxZ: 290 }), true)
+  assert.equal(insideCutout(two, { minX: 250, maxX: 350, minY: 0, maxY: 18, minZ: 200, maxZ: 310 }), false, 'beyond the first notch')
+})
+
+// Küche 5, Boden Eckfach B (file of 23.11., 01:53): a notch round a post at the edge and a slot
+// behind it for the back panel, drawn as two rectangles that meet — one stepped notch.
+test('notches that meet are built as one stepped notch, unless together they cut the part in two', async () => {
+  const { cutoutProblems } = await import('../../src/renderer/src/utils/geometry.ts')
+  const rows = (b) => cutoutProblems(b).map((p) => [p.problem, p.other ?? null])
+  const area = (b) => topFace(buildBoardGeometry(b)).area
+  // the step: 56 × 36 at the right edge, 30 × 20 behind it in the corner, sharing the edge z = 20
+  const step = board([{ id: 'post', x: 944, z: 20, width: 56, depth: 36 }, { id: 'slot', x: 970, z: 0, width: 30, depth: 20 }])
+  assert.deepEqual(rows(step), [[null, null], [null, null]])
+  assert.equal(numberedCutouts(step).length, 2)
+  assert.ok(Math.abs(area(step) - (600000 - 56 * 36 - 30 * 20)) < 1, `both cut, as one shape (${area(step)})`)
+  // overlapping notches: not built — lists, statics and DXF would count the shared area twice;
+  // the same shape drawn as two rectangles side by side is built
+  const lap = board([{ id: 'a', x: 0, z: 0, width: 200, depth: 100 }, { id: 'b', x: 100, z: 0, width: 200, depth: 150 }])
+  assert.deepEqual(rows(lap), [[null, null], ['overlaps', 1]])
+  assert.deepEqual(rows(board([{ id: 'a', x: 0, z: 0, width: 200, depth: 100 }, { id: 'a2', x: 0, z: 0, width: 200, depth: 100 }])), [[null, null], ['overlaps', 1]], 'a copy on top')
+  const side = board([{ id: 'a', x: 0, z: 0, width: 200, depth: 100 }, { id: 'b', x: 200, z: 0, width: 100, depth: 150 }])
+  assert.deepEqual(rows(side), [[null, null], [null, null]])
+  assert.ok(Math.abs(area(side) - (600000 - 20000 - 15000)) < 1, `union cut (${area(side)})`)
+  // meeting at a corner point only: the part would hang by a point there — not built
+  assert.deepEqual(rows(board([{ id: 'a', x: 0, z: 0, width: 100, depth: 100 }, { id: 'b', x: 100, z: 100, width: 100, depth: 500 }])), [[null, null], ['overlaps', 1]])
+  // half a millimetre apart: a sliver would stay — not built
+  assert.deepEqual(rows(board([{ id: 'a', x: 0, z: 0, width: 100, depth: 100 }, { id: 'b', x: 100.5, z: 0, width: 100, depth: 100 }])), [[null, null], ['overlaps', 1]])
+  // a hole touching a notch still stands alone — not built
+  assert.deepEqual(rows(board([{ id: 'a', x: 0, z: 0, width: 100, depth: 100 }, { id: 'h', x: 100, z: 50, width: 100, depth: 100 }])), [[null, null], ['overlaps', 1]])
+  // two notches along one edge that meet from both sides: a whole strip off, as one notch from edge to edge
+  assert.deepEqual(rows(board([{ id: 'a', x: 0, z: 560, width: 600, depth: 40 }, { id: 'b', x: 600, z: 560, width: 400, depth: 40 }])), [[null, null], ['splits', 1]])
+  assert.equal(cutoutProblem(board([{ id: 'ab', x: 0, z: 560, width: 1000, depth: 40 }]), { id: 'ab', x: 0, z: 560, width: 1000, depth: 40 }), 'splits', 'the same as one notch')
+  // a step at one corner reaches two edges that meet, not two opposite ones: built
+  assert.deepEqual(rows(board([{ id: 'a', x: 900, z: 0, width: 100, depth: 50 }, { id: 'b', x: 950, z: 50, width: 50, depth: 50 }])), [[null, null], [null, null]])
+  // joined notches whose union leaves two pieces that are not side by side (corner to corner)
+  assert.deepEqual(rows(board([{ id: 'a', x: 0, z: 0, width: 500, depth: 300 }, { id: 'b', x: 400, z: 300, width: 600, depth: 300 }])), [[null, null], ['splits', 1]])
+  // the message names the notch that cuts across together with this one, not just the first it touches:
+  // 3 meets 1 at its side and 2 at its front; 2 and 3 cut the corner piece x 600–1000 × z 0–300 off
+  const named = board([{ id: '1', x: 0, z: 0, width: 100, depth: 50 }, { id: '2', x: 550, z: 300, width: 450, depth: 50 }, { id: '3', x: 100, z: 0, width: 500, depth: 300 }])
+  assert.deepEqual(rows(named), [[null, null], [null, null], ['splits', 2]])
+  // every problem has its words, in German and English
+  const { readFile: rf } = await import('node:fs/promises')
+  for (const lang of ['de', 'en']) {
+    const dict = JSON.parse(await rf(new URL(`../../src/renderer/src/i18n/${lang}.json`, import.meta.url), 'utf8'))
+    for (const key of ['outside', 'splits', 'splitsWith', 'beyond', 'overlaps']) assert.equal(typeof dict.cutout.problem[key], 'string', `${lang}: cutout.problem.${key}`)
+  }
 })
 
 test('a part turned over is still drawn up the right way, its cutouts where they are in the room', async () => {

@@ -136,7 +136,7 @@ export function CutoutEditor({ board, onChange }: { board: Board; onChange: (cut
               {edgePick(v, 'v')}
             </div>
             {/* why it is not built: off the board, or it would cut the board in two */}
-            {problem && <div className="pl-4 mb-0.5 text-amber-400" data-testid="cutout-problem">{t(`cutout.problem.${problem}`, { n: other })}</div>}
+            {problem && <div className="pl-4 mb-0.5 text-amber-400" data-testid="cutout-problem">{t(`cutout.problem.${problem === 'splits' && other ? 'splitsWith' : problem}`, { n: other })}</div>}
             {/* 4: the same place in the room — the one reference system */}
             <div className="pl-4 text-white/40" data-testid="cutout-room">
               {t('cutout.inRoom')}: {roomWord(u)} {round1(room[u.room][0])}–{round1(room[u.room][1])} · {roomWord(v)} {round1(room[v.room][0])}–{round1(room[v.room][1])}

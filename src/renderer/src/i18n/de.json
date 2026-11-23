@@ -803,6 +803,7 @@
     "problem": {
       "outside": "liegt nicht ganz auf dem Teil – wird nicht gebaut",
       "splits": "würde das Teil durchtrennen – wird nicht gebaut",
+      "splitsWith": "würde zusammen mit Ausschnitt {{n}} das Teil durchtrennen – wird nicht gebaut",
       "beyond": "reicht über den Rand des Teils – wird dort gekürzt",
       "overlaps": "überschneidet oder berührt Ausschnitt {{n}} – wird nicht gebaut"
     }

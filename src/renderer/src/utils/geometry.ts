@@ -113,23 +113,30 @@ export function polygonArea(points: MeasurementPoint[]): number {
   return Math.abs(area) / 2
 }
 
+/** A length in whole micrometres. Cutout edges are compared in these: 100.1 + 100.3 is
+ *  200.39999999999998 in floating point, and a hairline like that would count as a strip of
+ *  board between two notches that meet (or hide a real split). */
+const um = (mm: number): number => Math.round(mm * 1000)
+/** The edges of a rectangle on the face in micrometres: [x0, x1, z0, z1]. */
+const span = (c: BoardCutout): [number, number, number, number] => [um(c.x), um(c.x + c.width), um(c.z), um(c.z + c.depth)]
+
 /** A stored cutout on the face, measured from the face's min corner (its x/z may be
- *  stored from the far edges, BoardCutout.uFrom/vFrom). */
+ *  stored from the far edges, BoardCutout.uFrom/vFrom), on the micrometre grid. */
 export function faceCutout(board: Board, c: BoardCutout): BoardCutout {
   const face = boardFace(board)
   const depth = c.shape === 'circle' ? c.width : c.depth
   return {
     ...c,
     depth,
-    x: c.uFrom === 'max' ? face.u - c.x - c.width : c.x,
-    z: c.vFrom === 'max' ? face.v - c.z - depth : c.z
+    x: um(c.uFrom === 'max' ? face.u - c.x - c.width : c.x) / 1000,
+    z: um(c.vFrom === 'max' ? face.v - c.z - depth : c.z) / 1000
   }
 }
 
-/** What is wrong with a cutout, or null: off the face, a cut through the whole board, or
- *  overlapping or touching an earlier cutout of the board (not built), or reaching past the
- *  board's edge (built, cut back to the edge — e.g. after the board got smaller while the
- *  cutout is measured from the other edge). */
+/** What is wrong with a cutout, or null: off the face, a cut through the whole board (alone or
+ *  together with notches it meets), or overlapping or touching an earlier cutout of the board in
+ *  a way that cannot be built (not built), or reaching past the board's edge (built, cut back to
+ *  the edge — e.g. after the board got smaller while the cutout is measured from the other edge). */
 export type CutoutProblem = 'outside' | 'splits' | 'overlaps' | 'beyond'
 const notBuilt = (p: CutoutProblem | null): boolean => p === 'outside' || p === 'splits' || p === 'overlaps'
 /** Cutouts closer than this (mm) touch: they would leave a sliver or one open shape */
@@ -140,24 +147,26 @@ export function cutoutProblem(board: Board, raw: BoardCutout): CutoutProblem | n
   const face = boardFace(board)
   const c = faceCutout(board, raw)
   if (c.shape === 'circle') {
-    return c.width >= 1 && c.x >= 0 && c.z >= 0 && c.x + c.width <= face.u && c.z + c.width <= face.v ? null : 'outside'
+    const [x0, x1, z0, z1] = span(c)
+    return c.width >= 1 && x0 >= 0 && z0 >= 0 && x1 <= um(face.u) && z1 <= um(face.v) ? null : 'outside'
   }
-  const x0 = Math.max(0, c.x), z0 = Math.max(0, c.z)
-  const x1 = Math.min(face.u, c.x + c.width), z1 = Math.min(face.v, c.z + c.depth)
-  if (x1 - x0 < 1 || z1 - z0 < 1) return 'outside'
+  const [cx0, cx1, cz0, cz1] = span(c), U = um(face.u), V = um(face.v)
+  const x0 = Math.max(0, cx0), z0 = Math.max(0, cz0), x1 = Math.min(U, cx1), z1 = Math.min(V, cz1)
+  if (x1 - x0 < 1000 || z1 - z0 < 1000) return 'outside'
   // across the whole face one way: the board would fall in two (or vanish)
-  if ((x0 <= 0 && x1 >= face.u) || (z0 <= 0 && z1 >= face.v)) return 'splits'
-  return c.x < 0 || c.z < 0 || c.x + c.width > face.u || c.z + c.depth > face.v ? 'beyond' : null
+  if ((x0 <= 0 && x1 >= U) || (z0 <= 0 && z1 >= V)) return 'splits'
+  return cx0 < 0 || cz0 < 0 || cx1 > U || cz1 > V ? 'beyond' : null
 }
 
-/** A cutout on the face as it is built: from the min corner, a rectangle clipped to the face. */
+/** A cutout on the face as it is built: from the min corner, a rectangle clipped to the face,
+ *  on the micrometre grid. */
 function builtShape(board: Board, raw: BoardCutout): BoardCutout {
   const face = boardFace(board)
   const c = faceCutout(board, raw)
   if (c.shape === 'circle') return c
-  const x0 = Math.max(0, c.x), z0 = Math.max(0, c.z)
-  const x1 = Math.min(face.u, c.x + c.width), z1 = Math.min(face.v, c.z + c.depth)
-  return { ...c, x: x0, z: z0, width: x1 - x0, depth: z1 - z0 }
+  const [cx0, cx1, cz0, cz1] = span(c)
+  const x0 = Math.max(0, cx0), z0 = Math.max(0, cz0), x1 = Math.min(um(face.u), cx1), z1 = Math.min(um(face.v), cz1)
+  return { ...c, x: x0 / 1000, z: z0 / 1000, width: (x1 - x0) / 1000, depth: (z1 - z0) / 1000 }
 }
 
 /** Two built cutouts overlap or touch (closer than TOUCH_MM). */
@@ -176,17 +185,92 @@ export function cutoutsTouch(a: BoardCutout, b: BoardCutout): boolean {
   return a.x < b.x + b.width + TOUCH_MM && b.x < a.x + a.width + TOUCH_MM && a.z < b.z + b.depth + TOUCH_MM && b.z < a.z + a.depth + TOUCH_MM
 }
 
-/** The problem of each of the board's cutouts, in list order: its own, or that it overlaps or
- *  touches an earlier one that is built (`other`: that one's number). */
+/** Two built rectangles that touch (cutoutsTouch): do they join into one open shape, sharing a
+ *  stretch of edge without overlapping? Not when they overlap (lists, statics and DXF would count
+ *  the shared area twice; draw it as two rectangles side by side), are apart by less than
+ *  TOUCH_MM (a sliver would stay) or meet at a corner point only (the part would hang by a point). */
+function rectsJoin(a: BoardCutout, b: BoardCutout): boolean {
+  const [ax0, ax1, az0, az1] = span(a), [bx0, bx1, bz0, bz1] = span(b)
+  const ox = Math.min(ax1, bx1) - Math.max(ax0, bx0)
+  const oz = Math.min(az1, bz1) - Math.max(az0, bz0)
+  return (ox > 0 && oz === 0) || (oz > 0 && ox === 0)
+}
+
+/** The face as a grid cut at every notch edge; a cell is solid when no notch covers its centre.
+ *  Worked out in micrometres, so edges that meet on paper meet here. One source for the outline
+ *  and for the check whether notches cut the part in two. */
+function notchGrid(width: number, depth: number, notches: BoardCutout[]) {
+  const spans = notches.map(span)
+  const xs = [...new Set([0, um(width), ...spans.flatMap((s) => [s[0], s[1]])])].sort((a, b) => a - b)
+  const zs = [...new Set([0, um(depth), ...spans.flatMap((s) => [s[2], s[3]])])].sort((a, b) => a - b)
+  const solid = (i: number, j: number): boolean => {
+    if (i < 0 || j < 0 || i >= xs.length - 1 || j >= zs.length - 1) return false
+    const cx = (xs[i] + xs[i + 1]) / 2
+    const cz = (zs[j] + zs[j + 1]) / 2
+    return !spans.some((s) => cx > s[0] && cx < s[1] && cz > s[2] && cz < s[3])
+  }
+  return { xs: xs.map((x) => x / 1000), zs: zs.map((z) => z / 1000), solid }
+}
+
+/** True when the face minus these notches is not one piece: cut in two, or parts that hang
+ *  together only at a corner point (cells joined only diagonally). */
+function notchesSplit(width: number, depth: number, notches: BoardCutout[]): boolean {
+  const { xs, zs, solid } = notchGrid(width, depth, notches)
+  const cells: [number, number][] = []
+  for (let i = 0; i < xs.length - 1; i++) for (let j = 0; j < zs.length - 1; j++) if (solid(i, j)) cells.push([i, j])
+  if (cells.length === 0) return true
+  const seen = new Set([`${cells[0][0]},${cells[0][1]}`])
+  const todo = [cells[0]]
+  while (todo.length) {
+    const [i, j] = todo.pop()!
+    for (const [a, b] of [[i + 1, j], [i - 1, j], [i, j + 1], [i, j - 1]] as [number, number][]) {
+      const k = `${a},${b}`
+      if (!seen.has(k) && solid(a, b)) { seen.add(k); todo.push([a, b]) }
+    }
+  }
+  return seen.size < cells.length
+}
+
+/** The problem of each of the board's cutouts, in list order (`other`: the number of the earlier
+ *  cutout it concerns). A hole or round hole must stand free of the others; it overlaps or
+ *  touches an earlier one that is built → not built. Notches may meet: two that share a stretch
+ *  of edge (side by side, not overlapping) are built as one shape (a step around a post), unless
+ *  together they cut across the part — in two, or a whole strip off, reaching two opposite edges
+ *  (→ splits, naming the notch that does it with this one). Notches that overlap, are closer than
+ *  TOUCH_MM, or meet at a corner point only, are not built (overlaps). */
 export function cutoutProblems(board: Board): { problem: CutoutProblem | null; other?: number }[] {
-  const built: { n: number; c: BoardCutout }[] = []
+  const face = boardFace(board)
+  const U = um(face.u), V = um(face.v)
+  const built: { n: number; c: BoardCutout; notch: boolean }[] = []
+  // the built notches joined to `start`, one after the other along shared edges
+  const joined = (start: BoardCutout[]): BoardCutout[] => {
+    const group = [...start]
+    for (let k = 0; k < group.length; k++) {
+      for (const b of built) if (b.notch && !group.includes(b.c) && cutoutsTouch(b.c, group[k]) && rectsJoin(b.c, group[k])) group.push(b.c)
+    }
+    return group
+  }
+  // reaching two opposite edges, joined notches cut across the part, as a single notch from
+  // edge to edge does (cutoutProblem); or they leave it in pieces
+  const cutsAcross = (group: BoardCutout[]): boolean => {
+    const s = group.map(span)
+    return (s.some((g) => g[0] <= 0) && s.some((g) => g[1] >= U)) || (s.some((g) => g[2] <= 0) && s.some((g) => g[3] >= V)) ||
+      notchesSplit(face.u, face.v, group)
+  }
   return (board.cutouts ?? []).map((raw, i) => {
     const own = cutoutProblem(board, raw)
     if (notBuilt(own)) return { problem: own }
     const c = builtShape(board, raw)
-    const hit = built.find((b) => cutoutsTouch(b.c, c))
-    if (hit) return { problem: 'overlaps', other: hit.n }
-    built.push({ n: i + 1, c })
+    const notch = isNotch(board, c)
+    const touching = built.filter((b) => cutoutsTouch(b.c, c))
+    const clash = touching.find((b) => !notch || !b.notch || !rectsJoin(b.c, c))
+    if (clash) return { problem: 'overlaps', other: clash.n }
+    if (touching.length && cutsAcross(joined([c]))) {
+      // name the one whose shape cuts across together with this one; if only all of them do, the first
+      const culprit = touching.find((b) => cutsAcross([c, ...joined([b.c]).filter((g) => g !== c)])) ?? touching[0]
+      return { problem: 'splits', other: culprit.n }
+    }
+    built.push({ n: i + 1, c, notch })
     return { problem: own }
   })
 }
@@ -208,24 +292,18 @@ export function clampCutouts(board: Board): BoardCutout[] {
 export function isNotch(board: Board, c: BoardCutout): boolean {
   if (c.shape === 'circle') return false
   const face = boardFace(board)
-  return c.x <= 0 || c.z <= 0 || c.x + c.width >= face.u || c.z + c.depth >= face.v
+  const [x0, x1, z0, z1] = span(c)
+  return x0 <= 0 || z0 <= 0 || x1 >= um(face.u) || z1 >= um(face.v)
 }
 
 /**
  * Outline of a width × depth rectangle minus edge notches, counter-clockwise in the
  * (x, z) plane, collinear points merged.
- * ponytail: traces one loop; notches that split the board or meet only at a corner
- * point are not handled (no real board needs that).
+ * Notches that meet are cut as one shape (a step). Traces one loop: notches that split the
+ * board or meet only at a corner point are not handled — cutoutProblems does not build them.
  */
 export function notchedOutline(width: number, depth: number, notches: BoardCutout[]): [number, number][] {
-  const xs = [...new Set([0, width, ...notches.flatMap((c) => [c.x, c.x + c.width])])].sort((a, b) => a - b)
-  const zs = [...new Set([0, depth, ...notches.flatMap((c) => [c.z, c.z + c.depth])])].sort((a, b) => a - b)
-  const solid = (i: number, j: number): boolean => {
-    if (i < 0 || j < 0 || i >= xs.length - 1 || j >= zs.length - 1) return false
-    const cx = (xs[i] + xs[i + 1]) / 2
-    const cz = (zs[j] + zs[j + 1]) / 2
-    return !notches.some((c) => cx > c.x && cx < c.x + c.width && cz > c.z && cz < c.z + c.depth)
-  }
+  const { xs, zs, solid } = notchGrid(width, depth, notches)
   // boundary edges of the solid grid cells, each mapped start → end
   const next = new Map<string, [number, number]>()
   const key = ([x, z]: [number, number]): string => `${x},${z}`
