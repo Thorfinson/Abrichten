@@ -7,8 +7,9 @@
 // On macOS Option changes the character a key types (⌥1 → "¡", ⌥G → "©"),
 // so Alt shortcuts are matched by the physical key (e.code) instead of e.key.
 //
-// There is no application menu (src/main sets it to null), so no menu
-// accelerator handles any of these: hooks/useKeyboard.ts does.
+// hooks/useKeyboard.ts handles all of them. The macOS application menu
+// (src/main/appMenu.ts) has ⌘Z, ⇧⌘Z and ⌘A too, but the page sees a key first
+// and the menu only gets it when the page leaves it alone.
 
 import { IS_MAC } from './canvasInput'
 
