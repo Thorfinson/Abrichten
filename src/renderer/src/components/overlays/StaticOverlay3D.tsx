@@ -8,7 +8,7 @@ import { useUIStore } from '../../store/useUIStore'
 import { useViewHidden } from '../../hooks/useViewHidden'
 import { useProjectStore } from '../../store/useProjectStore'
 import { useStaticSimulation, useStaticStore, modelFieldMax, DEFORMATION_SCALE, type StaticResultType, type StaticScaleMode } from '../../store/useStaticStore'
-import { faceToWorld, worldToFace, type BoardStatic } from '../../services/static-sim'
+import { faceToWorld, openGapMm, worldToFace, type BoardStatic } from '../../services/static-sim'
 import { utilisationRgb, utilisationCss, UNSUPPORTED_COLOR, NEUTRAL_COLOR, SUPPORT_COLOR, JOINT_COLOR } from '../../services/static-calc'
 import { MAX_LOADS_PER_BOARD } from '../../utils/validateProject'
 import { HTML_Z_RANGE } from '../canvasTheme'
@@ -75,6 +75,13 @@ function heatRgba(v: number): Rgba {
 
 /** Label text of a board, or null when it gets none (ok and not selected). */
 export function staticLabel(r: BoardStatic, selected: boolean, mode: StaticResultType, t: TFunction, lang: string): string | null {
+  const text = ratingLabel(r, selected, mode, t, lang)
+  // a support assumed across a gap: why the board is not "ok" (services/static-sim SupportGap)
+  const gap = openGapMm(r)
+  return text !== null && gap !== null ? `${text} · ${t('sim.gapShort', { mm: fmt(gap, lang) })}` : text
+}
+
+function ratingLabel(r: BoardStatic, selected: boolean, mode: StaticResultType, t: TFunction, lang: string): string | null {
   if (r.status === 'unsupported') return selected ? t('sim.unsupported') : null   // purple + legend say it; labels would pile up
   if (r.status === 'wallHung') return selected ? t('sim.wallHung') : null
   if (r.status !== 'warning' && r.status !== 'critical' && !selected) return null
@@ -279,6 +286,7 @@ function BoardHeat({ result: r, scale, mode, rangeTop, contours, selected, placi
       )}
       {showHot && <HotSpot boardId={r.boardId} position={hotPos} radius={radius} breaks={breaks} />}
       {selected && rated && <Supports r={r} scale={scale} />}
+      {selected && r.gaps && <GapMarkers r={r} />}
       {label && (
         <Html position={labelPos} zIndexRange={HTML_Z_RANGE} style={{ pointerEvents: 'none', whiteSpace: 'nowrap' }}>
           <div
@@ -302,6 +310,32 @@ function BoardHeat({ result: r, scale, mode, rangeTop, contours, selected, placi
           </div>
         </Html>
       )}
+    </>
+  )
+}
+
+/** The gaps of the selected board's supports, where they are, with their width. */
+function GapMarkers({ r }: { r: BoardStatic }) {
+  const { t, i18n } = useTranslation()
+  return (
+    <>
+      {(r.gaps ?? []).map((g, i) => (
+        <Html key={i} position={[g.at.x, g.at.y, g.at.z]} zIndexRange={HTML_Z_RANGE} style={{ pointerEvents: 'none', whiteSpace: 'nowrap' }}>
+          <div
+            data-testid="static-gap"
+            data-bridged={g.bridged ? 'true' : 'false'}
+            style={{
+              transform: 'translate(-50%, -50%)',
+              background: g.bridged ? 'rgba(244,244,245,0.9)' : 'rgba(24,24,27,0.92)',
+              color: g.bridged ? '#3f3f46' : '#fde68a',
+              border: g.bridged ? '1px solid #a1a1aa' : `1px solid ${WARNING_COLOR}`,
+              borderRadius: 3, padding: '0 5px', fontSize: 10, fontWeight: 600, lineHeight: '15px', userSelect: 'none'
+            }}
+          >
+            {t(g.bridged ? 'sim.gapBridged' : 'sim.gapShort', { mm: fmt(g.mm, i18n.language) })}
+          </div>
+        </Html>
+      ))}
     </>
   )
 }
