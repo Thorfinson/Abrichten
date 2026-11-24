@@ -6,6 +6,7 @@ import { UTILISATION_GRADIENT_CSS, UTILISATION_STOPS, UNSUPPORTED_COLOR, NEUTRAL
 import { MAX_LOAD_KG } from '../../utils/validateProject'
 import { Icon } from '../layout/Icon'
 import { useDesignLocked } from '../../hooks/useDesignLocked'
+import { numberFieldValue } from '../../utils/units'
 
 /** Number field for a kg value that applies every valid entry while typing; empty reports undefined, Esc restores the value it had on focus. */
 export function KgInput({ value, onChange, placeholder, ariaLabel, className }: {
@@ -34,7 +35,7 @@ export function KgInput({ value, onChange, placeholder, ariaLabel, className }: 
       onChange={(e) => {
         setDraft(e.target.value)
         const text = e.target.value.trim()
-        const kg = Number(text)
+        const kg = numberFieldValue(text) ?? NaN
         if (text === '') onChange(undefined)
         else if (Number.isFinite(kg) && kg >= 0) onChange(Math.min(MAX_LOAD_KG, kg))
       }}

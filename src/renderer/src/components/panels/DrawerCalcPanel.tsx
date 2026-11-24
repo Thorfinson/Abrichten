@@ -8,6 +8,7 @@ import { boardBox } from '../../utils/snap'
 import { beginDragHistory, endDragHistory } from '../../utils/dragHistory'
 import type { Vec3 } from '../../types/furniture'
 import { useDesignLocked } from '../../hooks/useDesignLocked'
+import { numberFieldValue } from '../../utils/units'
 
 interface SlideSystem {
   id: string
@@ -180,7 +181,7 @@ export function DrawerCalcPanel() {
               <input
                 type="number"
                 value={openingW}
-                onChange={(e) => { const v = parseInt(e.target.value); if (!isNaN(v) && v > 0) setOpeningW(v) }}
+                onChange={(e) => { const v = numberFieldValue(e.target.value); if (v !== null && v > 0) setOpeningW(v) }}
                 className={INPUT}
               />
               <span className="text-xs text-chrome-muted">mm</span>
@@ -190,7 +191,7 @@ export function DrawerCalcPanel() {
               <input
                 type="number"
                 value={openingH}
-                onChange={(e) => { const v = parseInt(e.target.value); if (!isNaN(v) && v > 0) setOpeningH(v) }}
+                onChange={(e) => { const v = numberFieldValue(e.target.value); if (v !== null && v > 0) setOpeningH(v) }}
                 className={INPUT}
               />
               <span className="text-xs text-chrome-muted">mm</span>

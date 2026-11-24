@@ -66,8 +66,8 @@ function staticNote(name: string, r: BoardStatic | undefined, isDe: boolean, nam
   parts.push(isDe ? `Last ${(r.totalLoadN / GRAVITY).toFixed(0)} kg` : `load ${(r.totalLoadN / GRAVITY).toFixed(0)} kg`)
   if (r.minThicknessMm !== null) {
     parts.push(isDe
-      ? `Mindestdicke ${r.minThicknessMm} mm (aktuell ${Math.round(r.thicknessMm)} mm)`
-      : `minimum thickness ${r.minThicknessMm} mm (current ${Math.round(r.thicknessMm)} mm)`)
+      ? `Mindestdicke ${r.minThicknessMm} mm (aktuell ${Math.round(r.thicknessMm * 10) / 10} mm)`
+      : `minimum thickness ${r.minThicknessMm} mm (current ${Math.round(r.thicknessMm * 10) / 10} mm)`)
   }
   parts.push(...air)
   return `"${name}": ${parts.join(', ')}`

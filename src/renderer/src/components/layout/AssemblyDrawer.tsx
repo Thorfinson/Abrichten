@@ -20,6 +20,7 @@ import { useDesignLocked } from '../../hooks/useDesignLocked'
 import { EyeToggle, HighlightToggle } from '../ui/PartsToggles'
 import { CountsCheck } from '../ui/CountsCheck'
 import { assemblyCounts } from '../../utils/activeParts'
+import { numberFieldValue } from '../../utils/units'
 
 function assemblyStats(boards: Board[], customMaterials?: Material[]) {
   if (boards.length === 0) return null
@@ -227,9 +228,9 @@ export function AssemblyDrawer() {
   }
 
   const handleAddCustomBoard = (assemblyId: string) => {
-    const w = parseFloat(customW)
-    const h = parseFloat(customH)
-    const d = parseFloat(customD)
+    const w = numberFieldValue(customW) ?? NaN
+    const h = numberFieldValue(customH) ?? NaN
+    const d = numberFieldValue(customD) ?? NaN
     if (isNaN(w) || isNaN(h) || isNaN(d) || w <= 0 || h <= 0 || d <= 0) return
     const id = addBoard(assemblyId, {
       name: t('board.customBoard').replace('...', ''),

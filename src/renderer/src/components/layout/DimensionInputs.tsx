@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { fromMm, parseInput } from '../../utils/units'
+import { fromMm, parseInput, parseNumber } from '../../utils/units'
 import { evalFormula, isFormula } from '../../utils/formulaEval'
 import { isDimension, MAX_MM } from '../../utils/validateProject'
 import type { Board, Unit } from '../../types/furniture'
@@ -10,52 +10,58 @@ import type { Board, Unit } from '../../types/furniture'
  */
 
 function Vec3AxisInput({
-  axis, value, step, allowDecimals, onChange
+  axis, value, onChange, name
 }: {
   axis: 'x' | 'y' | 'z'
+  name: string
   value: number
-  step: number
-  allowDecimals: boolean
   onChange: (v: number) => void
 }) {
   const [text, setText] = useState(String(value))
-  useEffect(() => { setText(String(value)) }, [value])
+  const [invalid, setInvalid] = useState(false)
+  useEffect(() => { setText(String(value)); setInvalid(false) }, [value])
 
   return (
     <div className="flex-1 flex items-center gap-0.5">
       <span className="text-[10px] text-gray-400 uppercase font-bold">{axis}</span>
       <input
-        type="number"
-        step={step}
+        // a text field with the one number rule (utils/units.ts parseNumber): "860,3" and "1116.5" stay
+        // as typed, nothing is rounded; a browser number field would drop the comma (finding 23.11.2026)
+        type="text"
+        inputMode="decimal"
+        aria-label={`${name} ${axis}`}
+        data-testid={`vec3-${name}-${axis}`}
         value={text}
-        onChange={(e) => setText(e.target.value)}
+        aria-invalid={invalid || undefined}
+        onChange={(e) => { setText(e.target.value); setInvalid(false) }}
         onBlur={() => {
-          if (text === String(value)) return   // focus + blur alone must not round the value or add an undo step
-          const num = parseFloat(text)
-          if (!isNaN(num)) {
-            const rounded = allowDecimals ? Math.round(num * 10) / 10 : Math.round(num)
-            const v = Math.max(-MAX_MM, Math.min(MAX_MM, rounded))   // beyond it the project would not load again
-            setText(String(v))
-            if (v !== value) onChange(v)
-          }
+          if (text === String(value)) return   // focus + blur alone must not change the value or add an undo step
+          const num = parseNumber(text)
+          // no number, or beyond what the project can load again: say so, change nothing
+          if (num === null || Math.abs(num) > MAX_MM) { setInvalid(true); return }
+          setText(String(num))
+          if (num !== value) onChange(num)
         }}
-        onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
-        className="w-full text-xs border border-gray-300 rounded px-1.5 py-1 bg-white"
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
+          if (e.key === 'Escape') { setText(String(value)); setInvalid(false) }
+        }}
+        className={`w-full text-xs border rounded px-1.5 py-1 bg-white ${invalid ? 'border-red-500' : 'border-gray-300'}`}
       />
     </div>
   )
 }
 
+/** Three fields for x, y, z (position in mm, rotation in degrees). Each keeps exactly what was typed. */
 export function Vec3Input({
   value,
   onChange,
-  step = 1,
-  allowDecimals = false
+  name
 }: {
+  /** what the three fields are, for labels and tests: "position" or "rotation" */
+  name: string
   value: { x: number; y: number; z: number }
   onChange: (v: { x: number; y: number; z: number }) => void
-  step?: number
-  allowDecimals?: boolean
 }) {
   return (
     <div className="flex gap-1">
@@ -63,9 +69,8 @@ export function Vec3Input({
         <Vec3AxisInput
           key={axis}
           axis={axis}
+          name={name}
           value={value[axis]}
-          step={step}
-          allowDecimals={allowDecimals}
           onChange={(v) => onChange({ ...value, [axis]: v })}
         />
       ))}
@@ -127,6 +132,7 @@ export function DimInput({
       >{label}</label>
       <div className="relative flex-1">
         <input
+          data-testid={`dim-${field}`}
           type="text"
           value={text}
           aria-invalid={invalid || undefined}

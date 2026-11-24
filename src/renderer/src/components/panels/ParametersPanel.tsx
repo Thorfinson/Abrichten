@@ -5,6 +5,7 @@ import { useUIStore } from '../../store/useUIStore'
 import { formulaParams, isParamName } from '../../utils/formulaEval'
 import { Dialog, Button, FIELD_CLASS, LABEL_CLASS, TH_CLASS, TD_CLASS } from '../ui/Dialog'
 import { useDesignLocked } from '../../hooks/useDesignLocked'
+import { numberFieldValue } from '../../utils/units'
 
 /** Count how many boards reference a parameter in their formula strings */
 function countUsage(paramName: string, assemblies: { boards: { widthFormula?: string; heightFormula?: string; depthFormula?: string }[] }[]): number {
@@ -54,7 +55,7 @@ export function ParametersPanel() {
 
   const handleAdd = () => {
     const name = newName.trim()
-    const val = parseFloat(newValue)
+    const val = numberFieldValue(newValue) ?? NaN
     if (!name || isNaN(val)) return
     if (!isParamName(name)) { setNameError(t('store.paramInvalidName')); return }
     setNameError(null)
@@ -145,7 +146,7 @@ export function ParametersPanel() {
                     defaultValue={value}
                     aria-label={`${t('parameters.value')} ${name}`}
                     onBlur={(e) => {
-                      const v = parseFloat(e.target.value)
+                      const v = numberFieldValue(e.target.value) ?? NaN
                       if (!isNaN(v)) setParameter(name, v)
                     }}
                     onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}

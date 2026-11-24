@@ -9,6 +9,7 @@ import { cuttingDims } from '../../utils/cuttingDims'
 import { Dialog, Button, FIELD_CLASS, SECTION_LABEL_CLASS, TD_CLASS, CHECK_CLASS } from '../ui/Dialog'
 import type { Board, MaterialCategory } from '../../types/furniture'
 import { useDesignLocked } from '../../hooks/useDesignLocked'
+import { numberFieldValue } from '../../utils/units'
 
 type BackPanelType = 'none' | 'groove' | 'face'
 
@@ -192,7 +193,7 @@ export function KorpusPanel() {
         type="number"
         value={value}
         min={min}
-        onChange={(e) => { const v = parseFloat(e.target.value); if (!isNaN(v) && v >= min) onChange(v) }}
+        onChange={(e) => { const v = numberFieldValue(e.target.value); if (v !== null && v >= min) onChange(v) }}
         className={`${FIELD_CLASS} w-24 text-right`}
       />
     </label>
@@ -279,7 +280,7 @@ export function KorpusPanel() {
               min={0}
               max={10}
               value={cfg.shelves}
-              onChange={(e) => { const v = parseInt(e.target.value); if (!isNaN(v) && v >= 0) set({ shelves: v }) }}
+              onChange={(e) => { const v = numberFieldValue(e.target.value); if (v !== null && Number.isInteger(v) && v >= 0) set({ shelves: v }) }}
               className={`${FIELD_CLASS} w-16 text-right`}
             />
           </label>

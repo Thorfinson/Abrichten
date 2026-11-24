@@ -50,7 +50,7 @@ function newFastener(type: FastenerType = 'wood_screw'): Fastener {
 /** A fastener row as the user left it, brought into the bounds the project file accepts. */
 function cleanFastener(f: Fastener): Fastener {
   const size = (v: number, fallback: number): number =>
-    Number.isFinite(v) && v > 0 ? Math.min(MAX_FASTENER_MM, Math.round(v * 10) / 10) : fallback
+    Number.isFinite(v) && v > 0 ? Math.min(MAX_FASTENER_MM, v) : fallback   // as typed: 3.25 stays 3.25 (finding 23.11.2026)
   const d = FASTENER_DEFAULTS[f.type]
   return {
     ...f,

@@ -14,6 +14,7 @@ import { Dialog, Button, FIELD_CLASS, TH_CLASS, TD_CLASS, CHECK_CLASS, SECTION_L
 import { groupByRole, roleKey, type RoleGroup } from '../../utils/boardRole'
 import type { BoardRole } from '../../types/furniture'
 import { useDesignHint, useDesignLocked } from '../../hooks/useDesignLocked'
+import { numberFieldValue } from '../../utils/units'
 
 /** Format a number as currency, locale-aware */
 function formatCurrency(value: number, lang: 'de' | 'en'): string {
@@ -285,7 +286,7 @@ th{background:#f0f0f0}tr.g td{font-weight:bold;background:#f7f7f7}tfoot td{font-
                       defaultValue={p.price || ''}
                       placeholder="0"
                       onBlur={(e) => {
-                        const v = parseFloat(e.target.value)
+                        const v = numberFieldValue(e.target.value) ?? NaN
                         // only an actual change becomes an own price; tabbing past keeps the guide value
                         if (!isNaN(v) && v !== p.price) setMaterialPrice(mat.id, v)
                       }}
@@ -406,7 +407,7 @@ th{background:#f0f0f0}tr.g td{font-weight:bold;background:#f7f7f7}tfoot td{font-
                 min="0"
                 step="0.5"
                 value={laborHours}
-                onChange={(e) => setLaborDetails(parseFloat(e.target.value) || 0, laborRate, overheadPct)}
+                onChange={(e) => setLaborDetails(numberFieldValue(e.target.value) ?? 0, laborRate, overheadPct)}
                 disabled={locked}
                 title={locked ? readOnly : undefined}
                 className={`${FIELD_CLASS} w-16 text-right`}
@@ -420,7 +421,7 @@ th{background:#f0f0f0}tr.g td{font-weight:bold;background:#f7f7f7}tfoot td{font-
                 min="0"
                 step="1"
                 value={laborRate}
-                onChange={(e) => setLaborDetails(laborHours, parseFloat(e.target.value) || 0, overheadPct)}
+                onChange={(e) => setLaborDetails(laborHours, numberFieldValue(e.target.value) ?? 0, overheadPct)}
                 disabled={locked}
                 title={locked ? readOnly : undefined}
                 className={`${FIELD_CLASS} w-16 text-right`}
@@ -434,8 +435,8 @@ th{background:#f0f0f0}tr.g td{font-weight:bold;background:#f7f7f7}tfoot td{font-
                 min="0"
                 max="100"
                 step="1"
-                value={Math.round(overheadPct * 100)}
-                onChange={(e) => setLaborDetails(laborHours, laborRate, (parseFloat(e.target.value) || 0) / 100)}
+                value={Math.round(overheadPct * 10000) / 100}   // as typed: 12.5 % stays 12.5
+                onChange={(e) => setLaborDetails(laborHours, laborRate, (numberFieldValue(e.target.value) ?? 0) / 100)}
                 disabled={locked}
                 title={locked ? readOnly : undefined}
                 className={`${FIELD_CLASS} w-16 text-right`}

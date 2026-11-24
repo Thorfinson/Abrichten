@@ -71,12 +71,15 @@ function RotationRing({ axis, centre, board, assemblyId }: RingProps): JSX.Eleme
     startU: number
     startV: number
     startRotation: number
+    /** Direction of the press seen from the board's centre, degrees */
+    startAngle: number
     plane: THREE.Plane
   }>({
     active: false,
     startU: 0,
     startV: 0,
     startRotation: 0,
+    startAngle: 0,
     plane: new THREE.Plane()
   })
 
@@ -115,13 +118,17 @@ function RotationRing({ axis, centre, board, assemblyId }: RingProps): JSX.Eleme
       const w = intersectPlane(e.clientX, e.clientY)
       if (!w) return
       const coords = toPlaneCoords(w, live.axis)
+      // the angle is measured around the board's centre, from where the ring was taken (startU/V = centre,
+      // startAngle = direction of the press); before, it was measured from the press point itself, so a
+      // tremble of one pixel could turn the board by up to 180° (finding 23.11.2026, second review)
       const currentAngle = Math.atan2(coords.v - drag.current.startV, coords.u - drag.current.startU) * 180 / Math.PI
-      const baseAngle = Math.atan2(0, 1) * 180 / Math.PI // 0
-      let deltaAngle = currentAngle - baseAngle
+      let deltaAngle = currentAngle - drag.current.startAngle
       while (deltaAngle > 180) deltaAngle -= 360
       while (deltaAngle < -180) deltaAngle += 360
       if (live.snapEnabled) deltaAngle = Math.round(deltaAngle / 90) * 90
-      const newAngle = Math.round(drag.current.startRotation + deltaAngle)
+      // whole degrees turned, the start angle kept as it is (30.5° stays x.5); below half a degree nothing changes
+      const newAngle = drag.current.startRotation + Math.round(deltaAngle)
+      if (newAngle === live.board.rotation[live.axis]) return
       live.updateBoard(live.assemblyId, live.board.id, {
         rotation: { ...live.board.rotation, [live.axis]: newAngle }
       })
@@ -186,9 +193,8 @@ function RotationRing({ axis, centre, board, assemblyId }: RingProps): JSX.Eleme
           const p = toPlaneCoords(w, axis)
           drag.current.startU = c.u
           drag.current.startV = c.v
-          // Set baseline so that current pointer angle = 0 initially
-          drag.current.startU = c.u + (p.u - c.u)
-          drag.current.startV = c.v + (p.v - c.v)
+          // the direction of the press, seen from the centre: turning is measured from here
+          drag.current.startAngle = Math.atan2(p.v - c.v, p.u - c.u) * 180 / Math.PI
           drag.current.startRotation = board.rotation[axis]
           drag.current.active = true
           // Esc cancels: drop the drag state; the caller restores the pre-drag project

@@ -7,6 +7,7 @@ import { hardwareItems, getHardwareByCategory, cleanBridgesMm } from '../../data
 import type { HardwareCategory, HardwareItem } from '../../data/hardware'
 import type { CustomHardwareItem } from '../../types/furniture'
 import { useDesignHint, useDesignLocked } from '../../hooks/useDesignLocked'
+import { parseNumber, numberFieldValue } from '../../utils/units'
 
 /** Why adding is off in the assembly workspace, else nothing (store/designLock.ts). */
 function useLockedTitle(): string | undefined {
@@ -65,7 +66,7 @@ function HardwareRow({
 
 const mmText = (n: number, lang: string): string => n.toLocaleString(lang, { maximumFractionDigits: 3 })
 const mmNumber = (v: string): number | null => {
-  const n = Number(v.trim().replace(',', '.'))
+  const n = parseNumber(v) ?? NaN
   return v.trim() !== '' && Number.isFinite(n) ? n : null
 }
 
@@ -171,8 +172,8 @@ function CustomHardwareSection({
       nameEn: nameEn.trim() || name.trim(),
       category,
       manufacturer: manufacturer.trim() || undefined,
-      drillingDiameter: drillingDiam ? Number(drillingDiam) : undefined,
-      unitPrice: unitPrice ? Number(unitPrice) : 0,
+      drillingDiameter: drillingDiam ? (numberFieldValue(drillingDiam) ?? undefined) : undefined,
+      unitPrice: unitPrice ? (numberFieldValue(unitPrice) ?? 0) : 0,
       ...(bridgesMm ? { bridgesMm } : {})
     }
     addCustomHardware(item)

@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next'
 import { memo, useMemo } from 'react'
 import { Line, Html } from '@react-three/drei'
 import { useProjectStore } from '../../store/useProjectStore'
@@ -106,6 +107,7 @@ interface BoardDimsProps {
 
 const BoardDimensions = memo(function BoardDimensions({ board, activeView, staggerIdx }: BoardDimsProps) {
   const displayUnit = useProjectStore((s) => s.project.displayUnit)
+  const lang = useTranslation().i18n.language   // German shows 1.200 mm and 6,5 mm
 
   const aabb = useMemo(() => computeAABB(board), [board])
 
@@ -158,8 +160,8 @@ const BoardDimensions = memo(function BoardDimensions({ board, activeView, stagg
 
   return (
     <group>
-      <DimLine3D from={hFrom} to={hTo} label={formatValue(board[dims.h], displayUnit)} offset={hOffset} />
-      <DimLine3D from={vFrom} to={vTo} label={formatValue(board[dims.v], displayUnit)} offset={vOffset} />
+      <DimLine3D from={hFrom} to={hTo} label={formatValue(board[dims.h], displayUnit, lang)} offset={hOffset} />
+      <DimLine3D from={vFrom} to={vTo} label={formatValue(board[dims.v], displayUnit, lang)} offset={vOffset} />
     </group>
   )
 })
@@ -176,6 +178,7 @@ interface GroupDimsProps {
  *  or a large selection. */
 const AssemblyDimensions = memo(function AssemblyDimensions({ boards, activeView, offset = OUTER_OFF, color = CANVAS.dimAssembly }: GroupDimsProps) {
   const displayUnit = useProjectStore((s) => s.project.displayUnit)
+  const lang = useTranslation().i18n.language   // German shows 1.200 mm and 6,5 mm
 
   const aabb = useMemo(() => {
     let minX = Infinity, maxX = -Infinity
@@ -254,13 +257,13 @@ const AssemblyDimensions = memo(function AssemblyDimensions({ boards, activeView
     <group>
       <DimLine3D
         from={hFrom} to={hTo}
-        label={formatValue(hVal, displayUnit)}
+        label={formatValue(hVal, displayUnit, lang)}
         offset={hOffset}
         color={color}
       />
       <DimLine3D
         from={vFrom} to={vTo}
-        label={formatValue(vVal, displayUnit)}
+        label={formatValue(vVal, displayUnit, lang)}
         offset={vOffset}
         color={color}
       />

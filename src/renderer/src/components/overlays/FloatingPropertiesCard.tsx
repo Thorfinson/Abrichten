@@ -491,6 +491,7 @@ export function FloatingPropertiesCard() {
           <div className="text-[9px] text-white/40 mb-1">{lang === 'de' ? 'Position (mm)' : 'Position (mm)'}</div>
           <div className="[&_input]:bg-white/8 [&_input]:border-white/15 [&_input]:text-white [&_span]:text-white/40">
             <Vec3Input
+              name="position"
               value={board.position}
               onChange={(pos) => handleUpdate({ position: pos })}
             />
@@ -498,9 +499,9 @@ export function FloatingPropertiesCard() {
           <div className="text-[9px] text-white/40 mb-1 mt-2">{lang === 'de' ? 'Rotation (°)' : 'Rotation (°)'}</div>
           <div className="[&_input]:bg-white/8 [&_input]:border-white/15 [&_input]:text-white [&_span]:text-white/40">
             <Vec3Input
+              name="rotation"
               value={board.rotation}
               onChange={(rot) => handleUpdate({ rotation: rot })}
-              allowDecimals
             />
           </div>
         </Section>

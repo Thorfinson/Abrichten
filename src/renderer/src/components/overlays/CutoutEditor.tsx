@@ -4,6 +4,7 @@ import { CommitInput } from '../ui/CommitInput'
 import { boardFace } from '../../utils/boardFace'
 import { clampCutouts, cutoutProblems, cutoutsTouch, faceCutout } from '../../utils/geometry'
 import { cutoutInRoom, cutoutKind, faceAxesInRoom, placementOf, storedFromFace, storedPlacement, switchEdge, type EdgePlacement, type FaceAxisInRoom } from '../../utils/cutoutPlace'
+import { numberFieldValue } from '../../utils/units'
 
 const FIELD = 'w-14 shrink-0 text-[10px] bg-white/8 border border-white/15 text-white rounded px-1 py-0.5 outline-none text-right'
 const SELECT = 'min-w-0 text-[10px] bg-white/8 border border-white/15 text-white rounded px-0.5 py-0.5 outline-none'
@@ -62,7 +63,8 @@ export function CutoutEditor({ board, onChange }: { board: Board; onChange: (cut
         const round = c.shape === 'circle'
         // not built: not called a notch (it is at no edge of the part); the hint says why
         const kind = problem === 'outside' || problem === 'splits' || problem === 'overlaps' ? (round ? 'round' : 'hole') : cutoutKind(board, fc)
-        const num = (text: string): number | null => { const n = parseFloat(text.replace(',', '.')); return Number.isFinite(n) && n >= 0 ? n : null }
+        // browser number fields (type=number): the browser has read the input already
+        const num = (text: string): number | null => { const n = numberFieldValue(text); return n !== null && n >= 0 ? n : null }
         const edgePick = (a: FaceAxisInRoom, which: 'u' | 'v') => (
           <select
             aria-label={t('cutout.from')}

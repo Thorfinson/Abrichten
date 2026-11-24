@@ -7,7 +7,7 @@ import type { Measurement } from '../../types/measurement'
 
 function measurementLabel(m: Measurement, displayUnit: string, lang: 'de' | 'en'): string {
   if (m.type === 'distance') {
-    return `${lang === 'de' ? 'Abstand' : 'Distance'}: ${formatValue(m.distance, displayUnit as any)}`
+    return `${lang === 'de' ? 'Abstand' : 'Distance'}: ${formatValue(m.distance, displayUnit as any, lang)}`
   }
   if (m.type === 'angle') {
     return `${lang === 'de' ? 'Winkel' : 'Angle'}: ${m.angle.toFixed(1)}°`

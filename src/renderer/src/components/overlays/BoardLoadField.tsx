@@ -7,6 +7,7 @@ import { getMaterialById } from '../../data/materials'
 import { boardWeightKg } from '../../services/static-sim'
 import type { Board, PlacedLoad } from '../../types/furniture'
 import { useDesignLocked } from '../../hooks/useDesignLocked'
+import { numberFieldValue } from '../../utils/units'
 
 interface BoardLoadFieldProps {
   assemblyId: string
@@ -41,7 +42,7 @@ function KgField({ id, value, optional, placeholder, ariaLabel, step = 1, testId
     // A half-typed number ("1e", "-") reads as "": keep the stored value instead of clearing it
     if (input.validity.badInput) { setDraft(stored); return }
     const text = draft.trim()
-    const kg = text === '' ? undefined : Number(text)
+    const kg = text === '' ? undefined : (numberFieldValue(text) ?? NaN)
     if ((kg === undefined && !optional) || (kg !== undefined && !isLoadKg(kg))) { setDraft(stored); return }
     if (kg !== value) onCommit(kg)
   }
