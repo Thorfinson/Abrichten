@@ -2,8 +2,9 @@ import { useMemo, useRef } from 'react'
 import { Canvas, useThree } from '@react-three/fiber'
 import { OrbitControls } from '@react-three/drei'
 import { useProjectStore } from '../store/useProjectStore'
+import { useViewHidden } from '../hooks/useViewHidden'
 import { useUIStore, CanvasViewContext } from '../store/useUIStore'
-import { activeJoints } from '../utils/activeParts'
+import { activeJoints, assemblyCounts } from '../utils/activeParts'
 import { Board3D } from './views3d/Board3D'
 import { CameraController } from './CameraController'
 import { OrthoGrid } from './OrthoGrid'
@@ -27,13 +28,14 @@ import { CANVAS } from './canvasTheme'
 
 /** Syncs the current R3F camera to an external ref (for use outside the Canvas) */
 function CameraSync({ cameraRef, view }: { cameraRef: React.RefObject<THREE.Camera | null>; view?: ViewMode }) {
-  const { camera, scene, size, gl } = useThree()
+  const { camera, scene, size, gl, controls } = useThree()
   ;(cameraRef as React.MutableRefObject<THREE.Camera | null>).current = camera
   // Test/debug: expose R3F state on window so Playwright (etc.) can compute
   // projected screen positions of any mesh in the scene. In quad layout each
-  // quadrant is also reachable by its view via __r3fViews.
+  // quadrant is also reachable by its view via __r3fViews. `controls`: the
+  // 3D view's OrbitControls (orbit target), null in the ortho views.
   if (typeof window !== 'undefined') {
-    const state = { camera, scene, size, gl, THREE }
+    const state = { camera, scene, size, gl, controls, THREE }
     ;(window as any).__r3f = state
     if (view) ((window as any).__r3fViews ??= {})[view] = state
   }
@@ -48,6 +50,9 @@ function CameraSync({ cameraRef, view }: { cameraRef: React.RefObject<THREE.Came
 export function UnifiedCanvas({ forceView }: { forceView?: ViewMode } = {}) {
   const assemblies = useProjectStore((s) => s.project.assemblies)
   const storeView = useUIStore((s) => s.activeView)
+  const workspace = useUIStore((s) => s.workspace)
+  const highlightedParts = useUIStore((s) => s.highlightedParts)
+  const viewHidden = useViewHidden()
   const activeView = forceView ?? storeView
   const orbitRef = useRef<any>(null)
   const canvasContainerRef = useRef<HTMLDivElement>(null)
@@ -83,8 +88,8 @@ export function UnifiedCanvas({ forceView }: { forceView?: ViewMode } = {}) {
           useUIStore.getState().deselectAll()
         }}
       >
-        {/* Camera management (ortho/perspective switching, zoom, pan) */}
-        <CameraController orbitRef={orbitRef} />
+        {/* Camera management (ortho/perspective switching, zoom, pan, trackpad gestures) */}
+        <CameraController orbitRef={orbitRef} containerRef={canvasContainerRef} />
         <CameraSync cameraRef={cameraRef} view={forceView} />
 
         {/* Lighting — three divides diffuse light by π, so these add up to
@@ -97,13 +102,14 @@ export function UnifiedCanvas({ forceView }: { forceView?: ViewMode } = {}) {
         {/* Grid + colored origin axes + mm labels */}
         <OrthoGrid />
 
-        {/* Boards (skip hidden assemblies). While any assembly is highlighted,
-            all other assemblies are ghosted so the highlighted one reads
-            clearly through the rest of the model. */}
+        {/* Boards (only assemblies that count). While parts are picked out by the X-ray
+            (design workspace), all others are ghosted so they read through the model. */}
         {(() => {
-          const anyHighlight = assemblies.some((a) => a.highlight && a.visible !== false)
+          // picked out and seen: an X-ray on parts the eye hides ghosts nothing
+          const lit = workspace === 'assembly' ? new Set<string>() : new Set(highlightedParts.filter((id) => !viewHidden.has(id)))
+          const anyHighlight = lit.size > 0 && assemblies.some((a) => assemblyCounts(a) && a.boards.some((b) => lit.has(b.id)))
           return assemblies
-            .filter((assembly) => assembly.visible !== false)
+            .filter(assemblyCounts)
             .flatMap((assembly) =>
               assembly.boards.map((board) => (
                 <Board3D
@@ -111,8 +117,8 @@ export function UnifiedCanvas({ forceView }: { forceView?: ViewMode } = {}) {
                   board={board}
                   assemblyId={assembly.id}
                   orbitRef={orbitRef}
-                  highlight={assembly.highlight === true}
-                  dimmed={anyHighlight && assembly.highlight !== true}
+                  highlight={lit.has(board.id)}
+                  dimmed={anyHighlight && !lit.has(board.id)}
                   jointCount={jointCounts.get(board.id) ?? 0}
                 />
               ))
@@ -155,7 +161,8 @@ export function UnifiedCanvas({ forceView }: { forceView?: ViewMode } = {}) {
         {/* OrbitControls only for 3D perspective view.
             Left-button reserved for selection + TC gizmos (Blender-style).
             Middle button rotates, right button pans. Damping turned off so
-            middle-drag feels responsive instead of "lagging" after release. */}
+            middle-drag feels responsive instead of "lagging" after release.
+            Trackpad gestures and ⌥-drag are CameraController's. */}
         {activeView === '3d' && (
           <OrbitControls
             ref={orbitRef}

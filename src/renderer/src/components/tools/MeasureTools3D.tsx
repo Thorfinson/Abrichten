@@ -84,6 +84,7 @@ function MeasureDeleteBtn({ idx, color }: { idx: number; color: string }) {
 const StoredMeasurements = memo(function StoredMeasurements({ activeView }: { activeView: ViewMode }) {
   const measurements = useUIStore((s) => s.measurements)
   const displayUnit = useProjectStore((s) => s.project.displayUnit)
+  const lang = useTranslation().i18n.language   // German shows 1.200 mm and 6,5 mm
 
   return (
     <>
@@ -104,7 +105,7 @@ const StoredMeasurements = memo(function StoredMeasurements({ activeView }: { ac
               <mesh renderOrder={ON_TOP} position={to}><sphereGeometry args={[3, 8, 8]} /><meshBasicMaterial color={DIST} transparent depthTest={false} /></mesh>
               <Html position={mid} center style={{ pointerEvents: 'auto' }} zIndexRange={HTML_Z_RANGE}>
                 <span style={measureLabelStyle(DIST)}>
-                  {formatValue(m.distance, displayUnit)}
+                  {formatValue(m.distance, displayUnit, lang)}
                   <MeasureDeleteBtn idx={idx} color={DIST} />
                 </span>
               </Html>

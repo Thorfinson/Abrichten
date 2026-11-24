@@ -7,6 +7,8 @@ import { drawerBoxParts, DRAWER_WALL_MM, DRAWER_BOTTOM_MM } from '../../utils/ge
 import { boardBox } from '../../utils/snap'
 import { beginDragHistory, endDragHistory } from '../../utils/dragHistory'
 import type { Vec3 } from '../../types/furniture'
+import { useDesignLocked } from '../../hooks/useDesignLocked'
+import { numberFieldValue } from '../../utils/units'
 
 interface SlideSystem {
   id: string
@@ -109,7 +111,9 @@ export function DrawerCalcPanel() {
   const [slideId, setSlideId] = useState('blum-tandem')
   const [slideLength, setSlideLength] = useState(DEFAULT_SLIDE_LENGTH)
 
-  if (!showDrawerCalcPanel) return null
+  // a tool of the design: not in the assembly workspace (store/designLock.ts)
+  const locked = useDesignLocked()
+  if (locked || !showDrawerCalcPanel) return null
 
   const close = () => setShowDrawerCalcPanel(false)
   const sys = SLIDE_SYSTEMS.find((s) => s.id === slideId) ?? SLIDE_SYSTEMS[0]
@@ -177,7 +181,7 @@ export function DrawerCalcPanel() {
               <input
                 type="number"
                 value={openingW}
-                onChange={(e) => { const v = parseInt(e.target.value); if (!isNaN(v) && v > 0) setOpeningW(v) }}
+                onChange={(e) => { const v = numberFieldValue(e.target.value); if (v !== null && v > 0) setOpeningW(v) }}
                 className={INPUT}
               />
               <span className="text-xs text-chrome-muted">mm</span>
@@ -187,7 +191,7 @@ export function DrawerCalcPanel() {
               <input
                 type="number"
                 value={openingH}
-                onChange={(e) => { const v = parseInt(e.target.value); if (!isNaN(v) && v > 0) setOpeningH(v) }}
+                onChange={(e) => { const v = numberFieldValue(e.target.value); if (v !== null && v > 0) setOpeningH(v) }}
                 className={INPUT}
               />
               <span className="text-xs text-chrome-muted">mm</span>

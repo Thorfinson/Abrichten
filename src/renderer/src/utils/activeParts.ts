@@ -1,13 +1,20 @@
 import type { Assembly, Joint, Project } from '../types/furniture'
 
 /**
- * Assemblies that count. Hiding an assembly (eye icon in the assembly drawer)
- * takes it out of the 3D view AND out of every list and total — cutting list,
- * fastener summary, cost, nesting, boring list, shop drawings. This is how
- * design variants of one project are switched.
+ * Does this assembly count? The one reading of its tick (Assembly.visible, the tick in the
+ * parts column, components/ui/CountsCheck): an unticked assembly is out of the 3D view AND
+ * out of every list and total — cutting list, fastener summary, cost, nesting, boring list,
+ * shop drawings, statics, assembly steps. This is how design variants of one project are
+ * switched. No tick saved means it counts (older files). What only hides from view is the
+ * eye (store/useUIStore hiddenParts), not this. A guard test keeps every reading here.
  */
-export function activeAssemblies(project: Project): Assembly[] {
-  return project.assemblies.filter((a) => a.visible !== false)
+export function assemblyCounts(a: { visible?: unknown }): boolean {
+  return a.visible !== false
+}
+
+/** The assemblies that count (assemblyCounts). */
+export function activeAssemblies(project: Pick<Project, 'assemblies'>): Assembly[] {
+  return project.assemblies.filter(assemblyCounts)
 }
 
 export interface ActiveJoint {

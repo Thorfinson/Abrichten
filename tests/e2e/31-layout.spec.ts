@@ -41,8 +41,8 @@ test.describe('Layout chrome', () => {
     const drawerBox = (await drawer.boundingBox())!
 
     await expect.poll(async () => (await canvasRect(page)).x).toBeGreaterThanOrEqual(drawerBox.x + drawerBox.width - 1)
-    const after = await canvasRect(page)
-    expect(after.width).toBeLessThan(before.width - drawerBox.width + 2)
+    // the canvas follows its box a moment later (react-three-fiber measures debounced)
+    await expect.poll(async () => (await canvasRect(page)).width).toBeLessThan(before.width - drawerBox.width + 2)
     expect((await tabs.boundingBox())!.x).toBeGreaterThan(tabsBefore.x + drawerBox.width - 2)
 
     // B closes it again and the canvas takes the full width back
@@ -217,6 +217,8 @@ test.describe('Layout chrome', () => {
     await page.keyboard.press('?')
     const dialog = page.getByRole('dialog', { name: /Tastaturkürzel|Keyboard Shortcuts/ })
     await expect(dialog.getByText(/^(Einrasten \(Snap\) ein\/aus|Snapping on\/off)$/)).toBeVisible()
-    await expect(dialog.getByText('Alt+G', { exact: true })).toBeVisible()
+    // ⌥G on macOS (34-mac-shortcuts pins the platform)
+    const mac = await page.evaluate(() => /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent))
+    await expect(dialog.getByText(mac ? '⌥G' : 'Alt+G', { exact: true })).toBeVisible()
   })
 })

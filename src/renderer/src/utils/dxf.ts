@@ -20,8 +20,9 @@ function dxfText(s: string): string {
  *
  * Each board is drawn as its face (boardFace: the two dimensions besides the
  * thickness). Boards are laid out in a row separated by a 50 mm gap.
+ * `labels`: the part labels ("Herd 2", utils/partLabel) by board id, put in front of the names.
  */
-export function exportDxf(boards: Board[]): string {
+export function exportDxf(boards: Board[], labels?: Map<string, string>): string {
   const lines: string[] = []
 
   // ── HEADER ──────────────────────────────────────────────────────────────
@@ -80,10 +81,13 @@ export function exportDxf(boards: Board[]): string {
     }
     lines.push('0', 'SEQEND')
 
-    // ── Cutouts (CUTOUT layer) — through-thickness openings ──────────────
-    // Cutouts run through the height axis, so they pierce the face only when the
-    // height is the thickness; then the face is width × depth, as the cutout x/z.
-    for (const c of face.thicknessAxis === 'height' ? clampCutouts(board) : []) {
+    // ── Cutouts (CUTOUT layer) — through-thickness openings on the face (u × v) ──
+    for (const c of clampCutouts(board)) {
+      if (c.shape === 'circle') {
+        const r = c.width / 2
+        lines.push('0', 'CIRCLE', '8', 'CUTOUT', '10', (x0 + c.x + r).toFixed(3), '20', (y0 + c.z + r).toFixed(3), '30', '0.0', '40', r.toFixed(3))
+        continue
+      }
       lines.push('0', 'POLYLINE', '8', 'CUTOUT', '66', '1', '70', '1')
       const cc: [number, number][] = [
         [x0 + c.x,           y0 + c.z],
@@ -135,7 +139,8 @@ export function exportDxf(boards: Board[]): string {
     lines.push('0', 'TEXT', '8', 'TEXT')
     lines.push('10', (x0 + 4).toFixed(3), '20', (y0 + 4).toFixed(3), '30', '0.0')
     lines.push('40', '8')
-    lines.push('1', dxfText(`${board.name}  ${w}x${d}x${face.thickness}mm`))
+    const label = labels?.get(board.id) // part-name-ok: the label goes in front of the name below
+    lines.push('1', dxfText(`${label ? `${label}  ` : ''}${board.name}  ${w}x${d}x${face.thickness}mm`))
 
     offsetX += w + GAP
   }

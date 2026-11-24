@@ -1,7 +1,9 @@
 import type { JSX } from 'react'
 import { useProjectStore } from '../../store/useProjectStore'
 import { useUIStore } from '../../store/useUIStore'
+import { useViewHidden } from '../../hooks/useViewHidden'
 import { grooveBox } from '../../utils/geometry'
+import { assemblyCounts } from '../../utils/activeParts'
 
 /**
  * Renders visual groove marks for dado and rabbet joints.
@@ -11,6 +13,7 @@ import { grooveBox } from '../../utils/geometry'
 export function JointGrooves3D() {
   const showJointMarkers = useUIStore((s) => s.showJointMarkers)
   const project = useProjectStore((s) => s.project)
+  const hidden = useViewHidden()
 
   if (!showJointMarkers) return null
 
@@ -20,14 +23,15 @@ export function JointGrooves3D() {
   const boardMap = new Map(project.assemblies.flatMap((a) => a.boards).map((b) => [b.id, b]))
 
   for (const assembly of project.assemblies) {
-    if (assembly.visible === false) continue
+    if (!assemblyCounts(assembly)) continue
 
     for (const joint of assembly.joints) {
       if (joint.type !== 'dado' && joint.type !== 'rabbet') continue
 
       const boardA = boardMap.get(joint.boardA)
       const boardB = boardMap.get(joint.boardB)
-      if (!boardA || !boardB) continue
+      // a groove of a part the assembly step view hides is not drawn
+      if (!boardA || !boardB || hidden.has(boardA.id) || hidden.has(boardB.id)) continue
 
       const { centre, size } = grooveBox(joint.position, boardA, boardB)
       grooves.push(

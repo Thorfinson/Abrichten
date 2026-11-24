@@ -69,7 +69,7 @@ test.describe('Joint editing and fasteners', () => {
   test('clicking a joint in the card opens it for editing; save is one undo step', async ({ page }) => {
     await bootWithSample(page)
     await selectBoard(page, 'asm-1', 'b-links')
-    await page.getByRole('button', { name: /· Boden/ }).click()
+    await page.getByRole('button', { name: /· Wandschrank 3 Boden/ }).click()
     const dialog = page.getByRole('dialog', { name: /Verbindung bearbeiten|Edit Joint/ })
     await expect(dialog).toBeVisible()
     // the sample joint comes with 3 confirmat screws
@@ -98,7 +98,7 @@ test.describe('Joint editing and fasteners', () => {
   test('cancel and Esc leave the joint untouched; the next J opens a new joint', async ({ page }) => {
     await bootWithSample(page)
     await selectBoard(page, 'asm-1', 'b-links')
-    const row = page.getByRole('button', { name: /· Boden/ })
+    const row = page.getByRole('button', { name: /· Wandschrank 3 Boden/ })
     await row.click()
     const dialog = page.getByRole('dialog', { name: /Verbindung bearbeiten|Edit Joint/ })
     await dialog.getByRole('combobox', { name: /Verbindungstyp|Joint type/ }).selectOption('glued')
@@ -129,5 +129,71 @@ test.describe('Joint editing and fasteners', () => {
     const joints = await page.evaluate(() => window.__projectStore.getState().project.assemblies[0].joints)
     const added = joints.find((j: any) => j.boardA === 'b-einlegeboden')
     expect(added.fasteners.map((f: any) => [f.type, f.diameter, f.length, f.quantity])).toEqual([['wood_screw', 4, 50, 4]])
+  })
+})
+
+test.describe('Part role (Bauteilart)', () => {
+  const rolePicker = (page: Page) => page.getByRole('combobox', { name: /^(Bauteilart|Part role)$/ })
+
+  test('set in the card for one board or several at once, one undo step each', async ({ page }) => {
+    await bootWithSample(page)
+    await selectBoard(page, 'asm-1', 'b-rueckwand')
+    const steps = await undoSteps(page)
+    await expect(rolePicker(page)).toHaveValue('')
+    await rolePicker(page).selectOption('back')
+    expect((await boardById(page, 'b-rueckwand')).role).toBe('back')
+    await expect(page.getByText(/Rückwand des Korpus|Back of the carcass/)).toBeVisible()
+    expect(await undoSteps(page)).toBe(steps + 1)
+
+    // several boards with different roles: shown as mixed, one choice sets all in one step
+    await page.evaluate(() => window.__uiStore.setState({ selectedAssemblyId: 'asm-1', selectedBoardIds: ['b-links', 'b-rechts', 'b-rueckwand'] }))
+    await expect(rolePicker(page)).toHaveValue('__mixed')
+    await rolePicker(page).selectOption('carcass')
+    for (const id of ['b-links', 'b-rechts', 'b-rueckwand']) expect((await boardById(page, id)).role).toBe('carcass')
+    expect(await undoSteps(page)).toBe(steps + 2)
+    await page.evaluate(() => (window.__projectStore.temporal.getState() as any).undo())
+    expect((await boardById(page, 'b-rueckwand')).role).toBe('back')
+    expect((await boardById(page, 'b-links')).role).toBeUndefined()
+  })
+
+  test('cutting list and cost panel group and filter by role', async ({ page }) => {
+    await bootWithSample(page)
+    await page.evaluate(() => {
+      const st = window.__projectStore.getState()
+      st.setBoardsRole('asm-1', ['b-links', 'b-rechts'], 'carcass')
+      st.setBoardsRole('asm-1', ['b-rueckwand'], 'back')
+    })
+
+    // cutting list: role column, sections in role order, filter
+    await page.evaluate(() => window.__uiStore.getState().setShowCuttingList(true))
+    const cutting = page.getByRole('dialog', { name: /Zuschnittliste|Cutting List/ })
+    await expect(cutting.getByRole('columnheader', { name: /^(Bauteilart|Part role)$/ })).toBeVisible()
+    const total = await cutting.locator('tbody tr').count()
+    await cutting.getByLabel(/^(Nach Bauteilart|By part role)$/).check()
+    await expect(cutting.getByTestId('role-group')).toHaveText([/(Korpus|Carcass).*2/, /(Rückwand|Back panel).*1/, /(ohne Bauteilart|no part role)/])
+    await cutting.getByRole('combobox', { name: /^(Bauteilart|Part role)$/ }).selectOption('back')
+    await expect(cutting.getByTestId('role-group')).toHaveCount(1)
+    await expect(cutting.locator('tbody tr').filter({ hasText: 'Rückwand' })).toHaveCount(2)   // section row + the part
+    await cutting.getByRole('combobox', { name: /^(Bauteilart|Part role)$/ }).selectOption('none')
+    await expect(cutting.locator('tbody tr')).toHaveCount(total - 3 + 1)
+    await page.keyboard.press('Escape')
+
+    // cost: per role with its subtotal; the total stays the same
+    await page.evaluate(() => window.__uiStore.getState().setShowCostPanel(true))
+    const cost = page.getByRole('dialog', { name: /Kalkulation|Cost/ })
+    const before = await cost.getByTestId('cost-total').innerText()
+    await cost.getByLabel(/^(Nach Bauteilart|By part role)$/).check()
+    await expect(cost.getByTestId('role-group').first()).toContainText(/Korpus|Carcass/)
+    await expect(cost.getByTestId('role-group')).toContainText([/Korpus|Carcass/, /Rückwand|Back panel/, /ohne Bauteilart|no part role/])
+    await expect(cost.getByTestId('cost-total')).toHaveText(before)
+  })
+
+  test('without any role the lists look as before', async ({ page }) => {
+    await bootWithSample(page)
+    await page.evaluate(() => window.__uiStore.getState().setShowCuttingList(true))
+    const cutting = page.getByRole('dialog', { name: /Zuschnittliste|Cutting List/ })
+    await expect(cutting.getByRole('columnheader', { name: /Länge|Length/ })).toBeVisible()
+    await expect(cutting.getByRole('columnheader', { name: /^(Bauteilart|Part role)$/ })).toHaveCount(0)
+    await expect(cutting.getByLabel(/^(Nach Bauteilart|By part role)$/)).toHaveCount(0)
   })
 })

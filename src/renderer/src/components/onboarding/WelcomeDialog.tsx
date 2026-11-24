@@ -5,6 +5,7 @@ import { useProjectStore } from '../../store/useProjectStore'
 import { Dialog, Button } from '../ui/Dialog'
 import sampleProject from '../../assets/sample-project.json'
 import type { Project } from '../../types/furniture'
+import { keyCombo } from '../../utils/shortcutKeys'
 
 /** 24 × 24 line icon, drawn with the current text colour */
 function Icon({ children }: { children: ReactNode }) {
@@ -88,7 +89,7 @@ export function WelcomeDialog() {
       closeOnBackdrop={false}
       className="w-[600px]"
       footer={<>
-        <span className="mr-auto text-xs text-chrome-hint">{t('dlg.welcomePaletteHint')}</span>
+        <span className="mr-auto text-xs text-chrome-hint">{t('dlg.welcomePaletteHint', { shortcut: keyCombo('K', ['cmd']) })}</span>
         <Button variant="ghost" size="sm" onClick={handleShortcuts}>
           {t('dlg.welcomeShortcuts')}
           <kbd className="rounded border border-chrome-border bg-chrome-deep px-1 font-mono text-[10px] text-chrome-muted">?</kbd>

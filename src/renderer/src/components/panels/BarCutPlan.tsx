@@ -25,9 +25,11 @@ const groupSummary = (g: BarGroup, s: BarSettings, f: LengthFormat, t: TFunction
   t('cutting.barSummary', { count: g.count, total: metres(g.totalMm, f.lang), bars: t('cutting.barBars', { count: g.bars.length }), stock: metres(s.stockMm, f.lang) })
 
 const lengths = (b: BarGroup['bars'][number], f: LengthFormat): string => b.pieces.map((p) => f.fmt(p.length)).join(' + ')
-const names = (b: BarGroup['bars'][number]): string => b.pieces.map((p) => p.name).join(' · ')
+/** The pieces of a bar: label and name, "Unterbau 12 Sockelring hinten · Unterbau 13 …" */
+const pieceName = (p: { name: string; labels?: string[] }): string => (p.labels?.length ? `${p.labels.join(', ')} ${p.name}` : p.name)
+const names = (b: BarGroup['bars'][number]): string => b.pieces.map(pieceName).join(' · ')
 const tooLongText = (g: BarGroup, f: LengthFormat, t: TFunction): string =>
-  t('cutting.barTooLong', { parts: g.tooLong.map((p) => `${p.name} (${f.fmt(p.length)} ${f.unit})`).join(', ') })
+  t('cutting.barTooLong', { parts: g.tooLong.map((p) => `${pieceName(p)} (${f.fmt(p.length)} ${f.unit})`).join(', ') })
 
 interface BarCutPlanProps {
   groups: BarGroup[]

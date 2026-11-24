@@ -1,12 +1,15 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { openProjectFile, saveProjectFile, confirmDiscardChanges } from '../../services/projectFile'
+import { renumberPartsAsked } from '../../services/partNumbers'
 import { useUIStore, topModal } from '../../store/useUIStore'
 import { useProjectStore } from '../../store/useProjectStore'
 import { boardPresets, presetToBoard, type BoardPreset } from '../../data/board-presets'
 import { getApiKey } from './SettingsDialog'
 import { useDialogFocus } from '../../hooks/useKeyboard'
 import { isDragActive } from '../../utils/transformLock'
+import { isCmdKey, keyName, keyCombo } from '../../utils/shortcutKeys'
+import { useDesignHint, useDesignLocked } from '../../hooks/useDesignLocked'
 
 // ── Command definition ────────────────────────────────────────────────────────
 
@@ -19,6 +22,8 @@ interface Command {
   category: Category
   keywords?: string[]
   shortcut?: string
+  /** Changes the design: listed but greyed in the assembly workspace (store/designLock.ts) */
+  design?: boolean
   action: () => void
 }
 
@@ -48,10 +53,10 @@ export function CommandPalette() {
   const listRef = useRef<HTMLDivElement>(null)
   const dialogRef = useDialogFocus<HTMLDivElement>(show)
 
-  // Open on Ctrl+K / Cmd+K — not on top of another modal or mid-drag
+  // Open on Ctrl+K / ⌘K — not on top of another modal or mid-drag
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
+      if (isCmdKey(e) && keyName(e) === 'k') {
         e.preventDefault()
         const top = topModal(useUIStore.getState())
         if ((top && top !== 'showCommandPalette') || isDragActive()) return
@@ -125,6 +130,7 @@ export function CommandPalette() {
     .map((p) => ({
       id: `add-${p.id}`,
       category: 'create' as Category,
+      design: true,
       label: t(p.labelKey),
       description: `${p.width} × ${p.height} × ${p.depth} mm`,
       keywords: [p.id, p.labelKey, 'board', 'brett', 'platte', 'add', 'einfügen', 'hinzufügen', 'einzeln'],
@@ -134,24 +140,24 @@ export function CommandPalette() {
   const commands: Command[] = useMemo(() => [
     // Create — single boards from presets
     ...presetCommands,
-    { id: 'korpus', category: 'create',
+    { id: 'korpus', category: 'create', design: true,
       label: t('korpus.title'),
       description: lang === 'de' ? 'Korpusschrank aus Außenmaßen generieren' : 'Generate carcass from outer dimensions',
       keywords: ['schrank', 'cabinet', 'korpus', 'carcass', 'box', 'generate'],
       action: () => { setShow(false); ui().setShowKorpusPanel(true) } },
 
     // Calc
-    { id: 'drawer', category: 'calc',
+    { id: 'drawer', category: 'calc', design: true,
       label: t('drawer.title'),
       description: 'Blum TANDEM · Grass Nova Pro · Hettich ArciTech',
       keywords: ['schublade', 'drawer', 'blum', 'tandem', 'legrabox', 'slide'],
       action: () => { setShow(false); ui().setShowDrawerCalcPanel(true) } },
-    { id: 'hinge', category: 'calc',
+    { id: 'hinge', category: 'calc', design: true,
       label: t('hinge.title'),
       description: 'CLIP top · Sensys · Tiomos · Bohrbild',
       keywords: ['scharnier', 'hinge', 'blum', 'clip', 'topf', 'boring'],
       action: () => { setShow(false); ui().setShowHingeCalcPanel(true) } },
-    { id: 'tolerance', category: 'calc',
+    { id: 'tolerance', category: 'calc', design: true,
       label: t('tolerance.title'),
       description: lang === 'de' ? '10 Einstellmaße mit Nudge' : '10 standard clearances with nudge',
       keywords: ['toleranz', 'tolerance', 'spiel', 'clearance', 'luft', 'gap'],
@@ -173,7 +179,7 @@ export function CommandPalette() {
       description: lang === 'de' ? 'Beschlagskatalog und Mengenermittlung' : 'Hardware catalogue and quantities',
       keywords: ['beschlag', 'hardware', 'fitting', 'catalogue', 'katalog'],
       action: () => { setShow(false); ui().setShowHardwarePanel(true) } },
-    { id: 'parameters', category: 'analyse',
+    { id: 'parameters', category: 'analyse', design: true,
       label: t('parameters.title'),
       description: lang === 'de' ? 'Parametrische Maßreferenzen definieren' : 'Define parametric dimension references',
       keywords: ['parameter', 'parametric', 'formel', 'formula', 'variable'],
@@ -187,14 +193,29 @@ export function CommandPalette() {
       action: () => { setShow(false); ui().setShowCuttingList(true) } },
     { id: 'nesting', category: 'export',
       label: t('nesting.title'),
-      description: lang === 'de' ? 'Optimierte Plattenbelegung / DXF' : 'Optimised sheet nesting / DXF export',
-      keywords: ['nesting', 'platte', 'sheet', 'verschnitt', 'dxf', 'optimize'],
+      description: lang === 'de' ? 'Teile auf Platten verteilt, mit Verschnitt; SVG-Export' : 'Parts laid out on sheets, with waste; SVG export',
+      keywords: ['nesting', 'platte', 'plattenbelegung', 'zuschnittoptimierung', 'sheet', 'layout', 'verschnitt', 'optimize'],
       action: () => { setShow(false); ui().setShowNestingPanel(true) } },
+    { id: 'assembly', category: 'export',
+      label: t('montage.modeTitle'),
+      description: t('montage.modeDesc'),
+      keywords: ['montage', 'assembly', 'anleitung', 'instructions', 'schritte', 'steps', 'aufbau', 'ikea'],
+      action: () => { setShow(false); ui().setWorkspace('assembly') } },
+    { id: 'workspace-design', category: 'view',
+      label: `${t('workspace.label')}: ${t('workspace.design')}`,
+      description: t('workspace.designDesc'),
+      keywords: ['entwurf', 'design', 'modell', 'model', 'arbeitsbereich', 'workspace'],
+      action: () => { setShow(false); ui().setWorkspace('design') } },
     { id: 'drawings', category: 'export',
       label: t('shopDrawings.title'),
       description: lang === 'de' ? 'Werkstattzeichnungen (DXF/PDF)' : 'Shop drawings export (DXF/PDF)',
       keywords: ['zeichnung', 'drawing', 'plan', 'werkstatt', 'shop', 'dxf', 'pdf'],
       action: () => { setShow(false); ui().setShowShopDrawingsPanel(true) } },
+    { id: 'renumber-parts', category: 'export', design: true,
+      label: t('partLabel.renumber'),
+      description: t('partLabel.renumberHint'),
+      keywords: ['nummer', 'nummern', 'teilenummer', 'number', 'renumber', 'kurzwort', 'werkstatt', 'etikett', 'label'],
+      action: () => { setShow(false); renumberPartsAsked() } },
 
     // View
     { id: 'toggle-static', category: 'view',
@@ -224,16 +245,16 @@ export function CommandPalette() {
       label: t('actions.open'),
       description: lang === 'de' ? 'Projekt öffnen' : 'Open project',
       keywords: ['open', 'öffnen', 'load', 'laden', 'file', 'datei'],
-      shortcut: 'Ctrl+O',
+      shortcut: keyCombo('O', ['cmd']),
       action: handleOpen },
     { id: 'save', category: 'file',
       label: t('actions.save'),
       description: lang === 'de' ? 'Projekt speichern' : 'Save project',
       keywords: ['save', 'speichern', 'export', 'file', 'datei'],
-      shortcut: 'Ctrl+S',
+      shortcut: keyCombo('S', ['cmd']),
       action: handleSave },
     ...(getApiKey() ? [{
-      id: 'ai', category: 'file' as Category,
+      id: 'ai', category: 'file' as Category, design: true,
       label: t('ai.title'),
       description: lang === 'de' ? 'KI-Assistent öffnen' : 'Open AI assistant',
       keywords: ['ai', 'ki', 'chat', 'assistant', 'claude', 'gpt'],
@@ -255,7 +276,7 @@ export function CommandPalette() {
     const bIds = selectedBoardIds
     const proj = useProjectStore.getState()
     const cmds: Command[] = [
-      { id: 'sel-dup', category: 'board',
+      { id: 'sel-dup', category: 'board', design: true,
         label: lang === 'de' ? 'Duplizieren' : 'Duplicate',
         description: lang === 'de' ? `${bIds.length} Teil(e) duplizieren` : `Duplicate ${bIds.length} part(s)`,
         shortcut: 'D',
@@ -264,7 +285,7 @@ export function CommandPalette() {
           if (bIds.length === 1) proj.duplicateBoard(aId, bIds[0])
           else proj.duplicateBoards(aId, bIds)
         } },
-      { id: 'sel-del', category: 'board',
+      { id: 'sel-del', category: 'board', design: true,
         label: lang === 'de' ? 'Löschen' : 'Delete',
         description: lang === 'de' ? `${bIds.length} Teil(e) löschen` : `Delete ${bIds.length} part(s)`,
         shortcut: 'Del',
@@ -277,7 +298,7 @@ export function CommandPalette() {
     ]
     if (bIds.length === 2) {
       cmds.push({
-        id: 'sel-join', category: 'board',
+        id: 'sel-join', category: 'board', design: true,
         label: lang === 'de' ? 'Verbinden' : 'Join boards',
         description: lang === 'de' ? 'Verbindung zwischen 2 Teilen erstellen' : 'Create a joint between the 2 selected boards',
         shortcut: 'J',
@@ -287,6 +308,12 @@ export function CommandPalette() {
     return cmds
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedBoardIds, selectedAssemblyId, lang])
+
+  // In the assembly workspace the commands that change the design stay findable, greyed,
+  // saying where they work; choosing one does nothing (it never switches silently)
+  const locked = useDesignLocked()
+  const { inDesign } = useDesignHint()
+  const isOff = (c: Command): boolean => locked && !!c.design
 
   // Filter
   const allCommands = [...boardCommands, ...commands]
@@ -314,7 +341,8 @@ export function CommandPalette() {
       setActiveIdx((i) => Math.max(i - 1, 0))
     } else if (e.key === 'Enter') {
       e.preventDefault()
-      filtered[activeIdx]?.action()
+      const chosen = filtered[activeIdx]
+      if (chosen && !isOff(chosen)) chosen.action()
     }
   }
 
@@ -394,6 +422,7 @@ export function CommandPalette() {
                   {cmds!.map((cmd) => {
                     const globalIdx = filtered.indexOf(cmd)
                     const isActive = globalIdx === activeIdx
+                    const off = isOff(cmd)
                     return (
                       <button
                         key={cmd.id}
@@ -402,26 +431,29 @@ export function CommandPalette() {
                         aria-selected={isActive}
                         tabIndex={-1}
                         data-idx={globalIdx}
-                        onClick={cmd.action}
+                        aria-disabled={off || undefined}
+                        onClick={off ? undefined : cmd.action}
                         onMouseEnter={() => setActiveIdx(globalIdx)}
                         className={`w-full text-left px-4 py-2 flex items-center gap-3 transition-colors ${
                           isActive ? 'bg-chrome-surface' : 'hover:bg-chrome-bg'
                         }`}
                       >
                         <div className="flex-1 min-w-0">
-                          <div className={`text-sm font-medium ${isActive ? 'text-chrome-text' : 'text-chrome-secondary'}`}>
+                          <div className={`text-sm font-medium ${off ? 'text-chrome-hint' : isActive ? 'text-chrome-text' : 'text-chrome-secondary'}`}>
                             {cmd.label}
                           </div>
                           <div className={`text-xs mt-0.5 truncate ${isActive ? 'text-chrome-muted' : 'text-chrome-hint'}`}>
                             {cmd.description}
                           </div>
                         </div>
-                        {cmd.shortcut && (
+                        {off ? (
+                          <span className="ml-auto text-[10px] text-chrome-hint shrink-0" data-testid="command-in-design">{inDesign}</span>
+                        ) : cmd.shortcut && (
                           <span className="ml-auto text-[10px] font-mono text-chrome-hint bg-chrome-surface px-1.5 py-0.5 rounded border border-chrome-border shrink-0">
                             {cmd.shortcut}
                           </span>
                         )}
-                        {isActive && (
+                        {isActive && !off && (
                           <kbd className="text-[10px] bg-chrome-hover border border-chrome-divider px-1.5 py-0.5 rounded text-chrome-muted shrink-0">
                             ↵
                           </kbd>

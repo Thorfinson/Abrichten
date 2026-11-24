@@ -1,12 +1,15 @@
+import { useTranslation } from 'react-i18next'
 import { memo, useMemo } from 'react'
 import { Line, Html } from '@react-three/drei'
 import { useProjectStore } from '../../store/useProjectStore'
 import { useUIStore, useCanvasView } from '../../store/useUIStore'
+import { useViewHidden } from '../../hooks/useViewHidden'
 import { boardCorners3D } from '../../utils/projection'
 import { formatValue } from '../../utils/units'
 import type { Board } from '../../types/furniture'
 import type { ViewMode } from '../../types/measurement'
 import { CANVAS, HTML_Z_RANGE, sceneLabelStyle } from '../canvasTheme'
+import { assemblyCounts } from '../../utils/activeParts'
 
 /** Per-board dimension lines are drawn for at most this many selected boards;
  *  a bigger selection (e.g. Ctrl+A) gets one overall dimension instead. */
@@ -104,6 +107,7 @@ interface BoardDimsProps {
 
 const BoardDimensions = memo(function BoardDimensions({ board, activeView, staggerIdx }: BoardDimsProps) {
   const displayUnit = useProjectStore((s) => s.project.displayUnit)
+  const lang = useTranslation().i18n.language   // German shows 1.200 mm and 6,5 mm
 
   const aabb = useMemo(() => computeAABB(board), [board])
 
@@ -156,8 +160,8 @@ const BoardDimensions = memo(function BoardDimensions({ board, activeView, stagg
 
   return (
     <group>
-      <DimLine3D from={hFrom} to={hTo} label={formatValue(board[dims.h], displayUnit)} offset={hOffset} />
-      <DimLine3D from={vFrom} to={vTo} label={formatValue(board[dims.v], displayUnit)} offset={vOffset} />
+      <DimLine3D from={hFrom} to={hTo} label={formatValue(board[dims.h], displayUnit, lang)} offset={hOffset} />
+      <DimLine3D from={vFrom} to={vTo} label={formatValue(board[dims.v], displayUnit, lang)} offset={vOffset} />
     </group>
   )
 })
@@ -174,6 +178,7 @@ interface GroupDimsProps {
  *  or a large selection. */
 const AssemblyDimensions = memo(function AssemblyDimensions({ boards, activeView, offset = OUTER_OFF, color = CANVAS.dimAssembly }: GroupDimsProps) {
   const displayUnit = useProjectStore((s) => s.project.displayUnit)
+  const lang = useTranslation().i18n.language   // German shows 1.200 mm and 6,5 mm
 
   const aabb = useMemo(() => {
     let minX = Infinity, maxX = -Infinity
@@ -252,13 +257,13 @@ const AssemblyDimensions = memo(function AssemblyDimensions({ boards, activeView
     <group>
       <DimLine3D
         from={hFrom} to={hTo}
-        label={formatValue(hVal, displayUnit)}
+        label={formatValue(hVal, displayUnit, lang)}
         offset={hOffset}
         color={color}
       />
       <DimLine3D
         from={vFrom} to={vTo}
-        label={formatValue(vVal, displayUnit)}
+        label={formatValue(vVal, displayUnit, lang)}
         offset={vOffset}
         color={color}
       />
@@ -277,11 +282,12 @@ export function DimensionOverlay() {
   const activeView = useCanvasView()
   const selectedAssemblyId = useUIStore((s) => s.selectedAssemblyId)
   const showAssemblyDims = useUIStore((s) => s.showAssemblyDims)
+  const hidden = useViewHidden()
 
   const selectedBoards = useMemo(() => {
     if (selectedBoardIds.length === 0) return []
     return project.assemblies
-      .filter((a) => a.visible !== false)
+      .filter(assemblyCounts)
       .flatMap((a) => a.boards)
       .filter((b) => selectedBoardIds.includes(b.id))
   }, [project.assemblies, selectedBoardIds])
@@ -290,8 +296,9 @@ export function DimensionOverlay() {
   const assemblyBoards = useMemo(() => {
     if (!showAssemblyDims || !selectedAssemblyId) return []
     const assembly = project.assemblies.find((a) => a.id === selectedAssemblyId)
-    return assembly?.boards ?? []
-  }, [project.assemblies, selectedAssemblyId, showAssemblyDims])
+    // the overall size of what the assembly step view shows
+    return (assembly?.boards ?? []).filter((b) => !hidden.has(b.id))
+  }, [project.assemblies, selectedAssemblyId, showAssemblyDims, hidden])
 
   // Sort boards by a primary axis position to make stagger order predictable
   const sortedBoards = useMemo(() => {

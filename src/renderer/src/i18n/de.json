@@ -58,6 +58,93 @@
     "removeCutout": "Ausschnitt entfernen",
     "edgeE4": "Rechtskante (Tiefe)"
   },
+  "role": {
+    "label": "Bauteilart",
+    "none": "ohne Bauteilart",
+    "all": "Alle Bauteilarten",
+    "mixed": "gemischt",
+    "groupBy": "Nach Bauteilart",
+    "groupTitle": "Nach Bauteilart gruppieren (Sichtteil, Korpus, Rückwand …)",
+    "pieces_one": "{{count}} Teil",
+    "pieces_other": "{{count}} Teile",
+    "visible": "Sichtteil",
+    "carcass": "Korpus",
+    "back": "Rückwand",
+    "substructure": "Unterkonstruktion",
+    "drawer": "Schubkasten",
+    "worktop": "Arbeitsplatte",
+    "plinth": "Sockel",
+    "appliance": "Einbaugerät",
+    "hint_visible": "Front, Wange, Blende",
+    "hint_carcass": "Böden, Seiten, Mittelseiten, Einlegeböden",
+    "hint_back": "Rückwand des Korpus",
+    "hint_substructure": "Rahmen, Latten, Traversen",
+    "hint_drawer": "Schubkasten-Kasten (ohne Front)",
+    "hint_worktop": "Arbeitsplatte und Unterbau",
+    "hint_plinth": "Sockelblende und Sockelfüße",
+    "hint_appliance": "Platzhalter für ein Einbaugerät"
+  },
+  "montage": {
+    "title": "Montage",
+    "modeTitle": "Montage-Modus",
+    "modeDesc": "Montageschritte planen und als Anleitung drucken",
+    "close": "Montage-Modus beenden",
+    "instruction": "Montageanleitung",
+    "step": "Schritt {{n}}",
+    "stepOf": "Schritt {{n}} von {{total}}",
+    "prev": "Voriger Schritt (←)",
+    "next": "Nächster Schritt (→)",
+    "keysHint": "← → blättern",
+    "noSteps": "Noch keine Montageschritte.",
+    "suggest": "Reihenfolge vorschlagen",
+    "suggestTitle": "Schritte aus den Bauteilarten bilden (ersetzt die bisherigen; {{shortcut}} macht es rückgängig)",
+    "addStep": "+ Schritt",
+    "addStepTitle": "Neuen Schritt nach diesem einfügen",
+    "newStep": "Neuer Schritt",
+    "removeStep": "Schritt löschen",
+    "removeStepTitle": "Schritt löschen – seine Teile werden wieder „noch nicht eingeplant“",
+    "moveEarlier": "Schritt früher",
+    "moveLater": "Schritt später",
+    "stepTitle": "Titel des Schritts",
+    "stepNote": "Hinweis zum Schritt",
+    "notePlaceholder": "Hinweis, z. B. „erst ausrichten, dann verschrauben“",
+    "parts": "Teile",
+    "partsAll": "Alle Teile",
+    "noParts": "Keine Teile in diesem Schritt.",
+    "fasteners": "Befestigung",
+    "fastenersAll": "Alle Befestigungsmittel",
+    "noFasteners": "Keine Verbindungen in diesem Schritt.",
+    "addSelection_one": "Auswahl hinzufügen ({{count}} Teil)",
+    "addSelection_other": "Auswahl hinzufügen ({{count}} Teile)",
+    "moveTo": "In Schritt verschieben",
+    "unplan": "nicht eingeplant",
+    "unplanned": "Noch nicht eingeplant",
+    "unplannedCount_one": "{{count}} Teil noch nicht eingeplant",
+    "unplannedCount_other": "{{count}} Teile noch nicht eingeplant",
+    "addHere": "+ hierher",
+    "addAllHere": "Alle hierher",
+    "print": "Anleitung drucken",
+    "printTitle": "Montageanleitung mit Bild je Schritt drucken (PDF)",
+    "nr": "Nr.",
+    "unplannedJoints_one": "{{count}} Verbindung mit nicht eingeplanten Teilen",
+    "unplannedJoints_other": "{{count}} Verbindungen mit nicht eingeplanten Teilen",
+    "head_countersunk": "Senkkopf",
+    "head_pan": "Linsenkopf",
+    "head_hex": "Sechskant",
+    "s_back": "Rückwände",
+    "s_substructure": "Unterkonstruktion",
+    "s_carcass": "Korpus: {{path}}",
+    "s_endPanels": "Wangen und Blenden",
+    "s_worktop": "Arbeitsplatte",
+    "s_appliance": "Einbaugeräte",
+    "s_drawer": "Schubkästen",
+    "s_fronts": "Fronten",
+    "s_plinth": "Sockel",
+    "s_other": "{{path}}",
+    "steps": "Schritte",
+    "noStepsHint": "Noch keine Schritte. Rechts „Reihenfolge vorschlagen“ wählen.",
+    "leave": "Beenden"
+  },
   "materials": {
     "solid_wood": "Massivholz",
     "panel": "Plattenwerkstoffe",
@@ -198,7 +285,11 @@
     "noItems": "Keine Beschl\u00e4ge in dieser Kategorie.",
     "addToBoard": "Zum Brett hinzuf\u00fcgen",
     "unitPrice": "Einzelpreis (\u20ac)",
-    "totalPrice": "Gesamtpreis (\u20ac)"
+    "totalPrice": "Gesamtpreis (\u20ac)",
+    "bridges": "Überbrückt Spalt (mm)",
+    "bridgesFrom": "von",
+    "bridgesTo": "bis",
+    "bridgesHint": "Spalt, den der Beschlag zwischen seinem Teil und dem Nachbarn überbrückt, von–bis in mm (z. B. seitlicher Auszug 12,5–13). Nur so zählt ein Spalt in der Statik als Auflager."
   },
   "boring": {
     "title": "32mm-Raster",
@@ -212,10 +303,13 @@
     "export": "Bohrliste exportieren",
     "noBoards": "Keine Bretter ausgew\u00e4hlt.",
     "sideInset": "Seitenversatz (mm)",
-    "minHeight": "Mindesh\u00f6he (mm)"
+    "minHeight": "Mindesh\u00f6he (mm)",
+    "rows": "Lochreihen für Bodenträger",
+    "rowsNoPins": "Aus, weil im Projekt keine Bodenträger geplant sind. Einschalten, wenn doch.",
+    "noneWithoutRows": "Keine Bohrungen. Lochreihen für Bodenträger sind aus, weil im Projekt keine Bodenträger geplant sind."
   },
   "nesting": {
-    "title": "Zuschnittoptimierung",
+    "title": "Plattenbelegung",
     "sheetWidth": "Plattenbreite (mm)",
     "sheetHeight": "Plattenh\u00f6he (mm)",
     "sawKerf": "S\u00e4geblattbreite (mm)",
@@ -279,7 +373,25 @@
     "unit": "Einheit",
     "fetchModels": "Modelle laden",
     "loadingModels": "Lade Modelle...",
-    "fetchError": "Fehler beim Laden der Modelle"
+    "fetchError": "Fehler beim Laden der Modelle",
+    "inputDevice": "Eingabegerät",
+    "inputAuto": "Automatisch",
+    "inputMouse": "Maus",
+    "inputTrackpad": "Trackpad",
+    "inputHintAuto": "Erkennt bei jeder Geste, ob ein Mausrad oder ein Trackpad sie sendet: das Mausrad zoomt wie bisher, zwei Finger schieben, Pinch zoomt.",
+    "inputHintMouse": "Wie bisher: Mausrad zoomt, mittlere Taste dreht in 3D (2D: schiebt), rechte Taste schiebt.",
+    "inputHintTrackpad": "Zwei Finger schieben, Pinch zoomt zum Zeiger, {{alt}} + zwei Finger oder {{alt}} + Ziehen dreht in 3D, ⇧{{alt}} + Ziehen schiebt."
+  },
+  "input": {
+    "trackpad": "Trackpad",
+    "twoFinger": "2 Finger",
+    "pan": "Ansicht schieben",
+    "pinch": "Pinch",
+    "zoomToPointer": "Zoom zum Zeiger",
+    "orbit3d": "3D drehen",
+    "drag": "Ziehen",
+    "orbit3dPan2d": "3D drehen (2D: schieben)",
+    "settingHint": "Maus oder Trackpad: Einstellungen → Allgemein"
   },
   "actions": {
     "save": "Speichern",
@@ -298,6 +410,11 @@
     "saved": "Gespeichert",
     "confirmNew": "Ungespeicherte \u00c4nderungen gehen verloren. Neues Projekt erstellen?",
     "invalidProjectFile": "Projektdatei ungültig: {{reason}}",
+    "loadChangesTitle_one": "Beim Öffnen hat die App {{count}} Angabe angepasst",
+    "loadChangesTitle_other": "Beim Öffnen hat die App {{count}} Angaben angepasst",
+    "loadChangesIntro": "Diese Angaben konnte die App so nicht verwenden. Die Datei selbst ist unverändert; erst Speichern übernimmt die Anpassung. Bis dahin gilt das Projekt als ungespeichert.",
+    "loadChangesCopy": "Liste kopieren",
+    "loadChangesOk": "Verstanden",
     "confirmOpen": "Ungespeicherte \u00c4nderungen gehen verloren. Datei \u00f6ffnen?"
   },
   "presets": {
@@ -387,6 +504,29 @@
     "paramInvalidName": "Name muss mit Buchstabe oder _ beginnen und darf nur Buchstaben, Ziffern und _ enthalten.",
     "paramRemoveUnlinks": "Löschen – {{count}} Bauteil(e) verlieren die Formel mit {{name}}, ihre Maße bleiben."
   },
+  "partLabel": {
+    "nr": "Nr.",
+    "nrTitle": "Teilenummer: Kurzwort der Baugruppe und Nummer im Fach, z. B. „Herd 2“. Überall gleich: Teileliste, Zuschnittliste, Plattenbelegung, Zeichnungen, Montageanleitung.",
+    "shortName": "Kurzwort",
+    "shortNameTitle": "Kurzwort für die Teilenummern dieser Baugruppe ({{example}} …). Klicken zum Ändern; leer = erstes Wort des Namens.",
+    "shortNameSuggested": "Vorschlag aus dem Namen: „{{word}}“ ({{example}} …). Klicken, um ein kurzes Wort festzulegen – zum Beispiel „Herd“ statt „Herdfach“.",
+    "editShortName": "Kurzwort ändern",
+    "doubled": "„{{word}}“ hat noch eine Baugruppe – die Teilenummern wären doppelt. Klicken zum Ändern.",
+    "taken": "Das Kurzwort „{{word}}“ hat schon eine andere Baugruppe.",
+    "renumber": "Teilenummern neu vergeben",
+    "renumberHint": "Zählt die Teile jeder Baugruppe neu durch (1, 2, 3 …), ohne Lücken. Gedacht für kurz vor dem Drucken.",
+    "renumberConfirm": "Alle Teilenummern neu vergeben? Teile, die schon beschriftet sind, passen danach nicht mehr zu den Listen.",
+    "renumbered": "Teilenummern neu vergeben. Rückgängig mit {{undo}}."
+  },
+  "fileChanged": {
+    "title": "Datei außerhalb der App geändert",
+    "question": "Die Datei ist neuer als der gespeicherte Stand – neu laden?",
+    "changedAt": "„{{name}}“ wurde am {{date}} um {{time}} außerhalb von Abrichten geändert. Die App zeigt gerade ihren eigenen gespeicherten Stand, nicht die Datei.",
+    "unsavedWarning": "In der App gibt es ungesicherte Änderungen. Beim Laden der Datei gehen sie verloren.",
+    "keep": "Stand der App behalten",
+    "load": "Datei laden",
+    "invalid": "„{{name}}“ wurde außerhalb der App geändert, lässt sich aber nicht laden ({{reason}}). Die App zeigt ihren gespeicherten Stand."
+  },
   "ui": {
     "close": "Schließen",
     "deselect": "Auswahl aufheben (Esc)",
@@ -462,7 +602,7 @@
     "holes": "Bohrungen",
     "minHeight": "Mindesthöhe (mm)",
     "boringNoBoards": "Keine stehenden Teile ab {{min}} mm Höhe.",
-    "boringFaceHint": "Blick auf die Fläche: Vorderkante links, Y ab Unterkante",
+    "boringFaceHint": "Wie in der Werkstattzeichnung: X ab der linken Seite, Y ab der Unterkante",
     "paramsHint": "Parameter sind benannte Maße in mm. Tippe in ein Maßfeld eines Bauteils eine Formel; ändert sich der Wert, rechnen alle Bauteile damit neu. Beispiele:",
     "paramNamePlaceholder": "z. B. H, B, TIEFE",
     "sheetPreset": "Plattenformat",
@@ -483,7 +623,7 @@
     "welcomeTagline": "Möbel und Küchen planen – vom Entwurf bis zur Zuschnittliste.",
     "welcomeEmpty": "Leeres Projekt",
     "welcomeShortcuts": "Tastenkürzel",
-    "welcomePaletteHint": "Strg+K öffnet jederzeit die Befehlspalette."
+    "welcomePaletteHint": "{{shortcut}} öffnet jederzeit die Befehlspalette."
   },
   "layout": {
     "toolbar": {
@@ -516,15 +656,15 @@
       "snapTitle": "Einrasten (Snap) ein/aus (S)",
       "snapSize": "Rasterweite zum Einrasten",
       "grid": "Raster",
-      "gridTitle": "Raster anzeigen (Alt+G)",
+      "gridTitle": "Raster anzeigen ({{shortcut}})",
       "unit": "Einheit",
       "cursor": "Position unter dem Mauszeiger (mm)",
       "unsaved": "Ungespeicherte Änderungen",
-      "unsavedTitle": "Das Projekt wurde seit dem letzten Speichern als Datei geändert (Strg+S)",
+      "unsavedTitle": "Das Projekt wurde seit dem letzten Speichern als Datei geändert ({{shortcut}})",
       "saved": "Automatisch gesichert ✓",
       "savedTitle": "Automatisch im lokalen Speicher gesichert",
       "saveFailed": "Automatisches Speichern fehlgeschlagen",
-      "saveFailedTitle": "Die automatische Sicherung im lokalen Speicher ist fehlgeschlagen. Speichere das Projekt als Datei (Strg+S)."
+      "saveFailedTitle": "Die automatische Sicherung im lokalen Speicher ist fehlgeschlagen. Speichere das Projekt als Datei ({{shortcut}})."
     }
   },
   "sim": {
@@ -542,6 +682,12 @@
     "labelBreak": "Bruch · {{u}} %",
     "labelMax": "max. {{u}} %",
     "labelSag": "Durchbiegung {{d}} mm (zul. {{allow}})",
+    "gapBridged": "Spalt {{mm}} mm, vom Beschlag überbrückt",
+    "gapGlued": "Spalt {{mm}} mm, Kleberbett",
+    "airShort": "Luft {{mm}} mm",
+    "airNote": "Luft {{mm}} mm zu {{parts}} – kein Auflager",
+    "jointAirShort": "{{type}} über {{mm}} mm Luft",
+    "jointAir": "{{type}} über {{mm}} mm Luft zu {{part}} – verbindet nicht: Spalt schließen oder den Beschlag eintragen, der ihn überbrückt",
     "labelMaxSag": "max. {{u}} % · Durchbiegung {{d}} mm",
     "counts": "{{critical}} kritisch · {{warning}} Warnung · {{unsupported}} ohne Auflager",
     "boardLoad": "Nutzlast",
@@ -552,6 +698,17 @@
     "payloadNote": "Nutzlast: {{kg}} kg je Fachboden, einstellbar in der Legende der Statik-Ansicht. Eigengewicht und aufliegende Bauteile werden mitgerechnet.",
     "onlyIssues": "Nur Probleme",
     "noIssues": "Keine Probleme gefunden.",
+    "unsureLoop": "unsicher: gibt {{kg}} kg im Kreis an {{part}}, dort nicht gezählt",
+    "noIssuesButBalance": "Kein einzelnes Teil fällt auf – aber die Lastbilanz oben ist unsicher.",
+    "unsureDownstream": "unsicher: bekommt Last von {{count}} Teil(en) darüber (u. a. {{part}}), denen zusammen {{kg}} kg aus Kreisen fehlen",
+    "unsureMissing": "unsicher: {{kg}} kg von {{part}} fehlen hier (Kreis)",
+    "unsureChoice": "unsicher: hängt davon ab, wie ein Kreis aufgebrochen wird – andersherum {{u}} %, Last {{kg}} kg anders",
+    "countNotChecked": "{{count}} nicht geprüft",
+    "countUnsure": "{{count}} unsicher",
+    "balanceUnsure": "Unsicher: {{lost}} von {{total}} kg kommen nicht am Boden an – {{loop}} kg in Kreisen nicht gezählt (Teile tragen sich gegenseitig), {{stuck}} kg in Teilen ohne Auflager. Die Zahlen dieser Teile tragen nicht.",
+    "balanceOk": "Lastbilanz: alle {{total}} kg kommen am Boden an.",
+    "unsureShort": "unsicher (Kreis)",
+    "balanceShort": "Unsicher: {{lost}} von {{total}} kg kommen nicht am Boden an",
     "noBoards": "Keine Bauteile vorhanden.",
     "colPart": "Bauteil",
     "colGroup": "Gruppe",
@@ -595,5 +752,82 @@
     "hotspotLegend": "Höchstwert",
     "location": "{{a}} · {{b}}",
     "jointsLegend": "Verbunden (gewähltes Brett)"
+  },
+  "workspace": {
+    "label": "Arbeitsbereich",
+    "design": "Entwurf",
+    "designDesc": "Modell planen und bearbeiten",
+    "assembly": "Montage",
+    "assemblyDesc": "Montageschritte planen und als Anleitung drucken",
+    "parts": "Teile",
+    "groupBy": "Gruppieren",
+    "groupAssembly": "Baugruppe",
+    "groupRole": "Bauteilart",
+    "groupMaterial": "Material"
+  },
+  "designLock": {
+    "change": "Gehört zum Entwurf – dort ändern ({{key}})",
+    "undo": "Die letzte Änderung gehört zum Entwurf – dort rückgängig machen ({{key}}, dann {{undo}})",
+    "redo": "Die nächste Änderung gehört zum Entwurf – dort wiederholen ({{key}}, dann {{redo}})",
+    "hint": "Teile ändern im Entwurf ({{key}})",
+    "inDesign": "im Entwurf ({{key}})",
+    "readOnly": "In der Montage nur zum Lesen – ändern im Entwurf ({{key}})"
+  },
+  "eye": {
+    "hide": "Im Bild ausblenden – zählt weiter mit",
+    "show": "Im Bild zeigen",
+    "mixed": "Teils ausgeblendet – Klick zeigt alle"
+  },
+  "counts": {
+    "on": "Zählt mit: Zuschnitt, Kosten, Pläne, Statik, Montage, Bild",
+    "off": "Zählt nicht mit (Variante aus) – Häkchen setzt sie wieder ein",
+    "some": "Zählt teils mit – einige Untergruppen sind abgewählt",
+    "toggle": "Mitzählen an/aus (Variante)"
+  },
+  "xray": {
+    "on": "Hervorheben – zeigt, wo es sitzt; alles andere tritt zurück",
+    "off": "Hervorhebung aufheben",
+    "mixed": "Teils hervorgehoben – Klick hebt alles auf"
+  },
+  "cutout": {
+    "column": "Ausschnitte",
+    "add": "Ausschnitt",
+    "shape": "Form",
+    "rect": "Rechteck",
+    "circle": "rund",
+    "diameter": "Durchmesser (mm)",
+    "size": {
+      "x": "Breite",
+      "y": "Höhe",
+      "z": "Tiefe"
+    },
+    "edge": {
+      "left": "links",
+      "right": "rechts",
+      "bottom": "unten",
+      "top": "oben",
+      "back": "hinten",
+      "front": "vorn"
+    },
+    "from": "Abstand von",
+    "fromShort": "von",
+    "inRoom": "im Raum",
+    "room": {
+      "x": "von links",
+      "y": "vom Boden",
+      "z": "von hinten"
+    },
+    "kind": {
+      "round": "Loch rund",
+      "notch": "Ausklinkung",
+      "hole": "Ausschnitt"
+    },
+    "problem": {
+      "outside": "liegt nicht ganz auf dem Teil – wird nicht gebaut",
+      "splits": "würde das Teil durchtrennen – wird nicht gebaut",
+      "splitsWith": "würde zusammen mit Ausschnitt {{n}} das Teil durchtrennen – wird nicht gebaut",
+      "beyond": "reicht über den Rand des Teils – wird dort gekürzt",
+      "overlaps": "überschneidet oder berührt Ausschnitt {{n}} – wird nicht gebaut"
+    }
   }
 }

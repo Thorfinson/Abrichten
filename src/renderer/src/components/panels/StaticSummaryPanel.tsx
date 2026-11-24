@@ -3,9 +3,13 @@ import { useTranslation } from 'react-i18next'
 import { useProjectStore } from '../../store/useProjectStore'
 import { useUIStore } from '../../store/useUIStore'
 import { useStaticSimulation } from '../../store/useStaticStore'
+import { usePartLabels } from '../../hooks/usePartLabels'
+import { PartName } from '../ui/PartName'
 import { GRAVITY, utilisationCss, type StaticStatus } from '../../services/static-calc'
-import type { BoardStatic } from '../../services/static-sim'
+import { jointAir, type BoardStatic } from '../../services/static-sim'
+import { partTitle } from '../../utils/partLabel'
 import type { Assembly, Board } from '../../types/furniture'
+import { assemblyCounts } from '../../utils/activeParts'
 
 const STATUS_BADGE: Record<StaticStatus, string> = {
   critical: 'bg-danger-dim text-danger-text',
@@ -33,6 +37,7 @@ function SummaryDialog() {
   const { t, i18n } = useTranslation()
   const lang = i18n.language
   const assemblies = useProjectStore((s) => s.project.assemblies)
+  const labels = usePartLabels()
   const setShowStaticSummary = useUIStore((s) => s.setShowStaticSummary)
   const payloadKg = useUIStore((s) => s.staticLoadKg)
   const sim = useStaticSimulation()
@@ -41,7 +46,7 @@ function SummaryDialog() {
   const rows = useMemo<SummaryRow[]>(() => {
     const out: SummaryRow[] = []
     for (const assembly of assemblies) {
-      if (assembly.visible === false) continue
+      if (!assemblyCounts(assembly)) continue
       for (const board of assembly.boards) {
         const r = sim.results.get(board.id)
         if (r) out.push({ board, assembly, r })
@@ -49,6 +54,47 @@ function SummaryDialog() {
     }
     return out.sort((a, b) => STATUS_ORDER[a.r.status] - STATUS_ORDER[b.r.status] || b.r.uMax - a.r.uMax)
   }, [assemblies, sim])
+
+  // a part named in a note, by its label as everywhere (utils/partLabel)
+  const titles = useMemo(() => new Map(assemblies.flatMap((a) => a.boards).map((b) => [b.id, partTitle(labels.get(b.id), b.name)])), [assemblies, labels])
+  const mmText = (v: number): string => v.toLocaleString(lang, { maximumFractionDigits: 1 })
+  /**
+   * Why a support does not count (services/static-sim SupportAir): a joint across air is a
+   * mistake (amber: close the gap or enter the hardware that bridges it); air at a contact is
+   * no support (grey), the rating already follows from that.
+   */
+  /** A loop where load was not counted (services/static-sim BoardStatic.unsure): the numbers are unsure. */
+  const unsureNotes = (r: BoardStatic) => (r.unsure ?? []).map((u, i) => (
+    <div key={`u${i}`} className="text-[10px] font-normal text-amber-400 whitespace-normal" data-testid="static-unsure">
+      {u.reason === 'wahl'
+        ? t('sim.unsureChoice', { u: Math.round((u.uOther ?? 0) * 100), kg: mmText(Math.abs(u.kg)) })
+        : t(u.reason === 'folge' ? 'sim.unsureDownstream' : u.role === 'fehlt' ? 'sim.unsureMissing' : 'sim.unsureLoop',
+          { part: titles.get(u.withId) ?? u.withId, kg: mmText(u.kg), count: u.count ?? 1 })}
+    </div>
+  ))
+  const kgText = (N: number): string => (N / GRAVITY).toLocaleString(lang, { maximumFractionDigits: 1, minimumFractionDigits: 1 })
+  const lost = sim.balance.droppedN + sim.balance.stuckN
+  const notChecked = rows.filter((row) => row.r.status === 'wallHung').length
+  const airNotes = (r: BoardStatic) => {
+    const joints = (r.air ?? []).filter((a) => a.kind === 'joint')
+    const contacts = new Map<number, string[]>()
+    for (const a of r.air ?? []) if (a.kind !== 'joint') contacts.set(a.mm, [...(contacts.get(a.mm) ?? []), titles.get(a.by) ?? a.by])
+    if (!joints.length && !contacts.size) return null
+    return (
+      <>
+        {joints.map((a, i) => (
+          <div key={`j${i}`} className="text-[10px] font-normal text-amber-400 whitespace-normal" data-testid="static-joint-air">
+            {t('sim.jointAir', { type: t(`joints.${a.jointType}`), mm: mmText(a.mm), part: titles.get(a.by) ?? a.by })}
+          </div>
+        ))}
+        {[...contacts].map(([mm, parts]) => (
+          <div key={`c${mm}`} className="text-[10px] font-normal text-chrome-muted whitespace-normal" data-testid="static-air">
+            {t('sim.airNote', { mm: mmText(mm), parts: parts.join(', ') })}
+          </div>
+        ))}
+      </>
+    )
+  }
 
   const close = (): void => setShowStaticSummary(false)
   const select = (row: SummaryRow): void => {
@@ -66,7 +112,8 @@ function SummaryDialog() {
     return t('sim.location', { a: `${a} ${Math.round(r.maxLocal.a)}`, b: `${b} ${Math.round(r.maxLocal.b)}` })
   }
 
-  const displayed = onlyIssues ? rows.filter((row) => row.r.status !== 'ok' && row.r.status !== 'wallHung') : rows
+  // "only problems" shows every state that is not a clean ok: also not checked (hung on a wall) and unsure
+  const displayed = onlyIssues ? rows.filter((row) => row.r.status !== 'ok' || jointAir(row.r) !== null || !!row.r.unsure) : rows
   const th = 'px-2 py-1.5 font-medium border-b border-chrome-border'
   const td = 'px-2 py-1 border-b border-chrome-border/60 whitespace-nowrap'
 
@@ -83,6 +130,8 @@ function SummaryDialog() {
           <h2 id="static-summary-title" className="text-sm font-semibold flex-1">{t('sim.summaryTitle')}</h2>
           <span className="text-xs text-chrome-muted tabular-nums">
             {t('sim.counts', { critical: sim.critical, warning: sim.warning, unsupported: sim.unsupported })}
+            {notChecked > 0 && ` · ${t('sim.countNotChecked', { count: notChecked })}`}
+            {sim.unsureCount > 0 && ` · ${t('sim.countUnsure', { count: sim.unsureCount })}`}
           </span>
           <label className="flex items-center gap-1.5 text-xs text-chrome-secondary cursor-pointer">
             <input type="checkbox" checked={onlyIssues} onChange={(e) => setOnlyIssues(e.target.checked)} className="accent-[var(--color-action)]" />
@@ -94,11 +143,23 @@ function SummaryDialog() {
         <div className="px-4 py-2 border-b border-chrome-border text-xs text-chrome-secondary shrink-0">
           {t('sim.payloadNote', { kg: payloadKg })}
         </div>
+        {/* self-check of the whole run: where the load ends up (services/static-sim StaticBalance) */}
+        <div
+          data-testid="static-balance"
+          className={`px-4 py-2 border-b border-chrome-border text-xs shrink-0 ${lost > 0.5 * GRAVITY ? 'text-amber-400' : 'text-chrome-secondary'}`}
+        >
+          {lost > 0.5 * GRAVITY
+            ? t('sim.balanceUnsure', { lost: kgText(lost), total: kgText(sim.balance.inN), loop: kgText(sim.balance.droppedN), stuck: kgText(sim.balance.stuckN) })
+            : t('sim.balanceOk', { total: kgText(sim.balance.inN) })}
+        </div>
 
         {/* Table */}
         <div className="flex-1 overflow-y-auto">
           {displayed.length === 0 ? (
-            <div className="p-8 text-center text-sm text-chrome-muted">{onlyIssues ? t('sim.noIssues') : t('sim.noBoards')}</div>
+            <div className="p-8 text-center text-sm text-chrome-muted">
+              {/* no single board stands out, but the balance is unsure: never a plain "no problems" next to it */}
+              {onlyIssues ? (lost > 0.5 * GRAVITY ? t('sim.noIssuesButBalance') : t('sim.noIssues')) : t('sim.noBoards')}
+            </div>
           ) : (
             <table className="w-full text-xs border-collapse">
               <thead className="sticky top-0 z-10 bg-chrome-deep text-chrome-muted">
@@ -127,7 +188,11 @@ function SummaryDialog() {
                       onKeyDown={(e) => { if (e.key === 'Enter') select(row) }}
                       className="cursor-pointer hover:bg-chrome-hover focus:bg-chrome-hover outline-none"
                     >
-                      <td className={`${td} font-medium`}>{row.board.name}</td>
+                      <td className={`${td} font-medium`}>
+                        <PartName label={labels.get(row.board.id)} name={row.board.name} labelClassName="text-chrome-muted font-normal" />
+                        {airNotes(r)}
+                        {unsureNotes(r)}
+                      </td>
                       <td className={`${td} text-chrome-muted`}>{row.assembly.name}</td>
                       <td className={`${td} text-right font-mono`}>{num(r.totalLoadN / GRAVITY)}</td>
                       <td className={`${td} text-right font-mono`}>

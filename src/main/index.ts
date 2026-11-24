@@ -1,6 +1,8 @@
 import { app, shell, BrowserWindow, ipcMain, dialog, Menu, nativeTheme } from 'electron'
 import { dirname, extname, join } from 'path'
 import { readFile, writeFile } from 'fs/promises'
+import { appMenuTemplate } from './appMenu'
+import { LastFile } from './lastFile'
 
 /** URL schemes that links may hand to the operating system (system browser). */
 const EXTERNAL_PROTOCOLS = new Set(['https:'])
@@ -20,8 +22,17 @@ const withoutHash = (url: string): string => url.split('#')[0]
 let lastDir: string | undefined
 const inLastDir = (fileName: string): string => (lastDir ? join(lastDir, fileName) : fileName)
 
+const germanUi = (): boolean => app.getLocale().toLowerCase().startsWith('de')
+
+// ⌘Q / app.quit() closes the window first. If the user discards unsaved changes
+// in the dialog below, that close — and with it the quit — has been cancelled
+// by then, so quit again once the window is gone.
+let quitting = false
+app.on('before-quit', () => {
+  quitting = true
+})
+
 function createWindow(): void {
-  Menu.setApplicationMenu(null)
   nativeTheme.themeSource = 'dark'
 
   const mainWindow = new BrowserWindow({
@@ -62,7 +73,9 @@ function createWindow(): void {
   // its auto-save to the last saved version (else the next start would restore the
   // discarded edits), then the window is destroyed — destroy() skips beforeunload.
   mainWindow.webContents.on('will-prevent-unload', () => {
-    const de = app.getLocale().toLowerCase().startsWith('de')
+    const quitAfterClose = quitting
+    quitting = false
+    const de = germanUi()
     const choice = dialog.showMessageBoxSync(mainWindow, {
       type: 'warning',
       buttons: de ? ['Änderungen verwerfen und schließen', 'Abbrechen'] : ['Discard changes and close', 'Cancel'],
@@ -77,7 +90,10 @@ function createWindow(): void {
     mainWindow.webContents
       .executeJavaScript('window.__abrichtenDiscard?.()')
       .catch((err) => console.error('Discarding the auto-save failed:', err))
-      .finally(() => mainWindow.destroy())
+      .finally(() => {
+        mainWindow.destroy()
+        if (quitAfterClose) app.quit()
+      })
   })
 
   const devServerUrl = process.env['ELECTRON_RENDERER_URL']
@@ -89,6 +105,19 @@ function createWindow(): void {
 }
 
 app.whenReady().then(() => {
+  // No menu bar on Windows / Linux: every shortcut is the renderer's. macOS
+  // always has a menu bar, see appMenu.ts.
+  Menu.setApplicationMenu(
+    process.platform === 'darwin' ? Menu.buildFromTemplate(appMenuTemplate(germanUi())) : null
+  )
+
+  // The project file last opened or saved: startup asks when it changed outside
+  // the app since (lastFile.ts), and the dialogs start in its folder again.
+  const lastFile = new LastFile(app.getPath('userData'))
+  void lastFile.read().then((known) => { if (known && !lastDir) lastDir = dirname(known.path) })
+  const remember = (path: string, content: string): Promise<void> =>
+    lastFile.remember(path, content).catch((err) => console.error('Remembering the project file failed:', err))
+
   // IPC: Datei speichern
   ipcMain.handle('file:save', async (_event, data: string, defaultName: string) => {
     const { canceled, filePath } = await dialog.showSaveDialog({
@@ -101,6 +130,7 @@ app.whenReady().then(() => {
     if (canceled || !filePath) return null
     await writeFile(filePath, data, 'utf-8')
     lastDir = dirname(filePath)
+    await remember(filePath, data)
     return filePath
   })
 
@@ -116,8 +146,14 @@ app.whenReady().then(() => {
     if (canceled || filePaths.length === 0) return null
     const content = await readFile(filePaths[0], 'utf-8')
     lastDir = dirname(filePaths[0])
+    await remember(filePaths[0], content)
     return { path: filePaths[0], content }
   })
+
+  // IPC: the last opened/saved project file, if it changed outside the app since
+  ipcMain.handle('file:lastChanged', () => lastFile.changed())
+  // IPC: the user answered about that change; don't report this version again
+  ipcMain.handle('file:lastSeen', () => lastFile.seen())
 
   // IPC: Export (CSV, DXF)
   ipcMain.handle('file:export', async (_event, content: string, defaultName: string) => {

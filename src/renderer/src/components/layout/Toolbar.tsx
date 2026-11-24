@@ -6,6 +6,11 @@ import { useProjectStore } from '../../store/useProjectStore'
 import { useUIStore } from '../../store/useUIStore'
 import { getApiKey } from './SettingsDialog'
 import { Icon } from './Icon'
+import { WorkspaceSwitcher } from './WorkspaceSwitcher'
+import { IS_MAC } from '../../utils/canvasInput'
+import { keyCombo } from '../../utils/shortcutKeys'
+import { undo, redo } from '../../services/history'
+import { useDesignHint, useDesignLocked } from '../../hooks/useDesignLocked'
 
 function Sep() {
   return <div className="w-px h-4 bg-chrome-divider shrink-0" />
@@ -50,8 +55,9 @@ export function Toolbar() {
   const temporalStore = useProjectStore.temporal
   const undoCount = useStore(temporalStore, (s) => s.pastStates.length)
   const redoCount = useStore(temporalStore, (s) => s.futureStates.length)
-  const undo = useStore(temporalStore, (s) => s.undo)
-  const redo = useStore(temporalStore, (s) => s.redo)
+  // undo and redo keep to the design lock (services/history.ts); the AI builds parts, so not in assembly
+  const locked = useDesignLocked()
+  const { readOnly } = useDesignHint()
 
   const handleNew = () => {
     if (!confirmDiscardChanges('new')) return
@@ -130,7 +136,7 @@ export function Toolbar() {
       <button
         onClick={() => undo()}
         disabled={undoCount === 0}
-        title={`${t('actions.undo')} (Ctrl+Z) — ${undoCount} ${lang === 'de' ? 'Schritte' : 'steps'}`}
+        title={`${t('actions.undo')} (${keyCombo('Z', ['cmd'])}) — ${undoCount} ${lang === 'de' ? 'Schritte' : 'steps'}`}
         aria-label={t('actions.undo')}
         className="h-7 w-8 flex items-center justify-center rounded text-chrome-secondary hover:bg-chrome-surface hover:text-chrome-text disabled:opacity-30 disabled:cursor-not-allowed transition-colors relative"
       >
@@ -144,7 +150,7 @@ export function Toolbar() {
       <button
         onClick={() => redo()}
         disabled={redoCount === 0}
-        title={`${t('actions.redo')} (Ctrl+Shift+Z) — ${redoCount} ${lang === 'de' ? 'Schritte' : 'steps'}`}
+        title={`${t('actions.redo')} (${keyCombo('Z', ['cmd', 'shift'])}) — ${redoCount} ${lang === 'de' ? 'Schritte' : 'steps'}`}
         aria-label={t('actions.redo')}
         className="h-7 w-8 flex items-center justify-center rounded text-chrome-secondary hover:bg-chrome-surface hover:text-chrome-text disabled:opacity-30 disabled:cursor-not-allowed transition-colors relative"
       >
@@ -161,25 +167,28 @@ export function Toolbar() {
       {/* File ops */}
       <Btn
         onClick={handleOpen}
-        title={`${t('actions.open')} (Ctrl+O)`}
+        title={`${t('actions.open')} (${keyCombo('O', ['cmd'])})`}
         className="bg-chrome-surface text-chrome-secondary hover:bg-chrome-hover hover:text-chrome-text"
       >
         {t('actions.open')}
       </Btn>
       <Btn
         onClick={handleSave}
-        title={`${t('actions.save')} (Ctrl+S)`}
+        title={`${t('actions.save')} (${keyCombo('S', ['cmd'])})`}
         className="border border-chrome-divider text-chrome-secondary hover:bg-chrome-surface hover:text-chrome-text hover:border-chrome-hover"
       >
         {t('actions.save')}
       </Btn>
 
-      <Sep />
+      {/* Workspaces, centred between the file group and the search */}
+      <div className="flex-1 flex justify-center min-w-0 px-2">
+        <WorkspaceSwitcher />
+      </div>
 
       {/* ⌘K Search pill */}
       <button
         onClick={() => setShowCommandPalette(true)}
-        title={lang === 'de' ? 'Werkzeuge & Panels suchen (Ctrl+K)' : 'Search tools & panels (Ctrl+K)'}
+        title={`${lang === 'de' ? 'Werkzeuge & Panels suchen' : 'Search tools & panels'} (${keyCombo('K', ['cmd'])})`}
         className="h-7 flex items-center gap-2 px-3 rounded-full border border-chrome-divider bg-chrome-surface text-chrome-muted hover:border-chrome-hover hover:text-chrome-secondary hover:bg-chrome-hover transition-colors min-w-[140px] cursor-pointer"
       >
         <Icon name="search" className="w-3.5 h-3.5" />
@@ -187,7 +196,7 @@ export function Toolbar() {
           {lang === 'de' ? 'Suchen …' : 'Search …'}
         </span>
         <kbd className="text-[9px] bg-chrome-bg border border-chrome-divider px-1.5 py-0.5 rounded text-chrome-muted">
-          Ctrl K
+          {IS_MAC ? '⌘K' : 'Ctrl K'}
         </kbd>
       </button>
 
@@ -211,11 +220,12 @@ export function Toolbar() {
       {/* AI */}
       <Btn
         onClick={() => setShowChatPanel(!showChatPanel)}
+        disabled={locked}
         className={showChatPanel
           ? 'bg-ai text-ai-text'
           : 'bg-chrome-surface text-ai-text hover:bg-ai-dim hover:text-ai-text'
         }
-        title={!apiKeyConfigured ? (lang === 'de' ? 'API-Schlüssel konfigurieren' : 'Configure API key') : undefined}
+        title={locked ? readOnly : !apiKeyConfigured ? (lang === 'de' ? 'API-Schlüssel konfigurieren' : 'Configure API key') : undefined}
       >
         {t('ai.title')}
       </Btn>

@@ -58,6 +58,93 @@
     "removeCutout": "Remove cutout",
     "edgeE4": "Right Edge (Depth)"
   },
+  "role": {
+    "label": "Part role",
+    "none": "no part role",
+    "all": "All part roles",
+    "mixed": "mixed",
+    "groupBy": "By part role",
+    "groupTitle": "Group by part role (visible part, carcass, back …)",
+    "pieces_one": "{{count}} part",
+    "pieces_other": "{{count}} parts",
+    "visible": "Visible part",
+    "carcass": "Carcass",
+    "back": "Back panel",
+    "substructure": "Substructure",
+    "drawer": "Drawer box",
+    "worktop": "Worktop",
+    "plinth": "Plinth",
+    "appliance": "Appliance",
+    "hint_visible": "Front, end panel, filler",
+    "hint_carcass": "Bottoms, sides, middle sides, shelves",
+    "hint_back": "Back of the carcass",
+    "hint_substructure": "Frame, battens, rails",
+    "hint_drawer": "Drawer box (without its front)",
+    "hint_worktop": "Worktop and what carries it",
+    "hint_plinth": "Plinth panel and feet",
+    "hint_appliance": "Placeholder for a built-in appliance"
+  },
+  "montage": {
+    "title": "Assembly",
+    "modeTitle": "Assembly mode",
+    "modeDesc": "Plan assembly steps and print them as instructions",
+    "close": "Leave assembly mode",
+    "instruction": "Assembly instructions",
+    "step": "Step {{n}}",
+    "stepOf": "Step {{n}} of {{total}}",
+    "prev": "Previous step (←)",
+    "next": "Next step (→)",
+    "keysHint": "← → to step",
+    "noSteps": "No assembly steps yet.",
+    "suggest": "Suggest an order",
+    "suggestTitle": "Build steps from the part roles (replaces the current ones; {{shortcut}} undoes it)",
+    "addStep": "+ Step",
+    "addStepTitle": "Insert a new step after this one",
+    "newStep": "New step",
+    "removeStep": "Delete step",
+    "removeStepTitle": "Delete step – its parts become “not planned yet”",
+    "moveEarlier": "Move step earlier",
+    "moveLater": "Move step later",
+    "stepTitle": "Step title",
+    "stepNote": "Note for this step",
+    "notePlaceholder": "Note, e.g. “align first, then screw”",
+    "parts": "Parts",
+    "partsAll": "All parts",
+    "noParts": "No parts in this step.",
+    "fasteners": "Fixings",
+    "fastenersAll": "All fixings",
+    "noFasteners": "No joints in this step.",
+    "addSelection_one": "Add selection ({{count}} part)",
+    "addSelection_other": "Add selection ({{count}} parts)",
+    "moveTo": "Move to step",
+    "unplan": "not planned",
+    "unplanned": "Not planned yet",
+    "unplannedCount_one": "{{count}} part not planned yet",
+    "unplannedCount_other": "{{count}} parts not planned yet",
+    "addHere": "+ here",
+    "addAllHere": "All here",
+    "print": "Print instructions",
+    "printTitle": "Print the assembly instructions with a picture per step (PDF)",
+    "nr": "No.",
+    "unplannedJoints_one": "{{count}} joint with parts not planned yet",
+    "unplannedJoints_other": "{{count}} joints with parts not planned yet",
+    "head_countersunk": "countersunk",
+    "head_pan": "pan head",
+    "head_hex": "hex head",
+    "s_back": "Back panels",
+    "s_substructure": "Substructure",
+    "s_carcass": "Carcass: {{path}}",
+    "s_endPanels": "End panels and fillers",
+    "s_worktop": "Worktop",
+    "s_appliance": "Appliances",
+    "s_drawer": "Drawer boxes",
+    "s_fronts": "Fronts",
+    "s_plinth": "Plinth",
+    "s_other": "{{path}}",
+    "steps": "Steps",
+    "noStepsHint": "No steps yet. Choose “Suggest an order” on the right.",
+    "leave": "Exit"
+  },
   "materials": {
     "solid_wood": "Solid Wood",
     "panel": "Panel Products",
@@ -198,7 +285,11 @@
     "noItems": "No hardware in this category.",
     "addToBoard": "Add to Board",
     "unitPrice": "Unit Price (\u20ac)",
-    "totalPrice": "Total Price (\u20ac)"
+    "totalPrice": "Total Price (\u20ac)",
+    "bridges": "Bridges gap (mm)",
+    "bridgesFrom": "from",
+    "bridgesTo": "to",
+    "bridgesHint": "The gap this hardware bridges between its part and the neighbour, from–to in mm (e.g. a side-mounted runner 12.5–13). Only then does the statics count a support across that gap."
   },
   "boring": {
     "title": "32mm Grid",
@@ -212,10 +303,13 @@
     "export": "Export Boring List",
     "noBoards": "No boards selected.",
     "sideInset": "Side inset (mm)",
-    "minHeight": "Min height (mm)"
+    "minHeight": "Min height (mm)",
+    "rows": "Rows for shelf pins",
+    "rowsNoPins": "Off because no shelf pins are planned in the project. Switch on if they are.",
+    "noneWithoutRows": "No holes. Rows for shelf pins are off because no shelf pins are planned in the project."
   },
   "nesting": {
-    "title": "Sheet Nesting",
+    "title": "Sheet layout",
     "sheetWidth": "Sheet Width (mm)",
     "sheetHeight": "Sheet Height (mm)",
     "sawKerf": "Saw Kerf (mm)",
@@ -279,7 +373,25 @@
     "unit": "Unit",
     "fetchModels": "Fetch Models",
     "loadingModels": "Loading models...",
-    "fetchError": "Failed to load models"
+    "fetchError": "Failed to load models",
+    "inputDevice": "Input device",
+    "inputAuto": "Automatic",
+    "inputMouse": "Mouse",
+    "inputTrackpad": "Trackpad",
+    "inputHintAuto": "Tells for every gesture whether a mouse wheel or a trackpad sent it: the wheel zooms as before, two fingers pan, pinch zooms.",
+    "inputHintMouse": "As before: the wheel zooms, the middle button orbits in 3D (2D: pans), the right button pans.",
+    "inputHintTrackpad": "Two fingers pan, pinch zooms to the pointer, {{alt}} + two fingers or {{alt}} + drag orbits in 3D, ⇧{{alt}} + drag pans."
+  },
+  "input": {
+    "trackpad": "Trackpad",
+    "twoFinger": "2 fingers",
+    "pan": "Pan the view",
+    "pinch": "Pinch",
+    "zoomToPointer": "Zoom to the pointer",
+    "orbit3d": "Orbit 3D",
+    "drag": "drag",
+    "orbit3dPan2d": "Orbit 3D (2D: pan)",
+    "settingHint": "Mouse or trackpad: Settings → General"
   },
   "actions": {
     "save": "Save",
@@ -298,6 +410,11 @@
     "saved": "Saved",
     "confirmNew": "Unsaved changes will be lost. Create new project?",
     "invalidProjectFile": "Invalid project file: {{reason}}",
+    "loadChangesTitle_one": "Opening adjusted {{count}} entry",
+    "loadChangesTitle_other": "Opening adjusted {{count}} entries",
+    "loadChangesIntro": "The app could not use these entries as they were. The file itself is unchanged; only saving takes over the adjustment. Until then the project counts as unsaved.",
+    "loadChangesCopy": "Copy list",
+    "loadChangesOk": "Got it",
     "confirmOpen": "Unsaved changes will be lost. Open file?"
   },
   "presets": {
@@ -387,6 +504,29 @@
     "paramInvalidName": "Names start with a letter or _ and contain only letters, digits and _.",
     "paramRemoveUnlinks": "Delete – {{count}} board(s) lose their formula with {{name}}; their sizes stay."
   },
+  "partLabel": {
+    "nr": "No.",
+    "nrTitle": "Part number: the assembly’s short word and the number within it, e.g. “Herd 2”. The same everywhere: parts column, cutting list, nesting, shop drawings, assembly instruction.",
+    "shortName": "Short word",
+    "shortNameTitle": "Short word for this assembly’s part numbers ({{example}} …). Click to change; empty = first word of the name.",
+    "shortNameSuggested": "Suggested from the name: “{{word}}” ({{example}} …). Click to set a short word of your own.",
+    "editShortName": "Change short word",
+    "doubled": "“{{word}}” is used by another assembly too – the part numbers would repeat. Click to change.",
+    "taken": "Another assembly already uses the short word “{{word}}”.",
+    "renumber": "Renumber parts",
+    "renumberHint": "Numbers the parts of every assembly again (1, 2, 3 …), without gaps. Meant for just before printing.",
+    "renumberConfirm": "Renumber all parts? Parts already labelled will no longer match the lists.",
+    "renumbered": "Parts renumbered. Undo with {{undo}}."
+  },
+  "fileChanged": {
+    "title": "File changed outside the app",
+    "question": "The file is newer than the saved state – reload it?",
+    "changedAt": "“{{name}}” was changed outside Abrichten on {{date}} at {{time}}. The app is showing its own saved state, not the file.",
+    "unsavedWarning": "The app has unsaved changes. They are lost when you load the file.",
+    "keep": "Keep the app’s state",
+    "load": "Load file",
+    "invalid": "“{{name}}” was changed outside the app but does not load ({{reason}}). The app shows its saved state."
+  },
   "ui": {
     "close": "Close",
     "deselect": "Deselect (Esc)",
@@ -462,7 +602,7 @@
     "holes": "holes",
     "minHeight": "Min height (mm)",
     "boringNoBoards": "No standing parts of {{min}} mm height or more.",
-    "boringFaceHint": "Face view: front edge on the left, Y from the bottom edge",
+    "boringFaceHint": "As in the shop drawing: X from the left side, Y from the bottom edge",
     "paramsHint": "Parameters are named dimensions in mm. Type a formula into a board’s dimension field; when the value changes, every board using it is recalculated. Examples:",
     "paramNamePlaceholder": "e.g. H, W, DEPTH",
     "sheetPreset": "Sheet size",
@@ -483,7 +623,7 @@
     "welcomeTagline": "Plan furniture and kitchens – from the design to the cutting list.",
     "welcomeEmpty": "Empty project",
     "welcomeShortcuts": "Shortcuts",
-    "welcomePaletteHint": "Ctrl+K opens the command palette at any time."
+    "welcomePaletteHint": "{{shortcut}} opens the command palette at any time."
   },
   "layout": {
     "toolbar": {
@@ -516,15 +656,15 @@
       "snapTitle": "Snapping on/off (S)",
       "snapSize": "Snap grid size",
       "grid": "Grid",
-      "gridTitle": "Show grid (Alt+G)",
+      "gridTitle": "Show grid ({{shortcut}})",
       "unit": "Unit",
       "cursor": "Position under the cursor (mm)",
       "unsaved": "Unsaved changes",
-      "unsavedTitle": "The project changed since it was last saved to a file (Ctrl+S)",
+      "unsavedTitle": "The project changed since it was last saved to a file ({{shortcut}})",
       "saved": "Auto-saved ✓",
       "savedTitle": "Auto-saved to local storage",
       "saveFailed": "Auto-save failed",
-      "saveFailedTitle": "Auto-saving to local storage failed. Save the project to a file (Ctrl+S)."
+      "saveFailedTitle": "Auto-saving to local storage failed. Save the project to a file ({{shortcut}})."
     }
   },
   "sim": {
@@ -542,6 +682,12 @@
     "labelBreak": "Breaks · {{u}} %",
     "labelMax": "max. {{u}} %",
     "labelSag": "Sag {{d}} mm (allowed {{allow}})",
+    "gapBridged": "gap {{mm}} mm, bridged by hardware",
+    "gapGlued": "gap {{mm}} mm, glue bed",
+    "airShort": "air {{mm}} mm",
+    "airNote": "Air {{mm}} mm to {{parts}} – no support",
+    "jointAirShort": "{{type}} across {{mm}} mm of air",
+    "jointAir": "{{type}} across {{mm}} mm of air to {{part}} – connects nothing: close the gap or enter the hardware that bridges it",
     "labelMaxSag": "max. {{u}} % · sag {{d}} mm",
     "counts": "{{critical}} critical · {{warning}} warning · {{unsupported}} unsupported",
     "boardLoad": "Payload",
@@ -552,6 +698,17 @@
     "payloadNote": "Payload: {{kg}} kg per shelf, set in the legend of the static view. Self-weight and parts resting on a board are included.",
     "onlyIssues": "Issues only",
     "noIssues": "No issues found.",
+    "unsureLoop": "unsure: hands {{kg}} kg in a loop to {{part}}, not counted there",
+    "noIssuesButBalance": "No single part stands out – but the load balance above is unsure.",
+    "unsureDownstream": "unsure: carries load from {{count}} part(s) above (e.g. {{part}}) that miss {{kg}} kg from loops together",
+    "unsureMissing": "unsure: {{kg}} kg from {{part}} are missing here (loop)",
+    "unsureChoice": "unsure: depends on how a loop is broken – the other way {{u}} %, load {{kg}} kg different",
+    "countNotChecked": "{{count}} not checked",
+    "countUnsure": "{{count}} unsure",
+    "balanceUnsure": "Unsure: {{lost}} of {{total}} kg do not reach the floor – {{loop}} kg not counted in loops (parts carrying each other), {{stuck}} kg in parts without support. The numbers of these parts do not hold.",
+    "balanceOk": "Load balance: all {{total}} kg reach the floor.",
+    "unsureShort": "unsure (loop)",
+    "balanceShort": "Unsure: {{lost}} of {{total}} kg do not reach the floor",
     "noBoards": "No boards to analyse.",
     "colPart": "Part",
     "colGroup": "Group",
@@ -597,5 +754,82 @@
     "location": "{{a}} · {{b}}"
 ,
     "jointsLegend": "Joined (selected board)"
+  },
+  "workspace": {
+    "label": "Workspace",
+    "design": "Design",
+    "designDesc": "Plan and edit the model",
+    "assembly": "Assembly",
+    "assemblyDesc": "Plan the assembly steps and print the instructions",
+    "parts": "Parts",
+    "groupBy": "Group",
+    "groupAssembly": "Assembly",
+    "groupRole": "Part role",
+    "groupMaterial": "Material"
+  },
+  "designLock": {
+    "change": "Belongs to the design – change it there ({{key}})",
+    "undo": "The last change belongs to the design – undo it there ({{key}}, then {{undo}})",
+    "redo": "The next change belongs to the design – redo it there ({{key}}, then {{redo}})",
+    "hint": "Change parts in the design ({{key}})",
+    "inDesign": "in the design ({{key}})",
+    "readOnly": "Read only in assembly – change it in the design ({{key}})"
+  },
+  "eye": {
+    "hide": "Hide in the view – still counts",
+    "show": "Show in the view",
+    "mixed": "Partly hidden – click shows all"
+  },
+  "counts": {
+    "on": "Counts: cutting list, costs, plans, statics, assembly, view",
+    "off": "Does not count (variant off) – tick to bring it back",
+    "some": "Partly counts – some subgroups are unticked",
+    "toggle": "Count on/off (variant)"
+  },
+  "xray": {
+    "on": "Highlight – shows where it sits; everything else steps back",
+    "off": "Remove the highlight",
+    "mixed": "Partly highlighted – click removes all"
+  },
+  "cutout": {
+    "column": "Cut-outs",
+    "add": "Cut-out",
+    "shape": "Shape",
+    "rect": "rectangle",
+    "circle": "round",
+    "diameter": "Diameter (mm)",
+    "size": {
+      "x": "Width",
+      "y": "Height",
+      "z": "Depth"
+    },
+    "edge": {
+      "left": "left",
+      "right": "right",
+      "bottom": "bottom",
+      "top": "top",
+      "back": "back",
+      "front": "front"
+    },
+    "from": "Distance from",
+    "fromShort": "from",
+    "inRoom": "in the room",
+    "room": {
+      "x": "from the left",
+      "y": "from the floor",
+      "z": "from the back"
+    },
+    "kind": {
+      "round": "round hole",
+      "notch": "notch",
+      "hole": "cut-out"
+    },
+    "problem": {
+      "outside": "not wholly on the part – not built",
+      "splits": "would cut the part in two – not built",
+      "splitsWith": "would cut the part in two together with cut-out {{n}} – not built",
+      "beyond": "reaches past the edge of the part – cut back there",
+      "overlaps": "overlaps or touches cut-out {{n}} – not built"
+    }
   }
 }

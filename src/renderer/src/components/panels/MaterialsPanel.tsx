@@ -5,6 +5,8 @@ import { useUIStore } from '../../store/useUIStore'
 import { Dialog, Button, FIELD_CLASS, LABEL_CLASS, SECTION_LABEL_CLASS, CHECK_CLASS } from '../ui/Dialog'
 import { materials as builtinMaterials } from '../../data/materials'
 import type { Material, MaterialCategory } from '../../types/furniture'
+import { useDesignLocked } from '../../hooks/useDesignLocked'
+import { numberFieldValue } from '../../utils/units'
 
 const CATEGORY_LABELS: Record<MaterialCategory, { de: string; en: string }> = {
   solid_wood: { de: 'Massivholz',  en: 'Solid Wood' },
@@ -78,7 +80,9 @@ export function MaterialsPanel() {
   const [form, setForm] = useState<FormState>(formDefaults())
   const [error, setError] = useState('')
 
-  if (!showMaterialsPanel) return null
+  // a tool of the design: not in the assembly workspace (store/designLock.ts)
+  const locked = useDesignLocked()
+  if (locked || !showMaterialsPanel) return null
 
   const handleClose = () => {
     setShowMaterialsPanel(false)
@@ -118,9 +122,9 @@ export function MaterialsPanel() {
     name:            form.name.trim(),
     nameEn:          form.nameEn.trim() || form.name.trim(),
     category:        form.category,
-    density:         parseFloat(form.density) || 750,
-    eModul:          parseFloat(form.eModul) || 10000,
-    bendingStrength: parseFloat(form.bendingStrength) || 80,
+    density:         numberFieldValue(form.density) || 750,
+    eModul:          numberFieldValue(form.eModul) || 10000,
+    bendingStrength: numberFieldValue(form.bendingStrength) || 80,
     defaultThickness: parseThicknesses(form.thicknesses),
     color:           form.color,
     grain:           form.grain

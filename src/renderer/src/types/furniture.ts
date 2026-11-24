@@ -6,6 +6,23 @@ export type FastenerType = 'wood_screw' | 'confirmat' | 'dowel_pin' | 'biscuit' 
 export type HeadType = 'countersunk' | 'pan' | 'hex'
 export type FastenerMaterial = 'steel' | 'stainless' | 'brass'
 
+/**
+ * What a part is, the way a cabinetmaker sorts it: decides material, edge and
+ * surface requirements. Independent of the assembly tree (which is per cabinet
+ * or compartment), so a project can be built by compartment and still be listed
+ * and costed by role. The order is the order of the lists.
+ *  visible      Sichtteil: front, end panel, filler/cover strip
+ *  carcass      Korpus: bottoms, tops, sides, middle sides, shelves
+ *  back         Rückwand
+ *  substructure Unterkonstruktion: frame, battens, rails
+ *  drawer       Schubkasten-Kasten (the box, not its front)
+ *  worktop      Arbeitsplatte and what carries it
+ *  plinth       Sockel
+ *  appliance    Einbaugerät (oven, fridge … as a placeholder part)
+ */
+export const BOARD_ROLES = ['visible', 'carcass', 'back', 'substructure', 'drawer', 'worktop', 'plinth', 'appliance'] as const
+export type BoardRole = (typeof BOARD_ROLES)[number]
+
 export interface EdgeBanding {
   e1?: boolean  // front face edge (along width)
   e2?: boolean  // back face edge (along width)
@@ -24,17 +41,27 @@ export interface AttachedHardware {
   quantity: number
 }
 
-/** Rectangular cutout through the full board thickness (height axis),
- *  e.g. for a cooktop or sink in a worktop. x/z are measured from the
- *  board's min-corner in the width/depth plane.
- *  ponytail: rectangles only, always through-thickness — polygonal or
- *  partial-depth cutouts would need a CSG library. */
+/** A cutout through the full thickness of a board, lying or standing: a rectangle (a
+ *  hole inside, a notch — Ausklinkung — at the edge) or a round hole. It sits on the
+ *  board's face (utils/boardFace): x along the face's first axis (u), z along its second
+ *  (v), from the face's min corner; width × depth its size there (a circle: its diameter
+ *  both ways). On a lying board that is x along the width and z along the depth, as before.
+ *  Where it sits in the room and how its edges are named: utils/cutoutPlace.
+ *  ponytail: rectangles and circles, always through the thickness. */
 export interface BoardCutout {
   id: string
-  x: number      // mm from board left edge (width axis)
-  z: number      // mm from board front edge (depth axis)
-  width: number  // mm along width axis
-  depth: number  // mm along depth axis
+  /** Missing: a rectangle */
+  shape?: 'circle'
+  x: number      // mm along the face's first axis (u)
+  z: number      // mm along the face's second axis (v)
+  width: number  // mm along u
+  depth: number  // mm along v
+  /** The edges it is measured from (Bezugskanten) along u and v: at 0 ('min') or at the
+   *  far end ('max'). x and z are its distances from these edges, so it keeps its place
+   *  from them when the board changes size. Missing: measured from 0, shown from the nearer
+   *  edge. Read it through utils/geometry (faceCutout, clampCutouts), never directly. */
+  uFrom?: 'min' | 'max'
+  vFrom?: 'min' | 'max'
 }
 
 /** A load placed on a board's top face: a w × d patch at x/z from the board's
@@ -59,6 +86,14 @@ export interface Board {
   materialId: string
   color: string
   grainDirection?: GrainDirection
+  /** Part role (Bauteilart) for lists and costing; missing = not assigned */
+  role?: BoardRole
+  /**
+   * Part number within its assembly (1, 2, 3 …), fixed once given. With the
+   * assembly's short word it is the part's label in every list and print:
+   * "Herd 2" (utils/partLabel.ts). The store fills in missing numbers.
+   */
+  partNo?: number
   edgeBanding?: EdgeBanding
   cutouts?: BoardCutout[]
   hardware?: AttachedHardware[]
@@ -79,8 +114,8 @@ export interface Assembly {
   /** Parent assembly; missing = top level. The tree order is the array order among siblings. */
   parentId?: string
   visible: boolean
-  /** X-ray highlight: group edges drawn through all other geometry */
-  highlight?: boolean
+  /** Short word for the part labels ("Herd" → "Herd 2"); missing = the first word of the name */
+  shortName?: string
   boards: Board[]
   joints: Joint[]
 }
@@ -124,6 +159,17 @@ export interface Material {
   grain: boolean
 }
 
+/** One step of the assembly instruction (Montageanleitung): the boards installed in it,
+ *  in the order of the steps. Fasteners are not stored: a joint belongs to the step in
+ *  which the second of its two boards is installed (utils/assemblySteps.ts). */
+export interface AssemblyStep {
+  id: string
+  title: string
+  note?: string
+  /** Boards installed in this step; a board is in at most one step */
+  boardIds: string[]
+}
+
 export interface CustomHardwareItem {
   id: string
   name: string
@@ -132,6 +178,12 @@ export interface CustomHardwareItem {
   drillingDiameter?: number
   unitPrice: number
   manufacturer?: string
+  /**
+   * The gap this hardware bridges between the board it is on and its neighbour, from–to in mm
+   * (a side-mounted drawer runner: 12.5–13). Only such a range explains a support or a joint
+   * across air in the statics (services/static-sim, data/hardware bridgingHardware).
+   */
+  bridgesMm?: [number, number]
 }
 
 export interface Project {
@@ -146,6 +198,14 @@ export interface Project {
   materialPrices?: Record<string, number>  // price per m² in currency
   customMaterials?: Material[]
   customHardware?: CustomHardwareItem[]
+  /**
+   * The gap a catalogue hardware item bridges in this project, from–to mm by its id (the
+   * catalogue gives none): only such a range lets the statics count air across it
+   * (data/hardware bridgesOf). The project's own hardware keeps it in its bridgesMm.
+   */
+  hardwareBridges?: Record<string, [number, number]>
+  /** Assembly instruction steps in order; boards in no step are not planned yet */
+  assemblySteps?: AssemblyStep[]
   laborHours?: number
   laborRate?: number    // per hour
   overheadPct?: number  // 0–1

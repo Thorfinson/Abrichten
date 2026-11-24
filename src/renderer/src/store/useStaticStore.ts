@@ -3,7 +3,8 @@ import { create } from 'zustand'
 import type { Assembly, CustomHardwareItem, Material } from '../types/furniture'
 import { simulateStatics, type StaticSimulation } from '../services/static-sim'
 import { useProjectStore } from './useProjectStore'
-import { useUIStore } from './useUIStore'
+import { designLockedIn, useUIStore } from './useUIStore'
+import { assemblyCounts } from '../utils/activeParts'
 
 /** Exaggeration of the deformation drawn when it is shown. */
 export const DEFORMATION_SCALE = 20
@@ -67,23 +68,25 @@ export const useStaticStore = create<StaticState>((set) => ({
 // board's finite-element solution is cached on its inputs (services/static-sim.ts), so a
 // change re-solves only the boards it reaches.
 let cache: {
-  assemblies: Assembly[]; payloadKg: number; customMaterials?: Material[]; customHardware?: CustomHardwareItem[]; result: StaticSimulation
+  assemblies: Assembly[]; payloadKg: number; customMaterials?: Material[]; customHardware?: CustomHardwareItem[]
+  hardwareBridges?: Record<string, [number, number]>; result: StaticSimulation
 } | null = null
 
 /** The load simulation of the visible assemblies, memoised on its inputs. */
 export function staticSimulation(
-  assemblies: Assembly[], payloadKg: number, customMaterials?: Material[], customHardware?: CustomHardwareItem[]
+  assemblies: Assembly[], payloadKg: number, customMaterials?: Material[], customHardware?: CustomHardwareItem[],
+  hardwareBridges?: Record<string, [number, number]>
 ): StaticSimulation {
   if (cache && cache.assemblies === assemblies && cache.payloadKg === payloadKg &&
-    cache.customMaterials === customMaterials && cache.customHardware === customHardware) {
+    cache.customMaterials === customMaterials && cache.customHardware === customHardware && cache.hardwareBridges === hardwareBridges) {
     return cache.result
   }
-  const visible = assemblies.filter((a) => a.visible !== false)
+  const visible = assemblies.filter(assemblyCounts)
   const boards = visible.flatMap((a) => a.boards)
   // joints may join boards of different assemblies; one into a hidden assembly is skipped there
   const joints = visible.flatMap((a) => a.joints)
-  const result = simulateStatics(boards, { payloadKg, customMaterials, customHardware, joints })
-  cache = { assemblies, payloadKg, customMaterials, customHardware, result }
+  const result = simulateStatics(boards, { payloadKg, customMaterials, customHardware, hardwareBridges, joints })
+  cache = { assemblies, payloadKg, customMaterials, customHardware, hardwareBridges, result }
   return result
 }
 
@@ -92,11 +95,17 @@ export function useStaticSimulation(): StaticSimulation {
   const assemblies = useProjectStore((s) => s.project.assemblies)
   const customMaterials = useProjectStore((s) => s.project.customMaterials)
   const customHardware = useProjectStore((s) => s.project.customHardware)
+  const hardwareBridges = useProjectStore((s) => s.project.hardwareBridges)
   const payloadKg = useUIStore((s) => s.staticLoadKg)
-  return useMemo(() => staticSimulation(assemblies, payloadKg, customMaterials, customHardware), [assemblies, payloadKg, customMaterials, customHardware])
+  return useMemo(() => staticSimulation(assemblies, payloadKg, customMaterials, customHardware, hardwareBridges), [assemblies, payloadKg, customMaterials, customHardware, hardwareBridges])
 }
 
 // Test/debug access, like __projectStore and __uiStore; __staticSimulation is the last run
+// Placing a load changes the design: the assembly workspace switches it off
+useUIStore.subscribe((s, prev) => {
+  if (designLockedIn(s) && !designLockedIn(prev)) useStaticStore.getState().setPlacingLoad(false)
+})
+
 declare global { interface Window { __staticStore?: unknown; __staticSimulation?: () => StaticSimulation | null } }
 if (typeof window !== 'undefined') {
   window.__staticStore = useStaticStore

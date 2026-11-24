@@ -1,8 +1,10 @@
 import { useState, useCallback, useEffect, useRef } from 'react'
-import { useUIStore, useCanvasView } from '../../store/useUIStore'
+import { useUIStore, useCanvasView, viewHiddenIds } from '../../store/useUIStore'
 import { useProjectStore } from '../../store/useProjectStore'
 import type { ViewMode } from '../../types/measurement'
+import { cameraDragFor } from '../../utils/canvasInput'
 import * as THREE from 'three'
+import { assemblyCounts } from '../../utils/activeParts'
 
 /** Axis mapping per ortho view: which world axes map to screen X and Y */
 const VIEW_AXES: Record<Exclude<ViewMode, '3d'>, { screenX: 'x' | 'y' | 'z'; screenY: 'x' | 'y' | 'z'; flipY: boolean }> = {
@@ -84,10 +86,13 @@ export function MarqueeSelect({ canvasRef, cameraRef }: MarqueeSelectProps) {
       // Find all boards that overlap with the marquee rectangle, per assembly
       const project = useProjectStore.getState().project
       const hits = new Map<string, string[]>()
+      // parts the assembly step view hides cannot be picked (Del would remove what you cannot see)
+      const hidden = viewHiddenIds(project, useUIStore.getState())
 
       for (const assembly of project.assemblies) {
-        if (assembly.visible === false) continue
+        if (!assemblyCounts(assembly)) continue
         for (const board of assembly.boards) {
+          if (hidden.has(board.id)) continue
           // Board AABB in world space (position is corner, not center)
           const bMinW = board.position[wAxis]
           const bMaxW = board.position[wAxis] + (wAxis === 'x' ? board.width : wAxis === 'y' ? board.height : board.depth)
@@ -138,6 +143,8 @@ export function MarqueeSelect({ canvasRef, cameraRef }: MarqueeSelectProps) {
     if (e.button !== 0) return
     if (activeTool !== 'select') return
     if (!isOrtho) return
+    // ⌥-drag pans the view (CameraController) instead
+    if (cameraDragFor(e, activeView, useUIStore.getState().inputDevice)) return
 
     // Don't start marquee if the click is on a board (R3F canvas handles that via stopPropagation)
     // We detect this by checking if the event target is the canvas element itself
@@ -193,7 +200,7 @@ export function MarqueeSelect({ canvasRef, cameraRef }: MarqueeSelectProps) {
 
     document.addEventListener('pointermove', onMove)
     document.addEventListener('pointerup', onUp)
-  }, [activeTool, isOrtho, canvasRef])
+  }, [activeTool, isOrtho, activeView, canvasRef])
 
   // Attach pointer listener to the canvas container
   useEffect(() => {

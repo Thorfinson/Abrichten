@@ -57,6 +57,7 @@ function saveChatHistory(messages: DisplayMessage[], history: ChatMessage[]) {
 export function ChatPanel() {
   const { t } = useTranslation()
   const project = useProjectStore((s) => s.project)
+  // design-lock-ok: App.tsx shows the AI chat only in the design workspace; the store refuses its parts anyway
   const addAssembly = useProjectStore((s) => s.addAssembly)
   const addBoardsBatch = useProjectStore((s) => s.addBoardsBatch)
   const setShowChatPanel = useUIStore((s) => s.setShowChatPanel)

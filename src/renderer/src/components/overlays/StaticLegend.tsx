@@ -5,6 +5,8 @@ import { useStaticSimulation, useStaticStore, modelFieldMax, DEFORMATION_SCALE, 
 import { UTILISATION_GRADIENT_CSS, UTILISATION_STOPS, UNSUPPORTED_COLOR, NEUTRAL_COLOR, SUPPORT_COLOR, JOINT_COLOR } from '../../services/static-calc'
 import { MAX_LOAD_KG } from '../../utils/validateProject'
 import { Icon } from '../layout/Icon'
+import { useDesignLocked } from '../../hooks/useDesignLocked'
+import { numberFieldValue } from '../../utils/units'
 
 /** Number field for a kg value that applies every valid entry while typing; empty reports undefined, Esc restores the value it had on focus. */
 export function KgInput({ value, onChange, placeholder, ariaLabel, className }: {
@@ -33,7 +35,7 @@ export function KgInput({ value, onChange, placeholder, ariaLabel, className }: 
       onChange={(e) => {
         setDraft(e.target.value)
         const text = e.target.value.trim()
-        const kg = Number(text)
+        const kg = numberFieldValue(text) ?? NaN
         if (text === '') onChange(undefined)
         else if (Number.isFinite(kg) && kg >= 0) onChange(Math.min(MAX_LOAD_KG, kg))
       }}
@@ -68,7 +70,7 @@ const formatPct = (share: number): string => {
 }
 
 function LegendCard() {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   const payloadKg = useUIStore((s) => s.staticLoadKg)
   const setStaticLoadKg = useUIStore((s) => s.setStaticLoadKg)
   const showDeformation = useStaticStore((s) => s.showDeformation)
@@ -79,7 +81,9 @@ function LegendCard() {
   const toggleContours = useStaticStore((s) => s.toggleContours)
   const scaleMode = useStaticStore((s) => s.scaleMode)
   const setScaleMode = useStaticStore((s) => s.setScaleMode)
-  const placing = useStaticStore((s) => s.placingLoad)
+  // the assembly workspace reads the loads; placing them is the design's
+  const locked = useDesignLocked()
+  const placing = useStaticStore((s) => s.placingLoad) && !locked
   const setPlacing = useStaticStore((s) => s.setPlacingLoad)
   const placeKg = useStaticStore((s) => s.placeKg)
   const setPlaceKg = useStaticStore((s) => s.setPlaceKg)
@@ -87,6 +91,7 @@ function LegendCard() {
   const setCollapsed = useUIStore((s) => s.setStaticLegendCollapsed)
   const toggleStaticOverlay = useUIStore((s) => s.toggleStaticOverlay)
   const sim = useStaticSimulation()
+  const notChecked = [...sim.results.values()].filter((r) => r.status === 'wallHung').length
   const modelMax = modelFieldMax(sim, resultType)
   const types: { id: StaticResultType; label: string }[] = [
     { id: 'stress', label: t('sim.resultStress') },
@@ -101,6 +106,8 @@ function LegendCard() {
         <span className="font-semibold text-chrome-text whitespace-nowrap">{t('sim.legendTitle')}</span>
         <span className="ml-auto text-chrome-muted tabular-nums text-right">
           {t('sim.counts', { critical: sim.critical, warning: sim.warning, unsupported: sim.unsupported })}
+          {notChecked > 0 && ` · ${t('sim.countNotChecked', { count: notChecked })}`}
+          {sim.unsureCount > 0 && ` · ${t('sim.countUnsure', { count: sim.unsureCount })}`}
         </span>
         {/* Fold to this row (remembered), or switch the static overlay off */}
         <button
@@ -123,6 +130,12 @@ function LegendCard() {
           <Icon name="close" className="w-3.5 h-3.5" />
         </button>
       </div>
+      {/* the self-check of the whole run (services/static-sim StaticBalance) */}
+      {sim.balance.droppedN + sim.balance.stuckN > 0.5 * 9.81 && (
+        <div data-testid="static-legend-balance" className="mt-1 text-amber-400">
+          {t('sim.balanceShort', { lost: ((sim.balance.droppedN + sim.balance.stuckN) / 9.81).toLocaleString(i18n.language, { maximumFractionDigits: 1 }), total: (sim.balance.inN / 9.81).toLocaleString(i18n.language, { maximumFractionDigits: 0 }) })}
+        </div>
+      )}
       {!collapsed && (<>
         {/* Result type: what the colours show */}
         <div className="flex items-center gap-2 mt-1.5 mb-1.5">
@@ -252,27 +265,29 @@ function LegendCard() {
         </div>
 
         {/* Placing loads: a click on the top of a lying board puts placeKg there */}
-        <div className="flex items-center justify-between gap-3 mt-2 pt-2 border-t border-chrome-border">
-          <button
-            data-testid="static-place-load"
-            aria-pressed={placing}
-            onClick={() => setPlacing(!placing)}
-            className={`h-6 px-2.5 rounded text-[11px] font-medium border transition-colors ${placing
-              ? 'bg-action text-action-text border-action'
-              : 'border-chrome-border text-chrome-secondary hover:bg-chrome-hover'}`}
-          >
-            ↓ {t('sim.placeLoad')}
-          </button>
-          <label className="flex items-center gap-1.5 text-chrome-secondary">
-            {t('sim.placeKg')}
-            <KgInput
-              value={placeKg}
-              onChange={(kg) => { if (kg !== undefined && kg > 0) setPlaceKg(kg) }}
-              ariaLabel={t('sim.placeKg')}
-            />
-            <span className="text-chrome-muted">kg</span>
-          </label>
-        </div>
+        {!locked && (
+          <div className="flex items-center justify-between gap-3 mt-2 pt-2 border-t border-chrome-border">
+            <button
+              data-testid="static-place-load"
+              aria-pressed={placing}
+              onClick={() => setPlacing(!placing)}
+              className={`h-6 px-2.5 rounded text-[11px] font-medium border transition-colors ${placing
+                ? 'bg-action text-action-text border-action'
+                : 'border-chrome-border text-chrome-secondary hover:bg-chrome-hover'}`}
+            >
+              ↓ {t('sim.placeLoad')}
+            </button>
+            <label className="flex items-center gap-1.5 text-chrome-secondary">
+              {t('sim.placeKg')}
+              <KgInput
+                value={placeKg}
+                onChange={(kg) => { if (kg !== undefined && kg > 0) setPlaceKg(kg) }}
+                ariaLabel={t('sim.placeKg')}
+              />
+              <span className="text-chrome-muted">kg</span>
+            </label>
+          </div>
+        )}
         {placing && (
           <div data-testid="static-place-hint" className="mt-1 text-chrome-secondary">{t('sim.placeLoadHint', { kg: placeKg })}</div>
         )}

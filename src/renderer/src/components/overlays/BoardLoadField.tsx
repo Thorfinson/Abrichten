@@ -6,6 +6,8 @@ import { isLoadKg, MAX_LOAD_KG } from '../../utils/validateProject'
 import { getMaterialById } from '../../data/materials'
 import { boardWeightKg } from '../../services/static-sim'
 import type { Board, PlacedLoad } from '../../types/furniture'
+import { useDesignLocked } from '../../hooks/useDesignLocked'
+import { numberFieldValue } from '../../utils/units'
 
 interface BoardLoadFieldProps {
   assemblyId: string
@@ -40,7 +42,7 @@ function KgField({ id, value, optional, placeholder, ariaLabel, step = 1, testId
     // A half-typed number ("1e", "-") reads as "": keep the stored value instead of clearing it
     if (input.validity.badInput) { setDraft(stored); return }
     const text = draft.trim()
-    const kg = text === '' ? undefined : Number(text)
+    const kg = text === '' ? undefined : (numberFieldValue(text) ?? NaN)
     if ((kg === undefined && !optional) || (kg !== undefined && !isLoadKg(kg))) { setDraft(stored); return }
     if (kg !== value) onCommit(kg)
   }
@@ -87,12 +89,15 @@ export function BoardLoadField({ assemblyId, board }: BoardLoadFieldProps) {
   const { t } = useTranslation()
   const id = useId()
   const globalKg = useUIStore((s) => s.staticLoadKg)
+  // a load is part of the design: no field in the assembly workspace (store/designLock.ts)
+  const locked = useDesignLocked()
   const update = (patch: Partial<Board>): void => useProjectStore.getState().updateBoard(assemblyId, board.id, patch)
   const setLoad = (loadId: string, next: PlacedLoad | null): void => {
     const loads = (board.loads ?? []).flatMap((l) => (l.id !== loadId ? [l] : next ? [next] : []))
     update({ loads: loads.length ? loads : undefined })
   }
 
+  if (locked) return null
   return (
     <div>
       <div className="flex items-center gap-2" title={t('sim.boardLoadHint', { kg: globalKg })}>
@@ -148,9 +153,12 @@ export function BoardLoadField({ assemblyId, board }: BoardLoadFieldProps) {
 export function BoardWeightField({ assemblyId, board }: BoardLoadFieldProps) {
   const { t } = useTranslation()
   const id = useId()
+  const locked = useDesignLocked()
   const customMaterials = useProjectStore((s) => s.project.customMaterials)
   const fromMaterial = Math.round(boardWeightKg({ ...board, weightKg: undefined }, getMaterialById(board.materialId, customMaterials)) * 10) / 10
 
+  // a weight is part of the design: no field in the assembly workspace (store/designLock.ts)
+  if (locked) return null
   return (
     <div className="flex items-center gap-2" title={t('sim.boardWeightHint', { kg: fromMaterial })}>
       <label htmlFor={id} className="text-[9px] font-bold text-chrome-muted uppercase tracking-widest shrink-0">

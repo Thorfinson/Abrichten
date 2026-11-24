@@ -1,9 +1,14 @@
 import type {
   Project, Assembly, Board, BoardCutout, Joint, JointType, Fastener, FastenerType, HeadType, FastenerMaterial,
-  AttachedHardware, Vec3, GrainDirection, Material, MaterialCategory, CustomHardwareItem, PlacedLoad
+  AttachedHardware, Vec3, GrainDirection, Material, MaterialCategory, CustomHardwareItem, PlacedLoad, AssemblyStep
 } from '../types/furniture'
+import { cleanSteps } from './assemblySteps'
 import { sanitizeParents } from './assemblyTree'
+import { isBoardRole } from './boardRole'
+import { cleanShortName, MAX_STORED_SHORT_NAME, isPartNo, numberParts } from './partLabel'
 import { isParamName } from './formulaEval'
+import { assemblyCounts } from './activeParts'
+import { cleanBridgesMm } from '../data/hardware'
 
 /** Largest accepted size or |position| in mm (100 m). Beyond it the boring and nesting loops blow up. */
 export const MAX_MM = 100_000
@@ -42,10 +47,11 @@ export function validateProject(raw: unknown): Project {
   if (!Array.isArray(raw.assemblies)) throw new Error('"assemblies" missing')
   const parsed = raw.assemblies.map((a, i) => validateAssembly(a, `assemblies[${i}]`))
   const boardIds = new Set(parsed.flatMap(({ assembly }) => assembly.boards.map((b) => b.id)))
-  const assemblies = sanitizeParents(parsed.map(({ assembly, rawJoints }) => ({
+  // every part gets its number (older files: 1, 2, 3 … per assembly in list order)
+  const assemblies = numberParts(sanitizeParents(parsed.map(({ assembly, rawJoints }) => ({
     ...assembly,
     joints: rawJoints.flatMap((j) => validateJoint(j, boardIds))
-  })))
+  }))))
   return {
     ...raw,
     id: str(raw.id, crypto.randomUUID()),
@@ -55,10 +61,12 @@ export function validateProject(raw: unknown): Project {
     createdAt: str(raw.createdAt, new Date().toISOString()),
     updatedAt: str(raw.updatedAt, new Date().toISOString()),
     assemblies,
+    assemblySteps: Array.isArray(raw.assemblySteps) ? validateSteps(raw.assemblySteps, boardIds) : undefined,
     parameters: numberRecord(raw.parameters, isParamName),
     materialPrices: numberRecord(raw.materialPrices),
     customMaterials: Array.isArray(raw.customMaterials) ? raw.customMaterials.flatMap(validateMaterial) : undefined,
     customHardware: Array.isArray(raw.customHardware) ? raw.customHardware.flatMap(validateHardwareItem) : undefined,
+    hardwareBridges: cleanBridgeMap(raw.hardwareBridges),
     laborHours: optNum(raw.laborHours),
     laborRate: optNum(raw.laborRate),
     overheadPct: optNum(raw.overheadPct)
@@ -69,12 +77,15 @@ function validateAssembly(a: unknown, path: string): { assembly: Assembly; rawJo
   if (!isRecord(a)) throw new Error(`${path} is not an object`)
   if (!Array.isArray(a.boards)) throw new Error(`${path}.boards missing`)
   const boards = a.boards.map((b, i) => validateBoard(b, `${path}.boards[${i}]`))
+  // older files saved the X-ray (highlight); it is a view now (store/useUIStore highlightedParts)
+  const { highlight: _view, ...rest } = a
   return {
     assembly: {
-      ...a,
+      ...rest,
       id: str(a.id, crypto.randomUUID()),
       name: cleanName(a.name, 'Baugruppe'),
-      visible: a.visible !== false,
+      visible: assemblyCounts(a),
+      shortName: cleanShortName(a.shortName, MAX_STORED_SHORT_NAME) || undefined,
       boards,
       joints: []
     },
@@ -101,6 +112,8 @@ export function validateBoard(b: unknown, path: string): Board {
     materialId: str(b.materialId, 'spanplatte'),
     color: color(b.color, '#D2B48C'),
     grainDirection: GRAIN_DIRECTIONS.includes(b.grainDirection as GrainDirection) ? (b.grainDirection as GrainDirection) : undefined,
+    role: isBoardRole(b.role) ? b.role : undefined,
+    partNo: isPartNo(b.partNo) ? b.partNo : undefined,
     edgeBanding: isRecord(b.edgeBanding) ? (b.edgeBanding as Board['edgeBanding']) : undefined,
     cutouts: Array.isArray(b.cutouts) ? b.cutouts.flatMap(validateCutout) : undefined,
     hardware: Array.isArray(b.hardware) ? b.hardware.filter(isHardware) : undefined,
@@ -113,6 +126,28 @@ export function validateBoard(b: unknown, path: string): Board {
     heightFormula: optStr(b.heightFormula),
     depthFormula: optStr(b.depthFormula)
   }
+}
+
+/**
+ * Assembly steps: unusable entries are dropped, ids made unique, titles single-line;
+ * a board must exist and is kept only in the first step that lists it.
+ */
+function validateSteps(raw: unknown[], boardIds: Set<string>): AssemblyStep[] {
+  const ids = new Set<string>()
+  const steps = raw.flatMap((s, i): AssemblyStep[] => {
+    if (!isRecord(s)) return []
+    let id = str(s.id, crypto.randomUUID())
+    if (ids.has(id)) id = crypto.randomUUID()
+    ids.add(id)
+    return [{
+      ...s,
+      id,
+      title: cleanName(s.title, `Schritt ${i + 1}`),
+      note: optStr(s.note) || undefined,
+      boardIds: Array.isArray(s.boardIds) ? s.boardIds.filter((b): b is string => typeof b === 'string') : []
+    }]
+  })
+  return cleanSteps(steps, boardIds)
 }
 
 /** Joints with unknown boards or no usable position are dropped rather than repaired. */
@@ -147,7 +182,10 @@ function validateFastener(f: unknown): Fastener[] {
 
 function validateCutout(c: unknown): BoardCutout[] {
   if (!isRecord(c) || !isBounded(c.x) || !isBounded(c.z) || !isBounded(c.width) || !isBounded(c.depth)) return []
-  return [{ id: str(c.id, crypto.randomUUID()), x: c.x, z: c.z, width: c.width, depth: c.depth }]
+  const from = (v: unknown): 'min' | 'max' | undefined => (v === 'min' || v === 'max' ? v : undefined)
+  const refs = { ...(from(c.uFrom) && { uFrom: from(c.uFrom) }), ...(from(c.vFrom) && { vFrom: from(c.vFrom) }) }
+  if (c.shape === 'circle') return [{ id: str(c.id, crypto.randomUUID()), shape: 'circle', x: c.x, z: c.z, width: c.width, depth: c.width, ...refs }]
+  return [{ id: str(c.id, crypto.randomUUID()), x: c.x, z: c.z, width: c.width, depth: c.depth, ...refs }]
 }
 
 /**
@@ -182,18 +220,32 @@ function validateMaterial(m: unknown): Material[] {
   }]
 }
 
+/** Project.hardwareBridges: usable ranges by hardware id, else nothing (an empty map is dropped). */
+function cleanBridgeMap(v: unknown): Record<string, [number, number]> | undefined {
+  if (!isRecord(v) || Array.isArray(v)) return undefined
+  const out: Record<string, [number, number]> = {}
+  for (const [id, r] of Object.entries(v)) {
+    const range = cleanBridgesMm(r)
+    if (range && id) out[id] = range
+  }
+  return Object.keys(out).length ? out : undefined
+}
+
 function validateHardwareItem(h: unknown): CustomHardwareItem[] {
   if (!isRecord(h) || typeof h.id !== 'string') return []
   const de = cleanName(h.name, h.id)
+  const { bridgesMm: rawBridges, ...rest } = h
+  const bridgesMm = cleanBridgesMm(rawBridges)
   return [{
-    ...h,
+    ...rest,
     id: h.id,
     name: de,
     nameEn: cleanName(h.nameEn, de),
     category: str(h.category, 'hinges'),
     drillingDiameter: isDimension(h.drillingDiameter) ? h.drillingDiameter : undefined,
     unitPrice: isFiniteNum(h.unitPrice) && h.unitPrice >= 0 ? h.unitPrice : 0,
-    manufacturer: cleanName(h.manufacturer, '') || undefined
+    manufacturer: cleanName(h.manufacturer, '') || undefined,
+    ...(bridgesMm ? { bridgesMm } : {})
   }]
 }
 

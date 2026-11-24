@@ -5,9 +5,10 @@ import * as THREE from 'three'
 import { useTranslation } from 'react-i18next'
 import type { TFunction } from 'i18next'
 import { useUIStore } from '../../store/useUIStore'
+import { useViewHidden } from '../../hooks/useViewHidden'
 import { useProjectStore } from '../../store/useProjectStore'
 import { useStaticSimulation, useStaticStore, modelFieldMax, DEFORMATION_SCALE, type StaticResultType, type StaticScaleMode } from '../../store/useStaticStore'
-import { faceToWorld, worldToFace, type BoardStatic } from '../../services/static-sim'
+import { faceToWorld, jointAir, worldToFace, type BoardStatic } from '../../services/static-sim'
 import { utilisationRgb, utilisationCss, UNSUPPORTED_COLOR, NEUTRAL_COLOR, SUPPORT_COLOR, JOINT_COLOR } from '../../services/static-calc'
 import { MAX_LOADS_PER_BOARD } from '../../utils/validateProject'
 import { HTML_Z_RANGE } from '../canvasTheme'
@@ -15,6 +16,8 @@ import type { Board } from '../../types/furniture'
 import {
   fieldGeometry, contourGeometry, boxCentre, frameOf, nodeNear, nodeWorld, place, displacement, type Rgba, type Vec
 } from './staticFieldGeometry'
+import { useDesignLocked } from '../../hooks/useDesignLocked'
+import { assemblyCounts } from '../../utils/activeParts'
 
 /** The heat map sits this far outside the board; polygonOffset does the rest against z-fighting. */
 const INFLATE_MM = 0.3
@@ -73,6 +76,17 @@ function heatRgba(v: number): Rgba {
 
 /** Label text of a board, or null when it gets none (ok and not selected). */
 export function staticLabel(r: BoardStatic, selected: boolean, mode: StaticResultType, t: TFunction, lang: string): string | null {
+  let text = ratingLabel(r, selected, mode, t, lang)
+  // carried in a loop where load was not counted: its numbers do not hold, also on a board rated ok
+  if (r.unsure) text = text !== null ? `${text} · ${t('sim.unsureShort')}` : t('sim.unsureShort')
+  // a joint across air connects nothing: a mistake to point at (services/static-sim jointAir)
+  const air = jointAir(r)
+  if (air === null) return text
+  const note = t('sim.jointAirShort', { type: t(`joints.${air.jointType}`), mm: fmt(air.mm, lang) })
+  return text !== null ? `${text} · ${note}` : note   // shown also on a board rated ok: it is a mistake to fix
+}
+
+function ratingLabel(r: BoardStatic, selected: boolean, mode: StaticResultType, t: TFunction, lang: string): string | null {
   if (r.status === 'unsupported') return selected ? t('sim.unsupported') : null   // purple + legend say it; labels would pile up
   if (r.status === 'wallHung') return selected ? t('sim.wallHung') : null
   if (r.status !== 'warning' && r.status !== 'critical' && !selected) return null
@@ -94,6 +108,7 @@ function accentColor(r: BoardStatic): string {
 }
 
 /** Places a load (one undo step) where a lying board's top was clicked. */
+// design-lock-ok: called only while placing a load, which the assembly workspace switches off
 function placeLoad(boardId: string, point: THREE.Vector3, kg: number): void {
   const { project, updateBoard } = useProjectStore.getState()
   for (const assembly of project.assemblies) {
@@ -276,6 +291,7 @@ function BoardHeat({ result: r, scale, mode, rangeTop, contours, selected, placi
       )}
       {showHot && <HotSpot boardId={r.boardId} position={hotPos} radius={radius} breaks={breaks} />}
       {selected && rated && <Supports r={r} scale={scale} />}
+      {selected && (r.gaps || r.air) && <GapMarkers r={r} />}
       {label && (
         <Html position={labelPos} zIndexRange={HTML_Z_RANGE} style={{ pointerEvents: 'none', whiteSpace: 'nowrap' }}>
           <div
@@ -299,6 +315,44 @@ function BoardHeat({ result: r, scale, mode, rangeTop, contours, selected, placi
           </div>
         </Html>
       )}
+    </>
+  )
+}
+
+/**
+ * What the selected board's supports are counted across, where it is, with its width: a gap
+ * something explains (glue bed, hardware: light), air that carries nothing (dark), and a joint
+ * across air (amber, a mistake). services/static-sim SupportGap and SupportAir.
+ */
+function GapMarkers({ r }: { r: BoardStatic }) {
+  const { t, i18n } = useTranslation()
+  const mm = (v: number): string => fmt(v, i18n.language)
+  const marks = [
+    ...(r.gaps ?? []).map((g) => ({ at: g.at, kind: 'gap', text: t(g.because === 'glued' ? 'sim.gapGlued' : 'sim.gapBridged', { mm: mm(g.mm) }) })),
+    ...(r.air ?? []).map((a) => ({
+      at: a.at,
+      kind: a.kind === 'joint' ? 'jointAir' : 'air',
+      text: a.kind === 'joint' ? t('sim.jointAirShort', { type: t(`joints.${a.jointType}`), mm: mm(a.mm) }) : t('sim.airShort', { mm: mm(a.mm) })
+    }))
+  ]
+  const look = {
+    gap: { background: 'rgba(244,244,245,0.9)', color: '#3f3f46', border: '1px solid #a1a1aa' },
+    air: { background: 'rgba(24,24,27,0.92)', color: '#e4e4e7', border: '1px dashed #a1a1aa' },
+    jointAir: { background: 'rgba(24,24,27,0.92)', color: '#fde68a', border: `1px solid ${WARNING_COLOR}` }
+  } as const
+  return (
+    <>
+      {marks.map((m, i) => (
+        <Html key={i} position={[m.at.x, m.at.y, m.at.z]} zIndexRange={HTML_Z_RANGE} style={{ pointerEvents: 'none', whiteSpace: 'nowrap' }}>
+          <div
+            data-testid="static-gap"
+            data-kind={m.kind}
+            style={{ transform: 'translate(-50%, -50%)', ...look[m.kind as keyof typeof look], borderRadius: 3, padding: '0 5px', fontSize: 10, fontWeight: 600, lineHeight: '15px', userSelect: 'none' }}
+          >
+            {m.text}
+          </div>
+        </Html>
+      ))}
     </>
   )
 }
@@ -353,10 +407,11 @@ function LoadArrow({ board, load, r, scale }: { board: Board; load: NonNullable<
 /** Arrows for every load placed on a visible board. */
 function PlacedLoads({ results, scale }: { results: Map<string, BoardStatic>; scale: number }) {
   const assemblies = useProjectStore((s) => s.project.assemblies)
+  const hidden = useViewHidden()
   return (
     <>
-      {assemblies.filter((a) => a.visible !== false).flatMap((a) => a.boards.flatMap((b) => {
-        const r = results.get(b.id)
+      {assemblies.filter(assemblyCounts).flatMap((a) => a.boards.flatMap((b) => {
+        const r = hidden.has(b.id) ? undefined : results.get(b.id)
         // only lying boards carry placed loads (services/static-sim.ts ownLoads)
         if (!r || !b.loads?.length || !isLying(r)) return []
         return b.loads.map((l) => <LoadArrow key={l.id} board={b} load={l} r={r} scale={scale} />)
@@ -391,9 +446,13 @@ function StaticHeatMap() {
   const mode = useStaticStore((s) => s.resultType)
   const contours = useStaticStore((s) => s.showContours)
   const scaleMode = useStaticStore((s) => s.scaleMode)
-  const placing = useStaticStore((s) => s.placingLoad)
+  // placing a load changes the design: never in the assembly workspace (store/designLock.ts)
+  const locked = useDesignLocked()
+  const placing = useStaticStore((s) => s.placingLoad) && !locked
   const placeKg = useStaticStore((s) => s.placeKg)
   const selectedBoardIds = useUIStore((s) => s.selectedBoardIds)
+  // the simulation covers the whole furniture; parts the assembly step view hides get no colour
+  const hidden = useViewHidden()
   usePlacementMode(placing)
   // One material for all boards: colour and opacity come per vertex
   const material = useMemo(() => new THREE.MeshLambertMaterial({
@@ -411,7 +470,7 @@ function StaticHeatMap() {
   const rangeTop = scaleMode === 'absolute' ? 1 : scaleMode === 'model' ? modelMax : null
   return (
     <group name="static-heatmap" userData={{ simulationMs: sim.durationMs, solved: sim.solved }}>
-      {[...sim.results.values()].map((r) => (
+      {[...sim.results.values()].filter((r) => !hidden.has(r.boardId)).map((r) => (
         <BoardHeat
           key={r.boardId}
           result={r}

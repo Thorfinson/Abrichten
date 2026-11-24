@@ -5,6 +5,7 @@ import { useUIStore } from '../../store/useUIStore'
 import { SNAP_SIZES } from './layoutRules'
 import { SwitchTrack } from './Switch'
 import { Icon, type IconName } from './Icon'
+import { keyCombo } from '../../utils/shortcutKeys'
 
 // ── Toast (floating pill above the status bar) — export results and messages ──
 
@@ -15,7 +16,8 @@ export function SaveToast() {
   return (
     <div
       role="status"
-      className="fixed top-20 left-1/2 -translate-x-1/2 z-40
+      data-testid="app-toast"
+      className="absolute top-3 left-1/2 -translate-x-1/2 z-40
         bg-chrome-deep border border-chrome-border rounded-full
         px-3 py-1 text-[11px] text-chrome-text shadow-lg pointer-events-none"
     >
@@ -122,7 +124,7 @@ export function StatusBar({ unsaved }: StatusBarProps = {}) {
         on={showGrid}
         onClick={toggleGrid}
         label={t('layout.status.grid')}
-        title={t('layout.status.gridTitle')}
+        title={t('layout.status.gridTitle', { shortcut: keyCombo('G', ['alt']) })}
         icon="grid"
       />
 
@@ -165,7 +167,7 @@ export function StatusBar({ unsaved }: StatusBarProps = {}) {
       {/* Right side: unsaved-changes slot, then the auto-save state */}
       <div className="ml-auto flex items-center gap-3 text-[11px]" aria-live="polite">
         {unsaved && (
-          <span className="flex items-center gap-1.5 text-accent" title={t('layout.status.unsavedTitle')}>
+          <span className="flex items-center gap-1.5 text-accent" title={t('layout.status.unsavedTitle', { shortcut: keyCombo('S', ['cmd']) })}>
             <span className="w-1.5 h-1.5 rounded-full bg-accent" aria-hidden="true" />
             {t('layout.status.unsaved')}
           </span>
@@ -174,7 +176,7 @@ export function StatusBar({ unsaved }: StatusBarProps = {}) {
           <span className="text-success" title={t('layout.status.savedTitle')}>{t('layout.status.saved')}</span>
         )}
         {saveStatus === 'error' && (
-          <span className="text-danger" title={t('layout.status.saveFailedTitle')}>{t('layout.status.saveFailed')}</span>
+          <span className="text-danger" title={t('layout.status.saveFailedTitle', { shortcut: keyCombo('S', ['cmd']) })}>{t('layout.status.saveFailed')}</span>
         )}
       </div>
     </footer>

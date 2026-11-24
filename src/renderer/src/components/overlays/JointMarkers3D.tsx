@@ -1,7 +1,9 @@
 import { useProjectStore } from '../../store/useProjectStore'
 import { useUIStore } from '../../store/useUIStore'
+import { useViewHidden } from '../../hooks/useViewHidden'
 import { computeJointPosition } from '../../utils/geometry'
 import type { Board, Joint } from '../../types/furniture'
+import { assemblyCounts } from '../../utils/activeParts'
 
 const JOINT_COLORS: Record<string, string> = {
   dowel: '#6366f1',    // indigo
@@ -37,16 +39,20 @@ function JointMarker({ joint, allBoards }: { joint: Joint; allBoards: Board[] })
 export function JointMarkers3D() {
   const project = useProjectStore((s) => s.project)
   const showJointMarkers = useUIStore((s) => s.showJointMarkers)
+  const hidden = useViewHidden()
 
   if (!showJointMarkers) return null
 
+  // parts the assembly step view hides, and their joints, are not drawn
   const allBoards = project.assemblies
-    .filter((a) => a.visible !== false)
+    .filter(assemblyCounts)
     .flatMap((a) => a.boards)
+    .filter((b) => !hidden.has(b.id))
 
   const allJoints = project.assemblies
-    .filter((a) => a.visible !== false)
+    .filter(assemblyCounts)
     .flatMap((a) => a.joints)
+    .filter((j) => !hidden.has(j.boardA) && !hidden.has(j.boardB))
 
   if (allJoints.length === 0) return null
 

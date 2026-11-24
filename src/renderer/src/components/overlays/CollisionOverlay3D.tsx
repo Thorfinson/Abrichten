@@ -3,8 +3,10 @@ import * as THREE from 'three'
 import { Html } from '@react-three/drei'
 import { useProjectStore } from '../../store/useProjectStore'
 import { useUIStore } from '../../store/useUIStore'
+import { useViewHidden } from '../../hooks/useViewHidden'
 import { detectCollisions3D } from '../../utils/collision'
 import { CANVAS, HTML_Z_RANGE, sceneLabelStyle } from '../canvasTheme'
+import { assemblyCounts } from '../../utils/activeParts'
 
 /** One red overlap box. The box geometry is memoized (and disposed) so the
  *  edges aren't rebuilt — and a BoxGeometry leaked — on every render. */
@@ -42,15 +44,17 @@ export function CollisionOverlay3D() {
   const project = useProjectStore((s) => s.project)
   const showCollisionOverlay = useUIStore((s) => s.showCollisionOverlay)
   const setCollisionPairs = useUIStore((s) => s.setCollisionPairs)
+  const hidden = useViewHidden()
 
   const collisions = useMemo(() => {
     if (!showCollisionOverlay) return []
 
-    const visible = project.assemblies.filter((a) => a.visible !== false)
+    const visible = project.assemblies.filter(assemblyCounts)
 
-    // joints let a back panel sit in its dado/rabbet without counting as a collision
-    return detectCollisions3D(visible.flatMap((a) => a.boards), visible.flatMap((a) => a.joints))
-  }, [showCollisionOverlay, project.assemblies])
+    // joints let a back panel sit in its dado/rabbet without counting as a collision;
+    // parts the assembly step view hides take no part
+    return detectCollisions3D(visible.flatMap((a) => a.boards).filter((b) => !hidden.has(b.id)), visible.flatMap((a) => a.joints))
+  }, [showCollisionOverlay, project.assemblies, hidden])
 
   // Publish the pairs whenever they change (not just their count — a drag can
   // swap one colliding pair for another), without churning the store while

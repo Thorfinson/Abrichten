@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { useProjectStore } from '../../store/useProjectStore'
 import { useUIStore } from '../../store/useUIStore'
 import { Dialog, Button, FIELD_CLASS, TH_CLASS, TD_CLASS, SECTION_LABEL_CLASS } from '../ui/Dialog'
+import { useDesignLocked } from '../../hooks/useDesignLocked'
 
 interface TolerancePreset {
   key: string
@@ -213,7 +214,9 @@ export function TolerancePanel() {
   const selectedAssemblyId = useUIStore((s) => s.selectedAssemblyId)
   const nudgeBoards = useProjectStore((s) => s.nudgeBoards)
 
-  if (!showTolerancePanel) return null
+  // a tool of the design: not in the assembly workspace (store/designLock.ts)
+  const locked = useDesignLocked()
+  if (locked || !showTolerancePanel) return null
 
   const canNudge = selectedBoardIds.length > 0 && selectedAssemblyId !== null
 

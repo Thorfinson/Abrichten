@@ -2,7 +2,7 @@ import { useRef, useEffect, useState, type JSX } from 'react'
 import { useThree, useFrame } from '@react-three/fiber'
 import * as THREE from 'three'
 import { useProjectStore } from '../../store/useProjectStore'
-import { useUIStore, useCanvasView } from '../../store/useUIStore'
+import { useUIStore, useCanvasView, snapTargets } from '../../store/useUIStore'
 import { snapToGrid } from '../../utils/geometry'
 import { snapBoardToBoards, FACE_SNAP_PX } from '../../utils/snap'
 import { prioritizeRaycast } from '../../utils/raycastPriority'
@@ -10,6 +10,8 @@ import { computeWorldSizeForPixels } from '../../utils/screenSize'
 import { beginDragHistory, endDragHistory } from '../../utils/dragHistory'
 import { beginTransform, endTransform } from '../../utils/transformLock'
 import type { Board } from '../../types/furniture'
+import { useDesignLocked } from '../../hooks/useDesignLocked'
+import { assemblyCounts } from '../../utils/activeParts'
 
 // Blender-style translate gizmo — 6 arrows (3 axes × 2 directions).
 const ARROW_SHAFT_LEN = 20
@@ -57,6 +59,7 @@ interface ArrowProps {
   assemblyId: string
 }
 
+// design-lock-ok: drawn only by TranslateHandles3D, which the assembly workspace leaves out
 function TranslateArrow({ arrow, centre, board, assemblyId }: ArrowProps): JSX.Element {
   const groupRef = useRef<THREE.Group>(null)
   const visibleRef = useRef<THREE.Mesh>(null)
@@ -165,9 +168,7 @@ function TranslateArrow({ arrow, centre, board, assemblyId }: ArrowProps): JSX.E
     if (!w) return
     drag.current.startWorld = w.clone()
     drag.current.startBoardPos = { ...board.position }
-    drag.current.others = useProjectStore.getState().project.assemblies
-      .filter((a) => a.visible !== false)
-      .flatMap((a) => a.boards.filter((b) => b.id !== board.id))
+    drag.current.others = snapTargets(useProjectStore.getState().project, useUIStore.getState(), [board.id])
     drag.current.active = true
     // Esc cancels: drop the drag state; the caller restores the pre-drag project
     beginTransform(() => {
@@ -247,19 +248,22 @@ function TranslateArrow({ arrow, centre, board, assemblyId }: ArrowProps): JSX.E
  * appear edge-on or in front of the board with depthTest=false.
  */
 export function TranslateHandles3D(): JSX.Element | null {
+  // the assembly workspace does not move, size or turn parts (store/designLock.ts)
+  const locked           = useDesignLocked()
   const project          = useProjectStore((s) => s.project)
   const selectedBoardIds = useUIStore((s) => s.selectedBoardIds)
   const activeView       = useCanvasView()
   const activeTool       = useUIStore((s) => s.activeTool)
   const transformMode    = useUIStore((s) => s.transformMode)
 
+  if (locked) return null
   if (activeView === '3d') return null
   if (activeTool !== 'select') return null
   if (transformMode !== 'translate') return null
   if (selectedBoardIds.length !== 1) return null
 
   const item = project.assemblies
-    .filter((a) => a.visible !== false)
+    .filter(assemblyCounts)
     .flatMap((a) => a.boards.map((b) => ({ board: b, assemblyId: a.id })))
     .find((x) => x.board.id === selectedBoardIds[0])
   if (!item) return null

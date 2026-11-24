@@ -3,6 +3,7 @@ import { useUIStore } from '../../store/useUIStore'
 import { useDialogFocus } from '../../hooks/useKeyboard'
 import { Icon, type IconName } from './Icon'
 import { SwitchTrack } from './Switch'
+import { useDesignHint, useDesignLocked } from '../../hooks/useDesignLocked'
 
 interface PanelItem {
   labelDe: string
@@ -18,6 +19,8 @@ interface PanelItem {
 interface PanelGroup {
   titleDe: string
   titleEn: string
+  /** Tools that change the design: greyed in the assembly workspace (store/designLock.ts) */
+  design?: true
   items: PanelItem[]
 }
 
@@ -42,6 +45,7 @@ export function PanelHub() {
   const setShowParameters     = useUIStore((s) => s.setShowParametersPanel)
   const setShowStaticSummary  = useUIStore((s) => s.setShowStaticSummary)
   const setShowMeasurement    = useUIStore((s) => s.setShowMeasurementPanel)
+  const setShowCuttingList    = useUIStore((s) => s.setShowCuttingList)
   const setShowNesting        = useUIStore((s) => s.setShowNestingPanel)
   const setShowBoring         = useUIStore((s) => s.setShowBoringPanel)
   const setShowHardware       = useUIStore((s) => s.setShowHardwarePanel)
@@ -49,6 +53,9 @@ export function PanelHub() {
   const setShowCost           = useUIStore((s) => s.setShowCostPanel)
   const setShowShopDrawings   = useUIStore((s) => s.setShowShopDrawingsPanel)
   const setShowChatPanel      = useUIStore((s) => s.setShowChatPanel)
+  const setWorkspace          = useUIStore((s) => s.setWorkspace)
+  const locked                = useDesignLocked()
+  const { inDesign, readOnly } = useDesignHint()
 
   const open = (fn: (v: boolean) => void) => {
     fn(true)
@@ -59,6 +66,7 @@ export function PanelHub() {
     {
       titleDe: 'Entwurf',
       titleEn: 'Design Tools',
+      design: true,
       items: [
         {
           icon: 'cabinet',
@@ -155,11 +163,19 @@ export function PanelHub() {
       titleEn: 'Production',
       items: [
         {
+          icon: 'table',
+          labelDe: t('cutting.title', { lng: 'de' }),
+          labelEn: t('cutting.title', { lng: 'en' }),
+          descDe: 'Alle Teile mit Nummer, Maßen, Faser und Kanten; Druck, CSV, DXF',
+          descEn: 'Every part with number, sizes, grain and edges; print, CSV, DXF',
+          action: () => open(setShowCuttingList)
+        },
+        {
           icon: 'nesting',
-          labelDe: 'Nesting / Zuschnitt',
-          labelEn: 'Nesting / Layout',
-          descDe: 'Zuschnittoptimierung mit SVG-Export',
-          descEn: 'Cutting optimization with SVG export',
+          labelDe: t('nesting.title', { lng: 'de' }),
+          labelEn: t('nesting.title', { lng: 'en' }),
+          descDe: 'Teile auf Platten verteilt, mit Verschnitt; SVG-Export',
+          descEn: 'Parts laid out on sheets, with waste; SVG export',
           action: () => open(setShowNesting)
         },
         {
@@ -208,6 +224,14 @@ export function PanelHub() {
           descDe: 'Druckfertige Bauteil-Zeichnungen',
           descEn: 'Print-ready part drawings',
           action: () => open(setShowShopDrawings)
+        },
+        {
+          icon: 'assembly',
+          labelDe: t('montage.modeTitle', { lng: 'de' }),
+          labelEn: t('montage.modeTitle', { lng: 'en' }),
+          descDe: t('montage.modeDesc', { lng: 'de' }),
+          descEn: t('montage.modeDesc', { lng: 'en' }),
+          action: () => open(() => setWorkspace('assembly'))
         }
       ]
     }
@@ -250,16 +274,20 @@ export function PanelHub() {
             <div key={group.titleEn} className="mb-4">
               <div className="px-4 py-1.5 text-[10px] font-semibold text-chrome-muted uppercase tracking-widest">
                 {lang === 'de' ? group.titleDe : group.titleEn}
+                {locked && group.design && <span className="ml-1.5 normal-case tracking-normal font-normal">· {inDesign}</span>}
               </div>
               {group.items.map((item) => {
                 const isSwitch = item.switchOn !== undefined
+                const off = locked && !!group.design
                 return (
                   <button
                     key={item.labelEn}
                     onClick={item.action}
+                    disabled={off}
+                    title={off ? readOnly : undefined}
                     role={isSwitch ? 'switch' : undefined}
                     aria-checked={isSwitch ? item.switchOn : undefined}
-                    className="group w-full flex items-center gap-3 px-4 py-1.5 hover:bg-chrome-surface transition-colors text-left"
+                    className="group w-full flex items-center gap-3 px-4 py-1.5 hover:bg-chrome-surface transition-colors text-left disabled:opacity-40 disabled:hover:bg-transparent"
                   >
                     <span className={`w-7 h-7 flex items-center justify-center rounded-md shrink-0 transition-colors ${
                       item.switchOn ? 'bg-success-dim text-success-text' : 'bg-chrome-deep text-chrome-secondary group-hover:text-chrome-text'
@@ -285,7 +313,9 @@ export function PanelHub() {
           <div className="border-t border-chrome-border mt-2 pt-2">
             <button
               onClick={() => { setShowChatPanel(true); setShowPanelHub(false) }}
-              className="group w-full flex items-center gap-3 px-4 py-1.5 hover:bg-chrome-surface transition-colors text-left"
+              disabled={locked}
+              title={locked ? readOnly : undefined}
+              className="group w-full flex items-center gap-3 px-4 py-1.5 hover:bg-chrome-surface transition-colors text-left disabled:opacity-40 disabled:hover:bg-transparent"
             >
               <span className="w-7 h-7 flex items-center justify-center rounded-md shrink-0 bg-ai-dim text-ai-text">
                 <Icon name="ai" />

@@ -1,13 +1,13 @@
 import React, { memo, useRef, useEffect, useMemo, useState } from 'react'
 import { useThree, useFrame } from '@react-three/fiber'
 import { useTranslation } from 'react-i18next'
-import { useUIStore, useCanvasView } from '../../store/useUIStore'
+import { useUIStore, useCanvasView, shownStep, snapTargets } from '../../store/useUIStore'
 import { useProjectStore } from '../../store/useProjectStore'
 import { TransformControls, Line, Html } from '@react-three/drei'
-import { snapToGrid } from '../../utils/geometry'
 import { snapBoardToBoards, FACE_SNAP_PX, type SnapAxis } from '../../utils/snap'
 import { computeWorldSizeForPixels } from '../../utils/screenSize'
 import { buildBoardGeometry } from '../../utils/boardGeometry'
+import { boardStepState } from '../../utils/assemblySteps'
 import { getMaterialById } from '../../data/materials'
 import { beginTransform, endTransform } from '../../utils/transformLock'
 import { setHoveringGizmo, isHoveringGizmo } from '../../utils/gizmoHover'
@@ -15,6 +15,11 @@ import { beginDragHistory, endDragHistory } from '../../utils/dragHistory'
 import type { Board, Vec3 } from '../../types/furniture'
 import type { ViewMode } from '../../types/measurement'
 import * as THREE from 'three'
+import { useDesignLocked } from '../../hooks/useDesignLocked'
+import { moveAxis, releaseMove, releaseRotate, releaseScale } from '../../utils/handleRelease'
+
+/** Below this pointer travel a press in a 2D view is a click, not a move (finding 23.11.2026, second review). */
+const CLICK_PX = 3
 
 interface Board3DProps {
   board: Board
@@ -64,17 +69,31 @@ function edgeMaterial(color: string, dimmed: boolean): THREE.LineBasicMaterial {
   return m
 }
 
-/** The other visible boards a drag can snap to (not the ones being moved). */
+/** The other visible boards a drag can snap to (not the ones being moved; store snapTargets). */
 function snapCandidates(moving: string[]): Board[] {
-  const skip = new Set(moving)
-  return useProjectStore.getState().project.assemblies
-    .filter((a) => a.visible !== false)
-    .flatMap((a) => a.boards.filter((b) => !skip.has(b.id)))
+  return snapTargets(useProjectStore.getState().project, useUIStore.getState(), moving)
 }
 
 /** Memoized: the store keeps unchanged boards' object identity, so a drag or
  *  edit re-renders only the board that changed instead of every board. */
-export const Board3D = memo(function Board3D({ board, assemblyId, orbitRef, highlight = false, dimmed = false, jointCount = 0 }: Board3DProps) {
+/**
+ * A board in the scene. In assembly mode (Montage) it follows the step shown:
+ * installed in an earlier step → ghosted like an X-ray backdrop, in this step →
+ * highlighted like an X-ray group, not installed yet → not drawn. Same rendering
+ * as the assembly X-ray, decided per board.
+ */
+export const Board3D = memo(function Board3D(props: Board3DProps) {
+  const current = useUIStore(shownStep)
+  const steps = useProjectStore((s) => s.project.assemblySteps)
+  const state = boardStepState(steps, current, props.board.id)
+  // the eye hides parts in the design workspace only (store/useUIStore viewHiddenIds)
+  const eyeHidden = useUIStore((s) => s.workspace !== 'assembly' && s.hiddenParts.includes(props.board.id))
+  if (state === 'hidden' || eyeHidden) return null
+  if (state === 'normal') return <Board3DBody {...props} />
+  return <Board3DBody {...props} highlight={state === 'current'} dimmed={state === 'earlier'} />
+})
+
+const Board3DBody = memo(function Board3DBody({ board, assemblyId, orbitRef, highlight = false, dimmed = false, jointCount = 0 }: Board3DProps) {
   const { t } = useTranslation()
   const meshRef = useRef<THREE.Mesh>(null)
   const transformRef = useRef<any>(null)
@@ -112,11 +131,13 @@ export const Board3D = memo(function Board3D({ board, assemblyId, orbitRef, high
   const setSnapIndicatorPos = useUIStore((s) => s.setSnapIndicatorPos)
   const updateBoard = useProjectStore((s) => s.updateBoard)
   const nudgeBoards = useProjectStore((s) => s.nudgeBoards)
+  // the assembly workspace selects parts, it does not move them (store/designLock.ts)
+  const locked = useDesignLocked()
   const showJointMarkers = useUIStore((s) => s.showJointMarkers)
   const customMaterials = useProjectStore((s) => s.project.customMaterials)
   const isOrtho = activeView !== '3d'
   /** TransformControls are shown for the single selected board in the 3D view */
-  const showTC = !isOrtho && isPrimary
+  const showTC = !isOrtho && isPrimary && !locked
 
   const camera = useThree((s) => s.camera)
   const gl = useThree((s) => s.gl)
@@ -237,48 +258,35 @@ export const Board3D = memo(function Board3D({ board, assemblyId, orbitRef, high
       const pos = meshRef.current.position
       const rot = meshRef.current.rotation
 
+      // only what the handle moved changes; an untouched axis keeps 1116.5 or 6.5 exactly (utils/handleRelease.ts)
       if (transformMode === 'translate') {
         const delta = pos.clone().sub(dragStartPosRef.current)
-        const snap = (v: number) => snapEnabled
-          ? Math.round(v / snapSize) * snapSize
-          : Math.round(v)
-        updateBoard(assemblyId, board.id, {
-          position: {
-            x: snap(board.position.x + delta.x),
-            y: snap(board.position.y + delta.y),
-            z: snap(board.position.z + delta.z)
-          }
-        })
+        const next = releaseMove(board.position, delta, snapEnabled ? snapSize : null)
+        // nothing changed (a click, or snapped back): put the mesh back where the data says, no undo step
+        if (next.x === board.position.x && next.y === board.position.y && next.z === board.position.z) { meshRef.current.position.copy(dragStartPosRef.current); return }
+        updateBoard(assemblyId, board.id, { position: next })
       } else if (transformMode === 'rotate') {
-        updateBoard(assemblyId, board.id, {
-          rotation: {
-            x: Math.round((rot.x * 180) / Math.PI),
-            y: Math.round((rot.y * 180) / Math.PI),
-            z: Math.round((rot.z * 180) / Math.PI)
-          }
-        })
+        const deg = (r: number) => (r * 180) / Math.PI
+        const tcAxis = String(event.target?.axis ?? '').toLowerCase()   // the ring the user took: 'x', 'y', 'z' (or a free turn)
+        const turned = tcAxis === 'x' || tcAxis === 'y' || tcAxis === 'z' ? tcAxis : null
+        const next = releaseRotate(board.rotation, { x: deg(rot.x), y: deg(rot.y), z: deg(rot.z) }, turned)
+        if (next.x === board.rotation.x && next.y === board.rotation.y && next.z === board.rotation.z) {
+          meshRef.current.rotation.set((board.rotation.x * Math.PI) / 180, (board.rotation.y * Math.PI) / 180, (board.rotation.z * Math.PI) / 180)
+          return
+        }
+        updateBoard(assemblyId, board.id, { rotation: next })
       } else if (transformMode === 'scale') {
-        const sx = meshRef.current.scale.x
-        const sy = meshRef.current.scale.y
-        const sz = meshRef.current.scale.z
         const startDims = dragStartDimsRef.current
-
-        const newWidth  = Math.max(1, Math.round(startDims.width  * sx))
-        const newHeight = Math.max(1, Math.round(startDims.height * sy))
-        const newDepth  = Math.max(1, Math.round(startDims.depth  * sz))
+        const next = releaseScale(startDims, meshRef.current.scale)
 
         meshRef.current.scale.set(1, 1, 1)
         scaleDraggingRef.current = false
 
-        if (newWidth === startDims.width && newHeight === startDims.height && newDepth === startDims.depth) {
+        if (next.width === startDims.width && next.height === startDims.height && next.depth === startDims.depth) {
           return
         }
 
-        updateBoard(assemblyId, board.id, {
-          width: newWidth,
-          height: newHeight,
-          depth: newDepth
-        })
+        updateBoard(assemblyId, board.id, next)
       }
     }
   }
@@ -335,18 +343,23 @@ export const Board3D = memo(function Board3D({ board, assemblyId, orbitRef, high
       const live = orthoLiveRef.current
       const axes = DRAG_AXES[live.activeView as Exclude<ViewMode, '3d'>]
       const { startBoardPos: sp, startWorldPos: sw, others } = orthoDrag.current
+      const du = worldPos[axes.u] - sw[axes.u], dv = worldPos[axes.v] - sw[axes.v]
+      // a click or a tremble of a few pixels is no move: the board stays exactly where it is (no face snap either)
+      const dead = computeWorldSizeForPixels(CLICK_PX, worldPos, camera, gl.domElement.clientHeight)
+      if (Math.abs(du) < dead && Math.abs(dv) < dead) return { position: { ...sp }, indicator: null }
       const raw = { ...sp }
-      raw[axes.u] += worldPos[axes.u] - sw[axes.u]
-      raw[axes.v] += worldPos[axes.v] - sw[axes.v]
+      raw[axes.u] += du
+      raw[axes.v] += dv
       const dragAxes: SnapAxis[] = [axes.u, axes.v]
       const face = e.altKey ? null : snapBoardToBoards(
         { ...live.board, position: raw }, others, dragAxes,
         computeWorldSizeForPixels(FACE_SNAP_PX, worldPos, camera, gl.domElement.clientHeight)
       )
       const position = face ? face.position : raw
+      // the distance dragged is rounded (or the grid applied), never the place: 1116.5 + 32 stays 1148.5
       for (const a of dragAxes) {
         if (face?.snapped.includes(a)) continue
-        position[a] = live.snapEnabled ? snapToGrid(position[a], live.snapSize) : Math.round(position[a])
+        position[a] = moveAxis(sp[a], position[a] - sp[a], live.snapEnabled ? live.snapSize : null)
       }
       const b = live.board
       const centre = { x: position.x + b.width / 2, y: position.y + b.height / 2, z: position.z + b.depth / 2 }
@@ -384,6 +397,14 @@ export const Board3D = memo(function Board3D({ board, assemblyId, orbitRef, high
       // A multi-selection moves by the dragged board's (snapped) move
       const { position } = dragTarget(e, worldPos)
       const sp = orthoDrag.current.startBoardPos
+      if (position.x === sp.x && position.y === sp.y && position.z === sp.z) {
+        // nothing moved (a click): put the mesh back, write nothing
+        const b = live.board
+        meshRef.current?.position.set(sp.x + b.width / 2, sp.y + b.height / 2, sp.z + b.depth / 2)
+        endTransform()
+        endDragHistory()
+        return
+      }
       const { selectedBoardIds, selectedAssemblyId } = useUIStore.getState()
       if (selectedBoardIds.length > 1 && selectedBoardIds.includes(live.board.id) && selectedAssemblyId) {
         live.nudgeBoards(selectedAssemblyId, selectedBoardIds, { x: position.x - sp.x, y: position.y - sp.y, z: position.z - sp.z })
@@ -425,6 +446,7 @@ export const Board3D = memo(function Board3D({ board, assemblyId, orbitRef, high
     } else if (!isSelected) {
       selectBoard(assemblyId, board.id)
     }
+    if (locked) return
 
     // Start ortho drag
     const worldPos = raycastToPlane(e.nativeEvent.clientX, e.nativeEvent.clientY)

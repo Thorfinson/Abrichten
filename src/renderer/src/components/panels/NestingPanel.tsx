@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next'
 import { useProjectStore } from '../../store/useProjectStore'
 import { useUIStore } from '../../store/useUIStore'
 import { nestBoards, nestingToSvg } from '../../utils/nesting'
+import { usePartLabels } from '../../hooks/usePartLabels'
 import type { NestingResult, NestingGroup } from '../../utils/nesting'
 import { Dialog, Button, FIELD_CLASS, LABEL_CLASS, CHECK_CLASS, segmentClass } from '../ui/Dialog'
 
@@ -45,6 +46,7 @@ export function NestingPanel() {
   const [activeSheet, setActiveSheet] = useState(0)
 
   const allBoards = useMemo(() => activeAssemblies(project).flatMap((a) => a.boards), [project])
+  const labels = usePartLabels()
 
   // Optimise on open (at once) and whenever an input or the project changes
   // (debounced, so typing a sheet size does not recompute on every key)
@@ -86,7 +88,7 @@ export function NestingPanel() {
   const group: NestingGroup | undefined = result?.groups[groupIdx]
   const sheetIdx = group ? Math.min(activeSheet, Math.max(0, group.sheets.length - 1)) : 0
   const currentSheet = group?.sheets[sheetIdx]
-  const svgContent = currentSheet ? nestingToSvg(currentSheet, 0.12) : null
+  const svgContent = currentSheet ? nestingToSvg(currentSheet, 0.12, labels) : null
 
   const handleExportSvg = () => {
     if (!svgContent || !group) return

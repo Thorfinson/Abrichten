@@ -4,8 +4,12 @@ import { useUIStore } from '../../store/useUIStore'
 import { useProjectStore } from '../../store/useProjectStore'
 import { HINGE_CUP_EDGE_MM, hingePositionsMm, hardwareItems, withHinges } from '../../data/hardware'
 import { getMaterialById } from '../../data/materials'
-import { boardFace, uprightFace } from '../../utils/boardFace'
+import { usePartLabels } from '../../hooks/usePartLabels'
+import { partTitle } from '../../utils/partLabel'
+import { boardFace } from '../../utils/boardFace'
+import { faceDrawing } from '../../utils/faceDrawing'
 import type { Board } from '../../types/furniture'
+import { useDesignLocked } from '../../hooks/useDesignLocked'
 
 /** Epic 18a: recommend hinge count based on door height and weight */
 function recommendHingeCount(doorHeightMm: number, doorWeightKg: number = 10): number {
@@ -168,6 +172,7 @@ export function HingeCalcPanel() {
   const setShowHingeCalcPanel = useUIStore((s) => s.setShowHingeCalcPanel)
   const customMaterials = useProjectStore((s) => s.project.customMaterials)
   const door = useSelectedDoor()
+  const labels = usePartLabels()
 
   const [doorThickness, setDoorThickness] = useState(18)
   const [doorHeight, setDoorHeight] = useState(700)
@@ -182,7 +187,8 @@ export function HingeCalcPanel() {
   useEffect(() => {
     if (!showHingeCalcPanel || !door) return
     const b = door.board
-    const height = Math.round(uprightFace(b).y)
+    // the door's height as drawn (standing parts upright, utils/faceDrawing)
+    const height = Math.round(faceDrawing(b).height)
     const density = getMaterialById(b.materialId, customMaterials)?.density ?? 700
     const weight = Math.max(0.5, Math.round((b.weightKg ?? (density * b.width * b.height * b.depth) / 1e9) * 2) / 2)
     setDoorHeight(height)
@@ -191,7 +197,9 @@ export function HingeCalcPanel() {
     setHingeCount(recommendHingeCount(height, weight))
   }, [showHingeCalcPanel, doorId]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  if (!showHingeCalcPanel) return null
+  // a tool of the design: not in the assembly workspace (store/designLock.ts)
+  const locked = useDesignLocked()
+  if (locked || !showHingeCalcPanel) return null
 
   const close = () => setShowHingeCalcPanel(false)
   const sys = HINGE_SYSTEMS.find((h) => h.id === hingeId) ?? HINGE_SYSTEMS[0]
@@ -218,7 +226,7 @@ export function HingeCalcPanel() {
     const item = hardwareItems.find((h) => h.id === sys.hardwareId)
     const count = hardware.at(-1)?.quantity ?? hingeCount
     useUIStore.getState().setExportStatus(t('func.hingesApplied', {
-      count, hinge: item ? (lang === 'de' ? item.name : item.nameEn) : sys.name, board: door.board.name
+      count, hinge: item ? (lang === 'de' ? item.name : item.nameEn) : sys.name, board: partTitle(labels.get(door.board.id), door.board.name)
     }))
     close()
   }
@@ -237,7 +245,7 @@ export function HingeCalcPanel() {
           {/* Door from the selection */}
           <div className="text-xs text-chrome-muted">
             {door
-              ? t('func.hingeDoorFrom', { board: door.board.name })
+              ? t('func.hingeDoorFrom', { board: partTitle(labels.get(door.board.id), door.board.name) })
               : t('func.hingeSelectDoor')}
           </div>
 

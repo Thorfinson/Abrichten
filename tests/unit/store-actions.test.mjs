@@ -152,3 +152,46 @@ test('removeParameter clears the formulas that used it and keeps the numbers', (
   history().undo()
   assert.equal(boardById('a2').heightFormula, 'H - T')
 })
+
+test('setBoardsRole sets the role of several boards in one undo step', () => {
+  store().setBoardsRole('A', ['a1', 'a2'], 'carcass')
+  assert.equal(boardById('a1').role, 'carcass')
+  assert.equal(boardById('a2').role, 'carcass')
+  assert.equal(boardById('b1').role, undefined)
+  assert.equal(undoSteps(), 1)
+  history().undo()
+  assert.equal(boardById('a1').role, undefined)
+  assert.equal(boardById('a2').role, undefined)
+  history().redo()
+  assert.equal(boardById('a2').role, 'carcass')
+})
+
+test('setBoardsRole: clearing, no-ops and unknown roles', () => {
+  store().setBoardsRole('A', ['a1'], 'visible')
+  store().setBoardsRole('A', ['a1'], 'visible')          // already set
+  store().setBoardsRole('A', ['a2'], undefined)          // has none
+  store().setBoardsRole('A', ['b1'], 'back')             // b1 is in B, not A
+  store().setBoardsRole('nope', ['a1'], 'back')
+  store().setBoardsRole('A', ['a1', 'a2'], 'front')      // not a role: the validator would drop it
+  assert.equal(undoSteps(), 1)
+  assert.equal(boardById('a1').role, 'visible')
+  assert.equal(boardById('b1').role, undefined)
+
+  // a mixed selection takes one role; then clearing removes it from all
+  store().setBoardsRole('A', ['a1', 'a2'], 'drawer')
+  assert.deepEqual([boardById('a1').role, boardById('a2').role], ['drawer', 'drawer'])
+  store().setBoardsRole('A', ['a1', 'a2'], undefined)
+  assert.deepEqual([boardById('a1').role, boardById('a2').role], [undefined, undefined])
+  assert.equal(undoSteps(), 3)
+})
+
+test('a part role survives duplicating, moving and saving + loading', () => {
+  store().setBoardsRole('A', ['a2'], 'back')
+  const copy = store().duplicateBoard('A', 'a2')
+  assert.equal(boardById(copy).role, 'back')
+  store().moveBoardsToAssembly('A', ['a2'], 'B')
+  assert.equal(boardById('a2').role, 'back')
+  store().loadProject(JSON.parse(JSON.stringify(store().project)))
+  assert.equal(boardById('a2').role, 'back')
+  assert.equal(boardById('a1').role, undefined)
+})
