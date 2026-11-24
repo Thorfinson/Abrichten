@@ -251,6 +251,31 @@ export interface BoardStatic {
   gaps?: SupportGap[]
   /** Contacts and joints across air that do not count; missing when none */
   air?: SupportAir[]
+  /**
+   * Why this board's numbers cannot be trusted; missing when nothing is known against them.
+   * 'kreis': boards that carry each other in a loop; a load that had to go to a board already
+   * computed was not counted (kg), so this board or the other is rated without it.
+   * role 'gab': this board handed kg to withId, not counted there; 'fehlt': kg from withId are missing here.
+   * 'folge': this board carries load from boards (count, the first is withId) that miss kg from loops together.
+   * 'wahl': the result depends on which board of a loop is computed first; computed the other way
+   * round it carries kg more or less and reaches uOther (finding 23.11.2026: a post flipped between ok and critical).
+   */
+  unsure?: { reason: 'kreis' | 'wahl' | 'folge'; withId: string; kg: number; role?: 'gab' | 'fehlt'; uOther?: number; count?: number }[]
+}
+
+/**
+ * Where every newton put into the structure ends up (self-check, finding 23.11.2026, review statics A3):
+ * inN = floorN + droppedN + stuckN, within rounding. droppedN > 0 means loops lost load: the result is unsure.
+ */
+export interface StaticBalance {
+  /** Own weight, payload and placed loads of all boards */
+  inN: number
+  /** Handed to the floor */
+  floorN: number
+  /** Lost in loops: handed to a board that was already computed */
+  droppedN: number
+  /** Stays in boards without a support to the floor (unsupported, hung on the wall) */
+  stuckN: number
 }
 
 export interface StaticSimulation {
@@ -261,6 +286,10 @@ export interface StaticSimulation {
   durationMs: number
   /** Boards solved in this run (the others came from the cache) */
   solved: number
+  /** Where the load ends up; the self-check of the whole run */
+  balance: StaticBalance
+  /** Boards with a reason to doubt their numbers (see BoardStatic.unsure) */
+  unsureCount: number
 }
 
 export interface SimulationOptions {
@@ -536,7 +565,10 @@ function applyJoints(members: Member[], joints: NonNullable<SimulationOptions['j
       continue
     }
     if (!region) continue
-    pairs.set(key, { a, b, region, gap, why })
+    // the pair is stored by id, not by the order the two boards were clicked (review 23.11.: swapping A and B
+    // of one joint changed the results of other boards)
+    const [lo, hi] = members[a].raw.id < members[b].raw.id ? [a, b] : [b, a]
+    pairs.set(key, { a: lo, b: hi, region, gap, why })
     members[a].joints.push(region)
     members[b].joints.push(region)
   }
@@ -547,16 +579,18 @@ function applyJoints(members: Member[], joints: NonNullable<SimulationOptions['j
   // front edge) stands, but not steadily: its joints with steady standing boards carry it
   const standing = new Uint8Array(n), steady = new Uint8Array(n)
   for (const m of members) if (m.supports.some((s) => s.kind === 'floor')) { standing[m.index] = 1; steady[m.index] = 1 }
+  // in rounds: a board sees only what stood after the previous round, never a neighbour that happened to come
+  // earlier in the file within the same round (finding 23.11.2026, review statics A3: order of the boards)
   for (let changed = true; changed;) {
     changed = false
+    const now: { i: number; steady: boolean }[] = []
     for (const m of members) {
       if (standing[m.index]) continue
       const on = m.supports.filter((s) => s.by >= 0 && standing[s.by])
       if (!on.length || !standsOn(m, on)) continue
-      standing[m.index] = 1
-      steady[m.index] = steadyInPlane(m, on) ? 1 : 0
-      changed = true
+      now.push({ i: m.index, steady: steadyInPlane(m, on) })
     }
+    for (const x of now) { standing[x.i] = 1; steady[x.i] = x.steady ? 1 : 0; changed = true }
   }
   // Distance from the standing boards: a joint is one step, resting steadily on boards none
   // (0-1 BFS). A board that would tip on its contacts (a drawer bottom touching a rail with
@@ -647,7 +681,7 @@ function bucklingGap(m: Member): [number, number] {
  * is broken by taking the remaining board with the highest top first (then the lower
  * index); loads it would still receive from the cycle are dropped.
  */
-function processingOrder(members: Member[]): number[] {
+function processingOrder(members: Member[], desc = false): number[] {
   const n = members.length
   const receivers = members.map((m) => [...new Set(m.supports.filter((s) => s.by >= 0).map((s) => s.by))])
   const pending = new Array<number>(n).fill(0)
@@ -658,7 +692,10 @@ function processingOrder(members: Member[]): number[] {
     let best = -1
     for (let i = 0; i < n; i++) {
       if (done[i] || (ready && pending[i] > 0)) continue
-      if (best < 0 || members[i].box.y1 > members[best].box.y1) best = i
+      // a tie is broken by the board's id, never by its place in the file: the same kitchen gives the
+      // same numbers whatever order its boards were drawn in (finding 23.11.2026, review statics A3)
+      if (best < 0 || members[i].box.y1 > members[best].box.y1 ||
+        (members[i].box.y1 === members[best].box.y1 && (desc ? members[i].raw.id > members[best].raw.id : members[i].raw.id < members[best].raw.id))) best = i
     }
     return best
   }
@@ -1031,20 +1068,75 @@ function finite(r: BoardStatic): BoardStatic {
 }
 
 /** Runs the load simulation over `boards` (normally those of the visible assemblies). */
+/** Orders two items by a text key (locale-free, so the same everywhere). */
+function byKey<T>(p: T, q: T, key: (x: T) => string): number {
+  const a = key(p), b = key(q)
+  return a < b ? -1 : a > b ? 1 : 0
+}
+
+/**
+ * Every list a board brings into its computation is put in an order that follows from the boards' ids and
+ * geometry, never from their place in the file: the same kitchen gives the same numbers whatever order its
+ * boards were drawn in (finding 23.11.2026, review statics A3; guarded by tests/unit/statics-selfcheck).
+ */
+function canonicalLists(members: Member[]): void {
+  const id = (i: number): string => (i >= 0 ? members[i].raw.id : '')
+  const r = (x: Rect): string => `${x.x0}|${x.z0}|${x.x1}|${x.z1}`
+  for (const m of members) {
+    m.supports.sort((p, q) => byKey(p, q, (s) => `${s.kind}|${id(s.by)}|${r(s.rect)}|${s.y0}|${s.y1}`))
+    m.layers.sort((p, q) => byKey(p, q, (l) => `${id(l.index)}|${r(l.rect)}`))
+    m.covers.sort((p, q) => byKey(p, q, r))
+    m.joints.sort((p, q) => byKey(p, q, (j) => JSON.stringify(j)))
+    m.air.sort((p, q) => byKey(p, q, (x) => `${id(x.by)}|${x.kind}|${x.mm}`))
+  }
+}
+
+/**
+ * The load simulation. Loops (boards carrying each other) have to be broken somewhere; which board of a loop
+ * is computed first is a choice. The run is made both ways (ties by id up and down): a board whose result
+ * differs is marked unsure ('wahl') with the other value, instead of one of the two being shown as fact.
+ */
 export function simulateStatics(boards: Board[], options: SimulationOptions): StaticSimulation {
+  const a = simulateOnce(boards, options, false)
+  const b = simulateOnce(boards, options, true)
+  const results = new Map(a.results)
+  for (const [id, r] of a.results) {
+    const o = b.results.get(id)
+    if (!o) continue
+    const dKg = (o.totalLoadN - r.totalLoadN) / GRAVITY
+    // a different status, 1 % utilisation, or 0.5 kg and 2 % of the load: below that it is float noise of the split
+    if (o.status === r.status && Math.abs(o.uMax - r.uMax) < 0.01 && Math.abs(dKg) < Math.max(0.5, 0.02 * r.totalLoadN / GRAVITY)) continue
+    results.set(id, { ...r, unsure: [...(r.unsure ?? []), { reason: 'wahl', withId: '', kg: Math.round(dKg * 10) / 10, uOther: Math.round(o.uMax * 1000) / 1000 }] })
+  }
+  return { ...a, results, durationMs: a.durationMs + b.durationMs, solved: a.solved + b.solved, unsureCount: [...results.values()].filter((r) => r.unsure).length }
+}
+
+function simulateOnce(boards: Board[], options: SimulationOptions, desc: boolean): StaticSimulation {
   const t0 = performance.now()
   const members = boards.map((b, i) => buildMember(b, i, options))
   const indexById = new Map(members.map((m) => [m.raw.id, m.index]))
   const explain = gapExplainer(options)
   findSupports(members, explain)
   applyJoints(members, options.joints ?? [], explain)
+  canonicalLists(members)
   const processed = new Array<boolean>(members.length).fill(false)
   const results = new Map<string, BoardStatic>()
   let solved = 0
+  const balance: StaticBalance = { inN: 0, floorN: 0, droppedN: 0, stuckN: 0 }
+  const unsure = new Map<string, NonNullable<BoardStatic['unsure']>>()
+  const doubt = (id: string, entry: NonNullable<BoardStatic['unsure']>[number]): void => {
+    const list = unsure.get(id) ?? []
+    list.push(entry)
+    unsure.set(id, list)
+  }
+  /** Load lost in loops, per pair giver → receiver (N) */
+  const drops = new Map<string, { from: string; to: string; N: number }>()
 
-  for (const i of processingOrder(members)) {
+  for (const i of processingOrder(members, desc)) {
     const m = members[i]
     const own = ownLoads(m, Math.max(0, options.payloadKg))
+    m.received.sort((p, q) => byKey(p, q, (l) => `${l.from}|${l.y}|${l.rect.x0}|${l.rect.z0}|${l.rect.x1}|${l.rect.z1}|${l.F}`))
+    balance.inN += own.selfN + own.payloadN + own.placed.reduce((sum, p) => sum + p.F, 0)
     const key = memberKey(m, own, members)
     let outcome = cached(key)
     if (!outcome) {
@@ -1061,11 +1153,60 @@ export function simulateStatics(boards: Board[], options: SimulationOptions): St
         if (r) results.set(k.raw.id, layerResult(r, k, outcome.fe))
       }
     }
+    let handedN = 0
     for (const t of outcome.transfers) {
       const to = indexById.get(t.toId)
-      // a receiver already processed can only come from a broken cycle (see processingOrder)
+      handedN += t.load.F
+      // a receiver already processed can only come from a broken cycle (see processingOrder): its load is
+      // not counted there. That is no longer silent: both boards are unsure, and the balance says how much.
       if (to !== undefined && !processed[to]) members[to].received.push({ ...t.load, from: m.raw.id })
+      else {
+        balance.droppedN += t.load.F
+        const key = `${m.raw.id}|${t.toId}`
+        const d = drops.get(key) ?? { from: m.raw.id, to: t.toId, N: 0 }
+        d.N += t.load.F
+        drops.set(key, d)
+      }
     }
+    // what is not handed on goes to the floor, or stays in a board without a way down
+    const carried = outcome.result?.totalLoadN ?? (own.selfN + own.payloadN + own.placed.reduce((sum, p) => sum + p.F, 0) + m.received.reduce((sum, l) => sum + l.F, 0))
+    const rest = Math.max(0, carried - handedN)
+    // on the floor and not rated as falling: an appliance standing on the floor has no rating of its own (a
+    // dishwasher, say) and still hands its weight to the floor
+    const rated = outcome.result?.status
+    const down = m.supports.some((s) => s.kind === 'floor') && rated !== 'unsupported' && rated !== 'wallHung'
+    if (down) balance.floorN += rest; else balance.stuckN += rest
+  }
+  // a pair that lost at least 0.05 kg (below: float noise of the split): both are unsure, with the direction
+  const missing = new Map<string, number>()
+  for (const d of drops.values()) {
+    if (d.N < 0.05 * GRAVITY) continue
+    doubt(d.from, { reason: 'kreis', role: 'gab', withId: d.to, kg: d.N / GRAVITY })
+    doubt(d.to, { reason: 'kreis', role: 'fehlt', withId: d.from, kg: d.N / GRAVITY })
+    missing.set(d.to, (missing.get(d.to) ?? 0) + d.N)
+  }
+  // ...and everything that carries load from a board missing some is rated without it too (review 23.11.:
+  // boards downstream of such a loss showed a clean ok)
+  const below = new Map<string, string[]>()
+  for (const r of results.values()) below.set(r.boardId, [...new Set(r.reactions.filter((x) => x.to).map((x) => x.to as string))])
+  // one note per board: the boards above it that miss load, and how much they miss together
+  const upstream = new Map<string, string[]>()
+  for (const src of [...missing.keys()].sort()) {
+    const seen = new Set<string>([src]), queue = [...(below.get(src) ?? [])]
+    while (queue.length) {
+      const id = queue.shift() as string
+      if (seen.has(id)) continue
+      seen.add(id)
+      upstream.set(id, [...(upstream.get(id) ?? []), src])
+      queue.push(...(below.get(id) ?? []))
+    }
+  }
+  for (const [id, srcs] of upstream) {
+    doubt(id, { reason: 'folge', withId: srcs[0], kg: srcs.reduce((sum, x) => sum + (missing.get(x) ?? 0), 0) / GRAVITY, count: srcs.length })
+  }
+  for (const [id, list] of unsure) {
+    const r = results.get(id)
+    if (r) results.set(id, { ...r, unsure: list.map((u) => ({ ...u, kg: Math.round(u.kg * 10) / 10 })) })
   }
 
   // what the supports were counted across: explained gaps with their width, and the air
@@ -1084,7 +1225,7 @@ export function simulateStatics(boards: Board[], options: SimulationOptions): St
     else if (r.status === 'warning') warning++
     else if (r.status === 'unsupported') unsupported++
   }
-  return { results, critical, warning, unsupported, durationMs: performance.now() - t0, solved }
+  return { results, critical, warning, unsupported, durationMs: performance.now() - t0, solved, balance, unsureCount: [...results.values()].filter((r) => r.unsure).length }
 }
 
 /**

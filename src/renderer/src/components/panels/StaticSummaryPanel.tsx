@@ -63,6 +63,18 @@ function SummaryDialog() {
    * mistake (amber: close the gap or enter the hardware that bridges it); air at a contact is
    * no support (grey), the rating already follows from that.
    */
+  /** A loop where load was not counted (services/static-sim BoardStatic.unsure): the numbers are unsure. */
+  const unsureNotes = (r: BoardStatic) => (r.unsure ?? []).map((u, i) => (
+    <div key={`u${i}`} className="text-[10px] font-normal text-amber-400 whitespace-normal" data-testid="static-unsure">
+      {u.reason === 'wahl'
+        ? t('sim.unsureChoice', { u: Math.round((u.uOther ?? 0) * 100), kg: mmText(Math.abs(u.kg)) })
+        : t(u.reason === 'folge' ? 'sim.unsureDownstream' : u.role === 'fehlt' ? 'sim.unsureMissing' : 'sim.unsureLoop',
+          { part: titles.get(u.withId) ?? u.withId, kg: mmText(u.kg), count: u.count ?? 1 })}
+    </div>
+  ))
+  const kgText = (N: number): string => (N / GRAVITY).toLocaleString(lang, { maximumFractionDigits: 1, minimumFractionDigits: 1 })
+  const lost = sim.balance.droppedN + sim.balance.stuckN
+  const notChecked = rows.filter((row) => row.r.status === 'wallHung').length
   const airNotes = (r: BoardStatic) => {
     const joints = (r.air ?? []).filter((a) => a.kind === 'joint')
     const contacts = new Map<number, string[]>()
@@ -100,7 +112,8 @@ function SummaryDialog() {
     return t('sim.location', { a: `${a} ${Math.round(r.maxLocal.a)}`, b: `${b} ${Math.round(r.maxLocal.b)}` })
   }
 
-  const displayed = onlyIssues ? rows.filter((row) => (row.r.status !== 'ok' && row.r.status !== 'wallHung') || jointAir(row.r) !== null) : rows
+  // "only problems" shows every state that is not a clean ok: also not checked (hung on a wall) and unsure
+  const displayed = onlyIssues ? rows.filter((row) => row.r.status !== 'ok' || jointAir(row.r) !== null || !!row.r.unsure) : rows
   const th = 'px-2 py-1.5 font-medium border-b border-chrome-border'
   const td = 'px-2 py-1 border-b border-chrome-border/60 whitespace-nowrap'
 
@@ -117,6 +130,8 @@ function SummaryDialog() {
           <h2 id="static-summary-title" className="text-sm font-semibold flex-1">{t('sim.summaryTitle')}</h2>
           <span className="text-xs text-chrome-muted tabular-nums">
             {t('sim.counts', { critical: sim.critical, warning: sim.warning, unsupported: sim.unsupported })}
+            {notChecked > 0 && ` · ${t('sim.countNotChecked', { count: notChecked })}`}
+            {sim.unsureCount > 0 && ` · ${t('sim.countUnsure', { count: sim.unsureCount })}`}
           </span>
           <label className="flex items-center gap-1.5 text-xs text-chrome-secondary cursor-pointer">
             <input type="checkbox" checked={onlyIssues} onChange={(e) => setOnlyIssues(e.target.checked)} className="accent-[var(--color-action)]" />
@@ -128,11 +143,23 @@ function SummaryDialog() {
         <div className="px-4 py-2 border-b border-chrome-border text-xs text-chrome-secondary shrink-0">
           {t('sim.payloadNote', { kg: payloadKg })}
         </div>
+        {/* self-check of the whole run: where the load ends up (services/static-sim StaticBalance) */}
+        <div
+          data-testid="static-balance"
+          className={`px-4 py-2 border-b border-chrome-border text-xs shrink-0 ${lost > 0.5 * GRAVITY ? 'text-amber-400' : 'text-chrome-secondary'}`}
+        >
+          {lost > 0.5 * GRAVITY
+            ? t('sim.balanceUnsure', { lost: kgText(lost), total: kgText(sim.balance.inN), loop: kgText(sim.balance.droppedN), stuck: kgText(sim.balance.stuckN) })
+            : t('sim.balanceOk', { total: kgText(sim.balance.inN) })}
+        </div>
 
         {/* Table */}
         <div className="flex-1 overflow-y-auto">
           {displayed.length === 0 ? (
-            <div className="p-8 text-center text-sm text-chrome-muted">{onlyIssues ? t('sim.noIssues') : t('sim.noBoards')}</div>
+            <div className="p-8 text-center text-sm text-chrome-muted">
+              {/* no single board stands out, but the balance is unsure: never a plain "no problems" next to it */}
+              {onlyIssues ? (lost > 0.5 * GRAVITY ? t('sim.noIssuesButBalance') : t('sim.noIssues')) : t('sim.noBoards')}
+            </div>
           ) : (
             <table className="w-full text-xs border-collapse">
               <thead className="sticky top-0 z-10 bg-chrome-deep text-chrome-muted">
@@ -164,6 +191,7 @@ function SummaryDialog() {
                       <td className={`${td} font-medium`}>
                         <PartName label={labels.get(row.board.id)} name={row.board.name} labelClassName="text-chrome-muted font-normal" />
                         {airNotes(r)}
+                        {unsureNotes(r)}
                       </td>
                       <td className={`${td} text-chrome-muted`}>{row.assembly.name}</td>
                       <td className={`${td} text-right font-mono`}>{num(r.totalLoadN / GRAVITY)}</td>

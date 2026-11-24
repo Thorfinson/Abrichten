@@ -70,7 +70,7 @@ const formatPct = (share: number): string => {
 }
 
 function LegendCard() {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   const payloadKg = useUIStore((s) => s.staticLoadKg)
   const setStaticLoadKg = useUIStore((s) => s.setStaticLoadKg)
   const showDeformation = useStaticStore((s) => s.showDeformation)
@@ -91,6 +91,7 @@ function LegendCard() {
   const setCollapsed = useUIStore((s) => s.setStaticLegendCollapsed)
   const toggleStaticOverlay = useUIStore((s) => s.toggleStaticOverlay)
   const sim = useStaticSimulation()
+  const notChecked = [...sim.results.values()].filter((r) => r.status === 'wallHung').length
   const modelMax = modelFieldMax(sim, resultType)
   const types: { id: StaticResultType; label: string }[] = [
     { id: 'stress', label: t('sim.resultStress') },
@@ -105,6 +106,8 @@ function LegendCard() {
         <span className="font-semibold text-chrome-text whitespace-nowrap">{t('sim.legendTitle')}</span>
         <span className="ml-auto text-chrome-muted tabular-nums text-right">
           {t('sim.counts', { critical: sim.critical, warning: sim.warning, unsupported: sim.unsupported })}
+          {notChecked > 0 && ` · ${t('sim.countNotChecked', { count: notChecked })}`}
+          {sim.unsureCount > 0 && ` · ${t('sim.countUnsure', { count: sim.unsureCount })}`}
         </span>
         {/* Fold to this row (remembered), or switch the static overlay off */}
         <button
@@ -127,6 +130,12 @@ function LegendCard() {
           <Icon name="close" className="w-3.5 h-3.5" />
         </button>
       </div>
+      {/* the self-check of the whole run (services/static-sim StaticBalance) */}
+      {sim.balance.droppedN + sim.balance.stuckN > 0.5 * 9.81 && (
+        <div data-testid="static-legend-balance" className="mt-1 text-amber-400">
+          {t('sim.balanceShort', { lost: ((sim.balance.droppedN + sim.balance.stuckN) / 9.81).toLocaleString(i18n.language, { maximumFractionDigits: 1 }), total: (sim.balance.inN / 9.81).toLocaleString(i18n.language, { maximumFractionDigits: 0 }) })}
+        </div>
+      )}
       {!collapsed && (<>
         {/* Result type: what the colours show */}
         <div className="flex items-center gap-2 mt-1.5 mb-1.5">

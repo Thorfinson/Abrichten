@@ -46,17 +46,10 @@ const PLATE_MAX_ELEMENTS = 240
 export const SHELF_PIN_INSET_MM = 37
 
 /**
- * The final contact state per grid and support layout. When only the loads on a board
- * change (a board above was moved or loaded), its contact iteration starts from there
- * and usually needs a single pass.
+ * No memory of earlier contact states: every board's contact iteration starts cold, so the same input gives
+ * the same result whatever was computed before (finding 23.11.2026, review statics A3: a warm start picked
+ * one of several solutions, and results changed after other runs).
  */
-const contactMemo = new Map<string, Uint8Array>()
-const MAX_CONTACT_MEMO = 1000
-function rememberContact(key: string, held: Uint8Array): void {
-  contactMemo.delete(key)
-  if (contactMemo.size >= MAX_CONTACT_MEMO) contactMemo.delete(contactMemo.keys().next().value as string)
-  contactMemo.set(key, held)
-}
 
 export type WorldAxis = 'x' | 'y' | 'z'
 export interface Rect { x0: number; x1: number; z0: number; z1: number }
@@ -518,7 +511,6 @@ function solveLyingWith(inp: LyingInput, mode: JointMode): FeOutcome | null {
   const lineNodes = group(true, false), otherNodes = group(false, false)
   const jointLines = group(true, true), jointNodes = group(false, true)
 
-  const memoKey = `p|${xa.join(',')}|${xb.join(',')}|${lineNodes.join(',')}|${otherNodes.join(',')}|${jointLines.join(',')}|${jointNodes.join(',')}|${mode}`
   const res = solvePlate({
     xa, xb, cells,
     rigidity: (c) => rigidities[c],
@@ -528,10 +520,10 @@ function solveLyingWith(inp: LyingInput, mode: JointMode): FeOutcome | null {
       { nodes: lineNodes, unilateral: true, line: true }, { nodes: otherNodes, unilateral: true },
       { nodes: jointLines, unilateral: false, line: true, clamped: mode === 'clamped' }, { nodes: jointNodes, unilateral: false }
     ],
-    initialHeld: contactMemo.get(memoKey)
+    // no warm start: the contact problem can have several solutions, and starting from an earlier one made
+    // the result depend on what was computed before (finding 23.11.2026, review statics A3)
   })
   if (!res) return null
-  rememberContact(memoKey, res.held)
   const held = markJoints(res.held, cover, inp.supports)
 
   // Utilisation from this board's own share of the moment (a layer on top takes the rest)
@@ -722,15 +714,14 @@ function solveStandingWith(inp: StandingInput, mode: JointMode): FeOutcome | nul
 
   const props = inPlane(inp.material, inp.grain, along, 'y', false)
   const loads: LineLoad[] = inp.received.map((l) => ({ a0: lo(l.rect, along) - a0, a1: hi(l.rect, along) - a0, b: l.y - box.y0, F: l.F }))
-  const memoKey = `s|${xa.join(',')}|${xb.join(',')}|${contactNodes.join(',')}|${jointNodes.join(',')}|${fixU}|${inp.fastened ? 1 : 0}|${mode}`
   const res = solvePlaneStress({
     xa, xb, cells, t, C: planeMaterial(props), weight: inp.weight, loads,
     supports: [{ nodes: contactNodes, unilateral: !inp.fastened }, { nodes: jointNodes, unilateral: false, holdU: mode === 'clamped' }],
     fixU,
-    initialHeld: contactMemo.get(memoKey)
+    // no warm start: the contact problem can have several solutions, and starting from an earlier one made
+    // the result depend on what was computed before (finding 23.11.2026, review statics A3)
   })
   if (!res) return null
-  rememberContact(memoKey, res.held)
   const held = markJoints(res.held, cover, inp.supports)
 
   // Euler buckling, pinned at both ends of its longest unbraced stretch (the whole height
@@ -798,7 +789,5 @@ function solveStandingWith(inp: StandingInput, mode: JointMode): FeOutcome | nul
   }
 }
 
-/** Forgets the remembered contact states (tests, benchmarks). */
-export function clearContactMemo(): void {
-  contactMemo.clear()
-}
+/** Kept for callers (tests, benchmarks): there is no contact memory any more. */
+export function clearContactMemo(): void {}

@@ -44,13 +44,23 @@ function airNote(r: BoardStatic, nameOf: (id: string) => string, isDe: boolean):
 function staticNote(name: string, r: BoardStatic | undefined, isDe: boolean, nameOf: (id: string) => string = (id) => id): string | null {
   if (!r) return null
   const air = airNote(r, nameOf, isDe)
+  // carried in a loop where load was not counted: say so, whatever the rating (services/static-sim BoardStatic.unsure)
+  const unsure = (r.unsure ?? []).map((u) => u.reason === 'wahl'
+    ? (isDe
+      ? `unsicher: hängt davon ab, wie ein Kreis aufgebrochen wird (andersherum ${Math.round((u.uOther ?? 0) * 100)} %, Last ${Math.abs(u.kg)} kg anders)`
+      : `unsure: depends on how a loop is broken (the other way ${Math.round((u.uOther ?? 0) * 100)} %, load ${Math.abs(u.kg)} kg different)`)
+    : u.reason === 'folge'
+      ? (isDe ? `unsicher: bekommt Last von ${u.count ?? 1} Teil(en) darüber (u. a. "${nameOf(u.withId)}"), denen zusammen ${u.kg} kg aus Kreisen fehlen` : `unsure: carries load from ${u.count ?? 1} part(s) above (e.g. "${nameOf(u.withId)}") that miss ${u.kg} kg from loops together`)
+      : u.role === 'fehlt'
+        ? (isDe ? `unsicher: ${u.kg} kg von "${nameOf(u.withId)}" fehlen hier (Kreis)` : `unsure: ${u.kg} kg from "${nameOf(u.withId)}" are missing here (loop)`)
+        : (isDe ? `unsicher: gibt ${u.kg} kg im Kreis an "${nameOf(u.withId)}", dort nicht gezählt` : `unsure: hands ${u.kg} kg in a loop to "${nameOf(u.withId)}", not counted there`))
   if (r.status === 'unsupported') {
     return (isDe
       ? `"${name}": kein ausreichendes Auflager (fällt, kippt oder liegt nur auf einem schmalen Punkt)`
-      : `"${name}": no adequate support (falls, tips or rests on one narrow point)`) + (air.length ? `; ${air.join('; ')}` : '')
+      : `"${name}": no adequate support (falls, tips or rests on one narrow point)`) + ([...air, ...unsure].length ? `; ${[...air, ...unsure].join('; ')}` : '')
   }
   if (r.status !== 'critical' && r.status !== 'warning') {
-    const joints = air.filter((_, i) => r.air?.[i]?.kind === 'joint')
+    const joints = [...air.filter((_, i) => r.air?.[i]?.kind === 'joint'), ...unsure]
     return joints.length ? `"${name}": ${joints.join('; ')}` : null
   }
   const u = Math.round(r.uMax * 100)
@@ -69,7 +79,7 @@ function staticNote(name: string, r: BoardStatic | undefined, isDe: boolean, nam
       ? `Mindestdicke ${r.minThicknessMm} mm (aktuell ${Math.round(r.thicknessMm * 10) / 10} mm)`
       : `minimum thickness ${r.minThicknessMm} mm (current ${Math.round(r.thicknessMm * 10) / 10} mm)`)
   }
-  parts.push(...air)
+  parts.push(...air, ...unsure)
   return `"${name}": ${parts.join(', ')}`
 }
 
@@ -181,6 +191,14 @@ Respond in English.`
     for (const w of warnings) {
       context += `- ${w}\n`
     }
+  }
+  // the self-check of the whole run: load that does not reach the floor makes every number above unsure
+  const lostKg = (sim.balance.droppedN + sim.balance.stuckN) / GRAVITY
+  if (lostKg > 0.5) {
+    const totalKg = sim.balance.inN / GRAVITY
+    context += isDe
+      ? `\nLastbilanz: ${lostKg.toFixed(1)} von ${totalKg.toFixed(0)} kg kommen nicht am Boden an (${(sim.balance.droppedN / GRAVITY).toFixed(1)} kg in Kreisen nicht gezählt, ${(sim.balance.stuckN / GRAVITY).toFixed(1)} kg in Teilen ohne Auflager). Die Statik ist unsicher; „ok“ ist kein Beleg.\n`
+      : `\nLoad balance: ${lostKg.toFixed(1)} of ${totalKg.toFixed(0)} kg do not reach the floor (${(sim.balance.droppedN / GRAVITY).toFixed(1)} kg not counted in loops, ${(sim.balance.stuckN / GRAVITY).toFixed(1)} kg in parts without support). The statics are unsure; "ok" is no proof.\n`
   }
 
   return context

@@ -76,7 +76,9 @@ function heatRgba(v: number): Rgba {
 
 /** Label text of a board, or null when it gets none (ok and not selected). */
 export function staticLabel(r: BoardStatic, selected: boolean, mode: StaticResultType, t: TFunction, lang: string): string | null {
-  const text = ratingLabel(r, selected, mode, t, lang)
+  let text = ratingLabel(r, selected, mode, t, lang)
+  // carried in a loop where load was not counted: its numbers do not hold, also on a board rated ok
+  if (r.unsure) text = text !== null ? `${text} · ${t('sim.unsureShort')}` : t('sim.unsureShort')
   // a joint across air connects nothing: a mistake to point at (services/static-sim jointAir)
   const air = jointAir(r)
   if (air === null) return text
