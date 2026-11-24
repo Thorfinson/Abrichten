@@ -410,6 +410,11 @@
     "saved": "Gespeichert",
     "confirmNew": "Ungespeicherte \u00c4nderungen gehen verloren. Neues Projekt erstellen?",
     "invalidProjectFile": "Projektdatei ungültig: {{reason}}",
+    "loadChangesTitle_one": "Beim Öffnen hat die App {{count}} Angabe angepasst",
+    "loadChangesTitle_other": "Beim Öffnen hat die App {{count}} Angaben angepasst",
+    "loadChangesIntro": "Diese Angaben konnte die App so nicht verwenden. Die Datei selbst ist unverändert; erst Speichern übernimmt die Anpassung. Bis dahin gilt das Projekt als ungespeichert.",
+    "loadChangesCopy": "Liste kopieren",
+    "loadChangesOk": "Verstanden",
     "confirmOpen": "Ungespeicherte \u00c4nderungen gehen verloren. Datei \u00f6ffnen?"
   },
   "presets": {

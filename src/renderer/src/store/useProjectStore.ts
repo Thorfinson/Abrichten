@@ -10,6 +10,7 @@ import { evalFormula, isParamName, formulaParams, renameFormulaParam } from '../
 import { designChanged, isDesignLocked, tellDesignLocked } from './designLock'
 import { assemblyCounts } from '../utils/activeParts'
 import { cleanBridgesMm } from '../data/hardware'
+import { describeLoadChanges, type LoadChange } from '../utils/loadChanges'
 
 function uid(): string {
   return Math.random().toString(36).slice(2, 10)
@@ -131,7 +132,8 @@ interface ProjectState {
   setProjectName: (name: string) => void
   setDisplayUnit: (unit: Unit) => void
   setLanguage: (lang: 'de' | 'en') => void
-  loadProject: (project: unknown) => void
+  /** Loads a project; returns what the validator changed in it (utils/loadChanges), empty when nothing */
+  loadProject: (project: unknown) => LoadChange[]
   resetProject: () => void
 
   // Assembly
@@ -290,8 +292,13 @@ export const useProjectStore = create<ProjectState>()(
       // a fresh project starts a fresh history: undo must not bring back the previous one
       loadProject: (project) => {
         const loaded = validateProject(project)
-        set({ project: loaded, savedProject: loaded }, true)
+        const changes = describeLoadChanges(project, loaded)
+        // what loading changed is not what the file says: then it is not "saved" (finding 23.11.2026, review data 11)
+        // a separate copy, not null: the project shows as unsaved, and "discard" on closing still has a
+        // version to keep instead of deleting the auto-save (review 24.11.)
+        set({ project: loaded, savedProject: changes.length ? structuredClone(loaded) : loaded }, true)
         useProjectStore.temporal.getState().clear()
+        return changes
       },
 
       resetProject: () => {

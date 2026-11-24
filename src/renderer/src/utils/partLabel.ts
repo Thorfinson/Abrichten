@@ -16,12 +16,18 @@ import { treeOrder } from './assemblySteps'
 
 /** Longest short word; it has to fit on a batten. */
 export const MAX_SHORT_NAME = 16
+/**
+ * What a stored short word may hold: the first word of an assembly's name is kept whole when it is renamed
+ * ("Unterkonstruktion", 17 letters). Cutting it to the typing limit on loading or showing made labels like
+ * "Unterkonstruktio 12" (finding 23.11.2026, review data 4). The typing limit stays for words you type.
+ */
+export const MAX_STORED_SHORT_NAME = 64
 const CONTROL_CHARS = /[\u0000-\u001f\u007f]/g
 
 /** A usable short word: one line, trimmed, at most MAX_SHORT_NAME characters; '' when empty. */
-export function cleanShortName(v: unknown): string {
+export function cleanShortName(v: unknown, max = MAX_SHORT_NAME): string {
   if (typeof v !== 'string') return ''
-  return v.replace(CONTROL_CHARS, ' ').replace(/\s+/g, ' ').trim().slice(0, MAX_SHORT_NAME).trim()
+  return v.replace(CONTROL_CHARS, ' ').replace(/\s+/g, ' ').trim().slice(0, max).trim()
 }
 
 /** The first word of the assembly name, whole: "Herdfach links" → "Herdfach" (the length limit is for words you type). */
@@ -30,7 +36,7 @@ export const defaultShortName = (name: string): string =>
 
 /** The assembly's short word: set by the user, else the first word of its name. */
 export const shortNameOf = (a: Pick<Assembly, 'name' | 'shortName'>): string =>
-  cleanShortName(a.shortName) || defaultShortName(a.name)
+  cleanShortName(a.shortName, MAX_STORED_SHORT_NAME) || defaultShortName(a.name)
 
 /** A usable part number: a whole number from 1 to 99 999. */
 export const isPartNo = (n: unknown): n is number => typeof n === 'number' && Number.isInteger(n) && n >= 1 && n <= 99_999

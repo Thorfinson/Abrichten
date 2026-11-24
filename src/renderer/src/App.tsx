@@ -26,6 +26,7 @@ import { MeasurementPanel } from './components/panels/MeasurementPanel'
 import { MaterialsPanel } from './components/panels/MaterialsPanel'
 import { WelcomeDialog } from './components/onboarding/WelcomeDialog'
 import { ChangedFileDialog } from './components/onboarding/ChangedFileDialog'
+import { LoadChangesDialog } from './components/onboarding/LoadChangesDialog'
 import { FloatingPropertiesCard } from './components/overlays/FloatingPropertiesCard'
 import { AssemblyModePanel } from './components/panels/AssemblyModePanel'
 import { AssemblyBand, AssemblyStepList, AssemblyTimeline } from './components/panels/AssemblyWorkspace'
@@ -135,6 +136,7 @@ export default function App() {
       <MaterialsPanel />
       <WelcomeDialog />
       <ChangedFileDialog />
+      <LoadChangesDialog />
     </div>
   )
 }

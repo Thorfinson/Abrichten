@@ -5,7 +5,7 @@ import type {
 import { cleanSteps } from './assemblySteps'
 import { sanitizeParents } from './assemblyTree'
 import { isBoardRole } from './boardRole'
-import { cleanShortName, isPartNo, numberParts } from './partLabel'
+import { cleanShortName, MAX_STORED_SHORT_NAME, isPartNo, numberParts } from './partLabel'
 import { isParamName } from './formulaEval'
 import { assemblyCounts } from './activeParts'
 import { cleanBridgesMm } from '../data/hardware'
@@ -85,7 +85,7 @@ function validateAssembly(a: unknown, path: string): { assembly: Assembly; rawJo
       id: str(a.id, crypto.randomUUID()),
       name: cleanName(a.name, 'Baugruppe'),
       visible: assemblyCounts(a),
-      shortName: cleanShortName(a.shortName) || undefined,
+      shortName: cleanShortName(a.shortName, MAX_STORED_SHORT_NAME) || undefined,
       boards,
       joints: []
     },

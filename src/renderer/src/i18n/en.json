@@ -410,6 +410,11 @@
     "saved": "Saved",
     "confirmNew": "Unsaved changes will be lost. Create new project?",
     "invalidProjectFile": "Invalid project file: {{reason}}",
+    "loadChangesTitle_one": "Opening adjusted {{count}} entry",
+    "loadChangesTitle_other": "Opening adjusted {{count}} entries",
+    "loadChangesIntro": "The app could not use these entries as they were. The file itself is unchanged; only saving takes over the adjustment. Until then the project counts as unsaved.",
+    "loadChangesCopy": "Copy list",
+    "loadChangesOk": "Got it",
     "confirmOpen": "Unsaved changes will be lost. Open file?"
   },
   "presets": {

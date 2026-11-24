@@ -19,6 +19,7 @@ import { BOARD_ROLES, type Board, type BoardCutout, type BoardRole, type EdgeBan
 import { useDesignLocked } from '../../hooks/useDesignLocked'
 import { CommitInput } from '../ui/CommitInput'
 import { CutoutEditor } from './CutoutEditor'
+import { cleanName } from '../../utils/validateProject'
 
 /** Dark <option>/<optgroup> styling so native dropdowns are readable on the
  *  glass card (Chromium renders option lists with the OS-default white bg,
@@ -426,7 +427,8 @@ export function FloatingPropertiesCard() {
           key={board.id}
           type="text" /* part-name-ok: the field edits the name; the label stands just before it */
           value={board.name}
-          onCommit={(name) => updateBoard(assembly.id, board.id, { name })}
+          // the name as the file check keeps it (one line, no spaces at the ends): saving and reopening change nothing
+          onCommit={(name) => updateBoard(assembly.id, board.id, { name: cleanName(name, board.name) })} /* part-name-ok: the old name stays when the field is emptied */
           className="flex-1 bg-transparent text-[11px] font-medium text-white outline-none min-w-0 truncate"
           title={lang === 'de' ? 'Name bearbeiten' : 'Edit name'}
           aria-label={lang === 'de' ? 'Name' : 'Name'}

@@ -4,6 +4,8 @@ import { useUIStore } from '../store/useUIStore'
 import { loadProjectFromDB, backupAutoSave } from './storage'
 import { validateProject } from '../utils/validateProject'
 import { checkChangedFile, fileNameOf, MAX_FILE_CHARS } from '../utils/changedFile'
+import { formatLoadChange, type LoadChange } from '../utils/loadChanges'
+import { useLoadReport } from '../components/onboarding/LoadChangesDialog'
 
 /**
  * Native open dialog → validate → load. Shared by toolbar, palette and Ctrl+O
@@ -15,7 +17,7 @@ export async function openProjectFile(): Promise<boolean> {
     const result = await window.electronAPI?.fileOpen()
     if (!result) return false
     if (result.content.length > MAX_FILE_CHARS) throw new Error('file too large')
-    useProjectStore.getState().loadProject(JSON.parse(result.content))
+    reportLoadChanges(useProjectStore.getState().loadProject(JSON.parse(result.content)))
     useUIStore.getState().deselectAll()
     return true
   } catch (err) {
@@ -93,7 +95,7 @@ async function restore(): Promise<void> {
   try {
     const entry = await loadProjectFromDB()
     if (entry) {
-      useProjectStore.getState().loadProject(entry.project)
+      reportLoadChanges(useProjectStore.getState().loadProject(entry.project))
       // crash recovery: changes that never reached a file stay marked as unsaved
       // design-lock-ok: only the saved copy (for the unsaved marker), not the project
       if (entry.unsaved) useProjectStore.setState({ savedProject: entry.saved ? validateProject(entry.saved) : null })
@@ -121,7 +123,7 @@ async function askIfFileChanged(): Promise<void> {
     if (!changed) return
     const check = checkChangedFile(useProjectStore.getState().project.id, changed.content)
     if (check.kind === 'ask') {
-      useUIStore.getState().setChangedFile({ path: changed.path, modifiedAt: changed.modifiedAt, project: check.project })
+      useUIStore.getState().setChangedFile({ path: changed.path, modifiedAt: changed.modifiedAt, project: check.project, raw: check.raw })
     } else if (check.kind === 'invalid') {
       useUIStore.getState().setExportStatus(i18n.t('fileChanged.invalid', { name: fileNameOf(changed.path), reason: check.reason }))
     }
@@ -135,9 +137,21 @@ export function answerChangedFile(load: boolean): void {
   const file = useUIStore.getState().changedFile
   if (!file) return
   if (load) {
-    useProjectStore.getState().loadProject(file.project)
+    // the file as read, not the checked copy: otherwise nothing would be left to report (review 24.11.)
+    reportLoadChanges(useProjectStore.getState().loadProject(file.raw ?? file.project))
     useUIStore.getState().deselectAll()
   }
   useUIStore.getState().setChangedFile(null)
   window.electronAPI?.lastFileSeen?.().catch((err) => console.error('Marking the project file as seen failed:', err))
+}
+
+/**
+ * Says what loading changed (utils/loadChanges), every change in words, in a window that stays until it is
+ * closed (components/onboarding/LoadChangesDialog). The project then counts as unsaved (store loadProject).
+ */
+function reportLoadChanges(changes: LoadChange[]): void {
+  if (!changes.length) return
+  const lang = i18n.language
+  console.warn('Loading changed the project:', changes)
+  useLoadReport.getState().show(changes.map((c) => formatLoadChange(c, lang)))
 }

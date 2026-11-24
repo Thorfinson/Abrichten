@@ -11,11 +11,13 @@ export interface ChangedProjectFile {
   modifiedAt: number
   /** The file's project, validated, ready to load */
   project: Project
+  /** The file as read, before the check: loading it reports what the check changes (utils/loadChanges) */
+  raw?: unknown
 }
 
 export type ChangedFileCheck =
   /** Same project as the one restored from the auto-save: ask whether to load the file */
-  | { kind: 'ask'; project: Project }
+  | { kind: 'ask'; project: Project; raw: unknown }
   /** The file holds another project (e.g. after "New"): nothing to ask */
   | { kind: 'otherProject' }
   /** The file does not load: keep the app's state and say why */
@@ -29,8 +31,9 @@ export type ChangedFileCheck =
 export function checkChangedFile(currentProjectId: string, content: string): ChangedFileCheck {
   try {
     if (content.length > MAX_FILE_CHARS) throw new Error('file too large')
-    const project = validateProject(JSON.parse(content))
-    return project.id === currentProjectId ? { kind: 'ask', project } : { kind: 'otherProject' }
+    const raw = JSON.parse(content)
+    const project = validateProject(structuredClone(raw))
+    return project.id === currentProjectId ? { kind: 'ask', project, raw } : { kind: 'otherProject' }
   } catch (err) {
     return { kind: 'invalid', reason: err instanceof Error ? err.message : String(err) }
   }
